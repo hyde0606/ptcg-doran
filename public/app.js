@@ -416,32 +416,39 @@ async function renderLobby() {
   const mine = rooms.filter(r => r.mine && r.status !== 'done'), open = rooms.filter(r => r.status === 'open' && !r.mine), watch = rooms.filter(r => !r.mine && r.status === 'playing'), done = rooms.filter(r => r.status === 'done' || r.status === 'between');
   const myTurnN = mine.filter(r => r.myTurn).length;
   document.title = (myTurnN ? `(${myTurnN}) ` : '') + '도란 카드 대전';
-  const tabs = [['mine', `내 대전 ${mine.length}`], ['open', `들어갈 방 ${open.length}`], ['watch', `관전 ${watch.length}`], ['done', '끝난 판'], ['new', '+ 방 만들기']];
-  const roomItem = r => {
+  if (lobbyTab === 'new' || !['mine', 'open', 'watch', 'done'].includes(lobbyTab)) lobbyTab = 'mine';
+  const tabs = [['mine', '내 대전', mine.length], ['open', '들어갈 방', open.length], ['watch', '관전', watch.length], ['done', '끝난 판', done.length]];
+  // 방 하나 = 카드 한 장: 위 색 띠(상태) · 방 이름 · 두 사람 · 진행 방식 · 남은 시간 · 단추. 줄 위치는 모든 카드가 같음 (값이 없으면 —)
+  const roomCard = r => {
     const last = r.games[r.games.length - 1];
-    const vs = r.names.join(' vs ') + (r.players.length < 2 ? ' (상대 기다리는 중)' : '');
-    let badge = '';
-    if (r.status === 'open') badge = '<span class="chip">모집 중</span>';
-    else if (r.myTurn) badge = '<span class="chip turn">내 차례</span>';
-    else if (r.status === 'playing') badge = `<span class="chip">${r.phase === 'setup' ? '준비 중' : (r.turn || 0) + '번째 차례'}</span>`;
-    else badge = `<span class="chip ok">${r.wins.join(' : ')}</span>`;
-    const dl = r.deadline && r.status === 'playing' ? `<span class="chip warn">${fmtLeft(r.deadline - Date.now())}</span>` : '';
-    let btns = '';
-    if (r.status === 'open' && !r.mine) btns = `<button class="primary sm" data-join="${r.id}">들어가기</button>`;
-    else if (r.status === 'open' && r.host === data.me) btns = `<button class="sm" data-close-room="${r.id}">방 닫기</button>`;
-    else if (last && (r.status === 'playing')) btns = `<a class="btn ${r.mine ? 'primary' : ''} sm" href="#game/${last}">${r.mine ? '판으로' : '관전'}</a>`;
-    if (r.status === 'between' && r.mine) btns += `<button class="primary sm" data-next="${r.id}">다음 판 시작</button>`;
-    if (last && r.status !== 'open') btns += `<a class="btn sm" href="#replay/${last}">기보</a>`;
-    const ic = r.status === 'open' ? ['door', 'k-open'] : r.myTurn ? ['bolt', 'k-turn'] : r.status === 'playing' ? (r.mine ? ['wait', 'k-wait'] : ['eye', 'k-watch']) : ['trophy', 'k-done'];
-    return `<div class="item ${r.myTurn ? 'hot' : ''}">${ringIcon(ic[0], ic[1], r.myTurn)}<div class="grow"><div class="t">${esc(r.cfg.title || vs)}</div><div class="small muted">${esc(r.cfg.title ? vs + ' · ' : '')}${esc(modeKo(r.cfg))}${r.cfg.invite ? ' · 초대: ' + esc(r.cfg.invite) : ''}</div></div>${badge}${dl}<div class="row">${btns}</div></div>`;
+    const st = r.status === 'open' ? ['open', 'door', '모집 중'] : r.myTurn ? ['turn', 'bolt', '내 차례'] : r.status === 'playing' ? (r.mine ? ['wait', 'wait', r.phase === 'setup' ? '준비 중' : `${r.turn || 0}번째 차례`] : ['watch', 'eye', r.phase === 'setup' ? '준비 중' : `${r.turn || 0}번째 차례`]) : ['done', 'trophy', r.status === 'between' ? '다음 판 기다림' : '끝남'];
+    const nm = [0, 1].map(i => r.names[i] || '');
+    const who = n => n ? `<span class="rp"><i class="av">${esc(n.slice(0, 1))}</i><b>${esc(n)}</b></span>` : '<span class="rp empty"><i class="av">?</i><b>기다리는 중</b></span>';
+    const score = r.wins && (r.status === 'done' || r.status === 'between') ? `<span class="rsc">${r.wins.join(' : ')}</span>` : '<span class="rvs">vs</span>';
+    const left = r.deadline && r.status === 'playing' ? `<span class="rleft">${ICON.wait}${fmtLeft(r.deadline - Date.now())}</span>` : `<span class="rleft none">${r.cfg.invite ? `초대: ${esc(r.cfg.invite)}` : '—'}</span>`;
+    let main = '';
+    if (r.status === 'open' && !r.mine) main = `<button class="primary sm" data-join="${r.id}">${ICON.door}들어가기</button>`;
+    else if (r.status === 'open' && r.host === data.me) main = `<button class="sm" data-close-room="${r.id}">${ICON.x}방 닫기</button>`;
+    else if (r.status === 'between' && r.mine) main = `<button class="primary sm" data-next="${r.id}">${ICON.play}다음 판</button>`;
+    else if (last && r.status === 'playing') main = `<a class="btn ${r.mine ? 'primary' : ''} sm" href="#game/${last}">${r.mine ? `${ICON.battle}판으로` : `${ICON.eye}관전`}</a>`;
+    const rec = last && r.status !== 'open' ? `<a class="btn sm" href="#replay/${last}">${ICON.rewind}기보</a>` : '';
+    return `<article class="rcard s-${st[0]}"><div class="rtop">${ringIcon(st[1], 'k-' + st[0], r.myTurn)}<span class="rst">${st[2]}</span></div>
+      <h4 class="rt">${esc(r.cfg.title || nm.filter(Boolean).join(' vs '))}</h4>
+      <div class="rvsrow">${who(nm[0])}${score}${who(nm[1])}</div>
+      <div class="rmode">${esc(modeKo(r.cfg))}</div>${left}
+      <div class="rbtns2">${main}${rec}</div></article>`;
   };
-  const lists = { mine, open, watch, done };
-  const body = lobbyTab === 'new' ? newRoomForm(decks.decks) : `<div class="list">${(lists[lobbyTab] || []).map(roomItem).join('') || `<div class="empty-note">${ringIcon('wait', 'k-wait')}아직 없어요.</div>`}</div>`;
-  app.innerHTML = `<div class="tabs g2">${tabs.map(([k, l]) => `<button class="tab ${lobbyTab === k ? 'on' : ''} ${k === 'new' ? 'span' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>${body}`;
-  app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { lobbyTab = b.dataset.tab; try { localStorage.setItem('lobbyTab', lobbyTab); } catch {} renderLobby(); });
+  const lists = { mine, open, watch, done }, cur = lists[lobbyTab] || [];
+  const emptyMsg = { mine: '진행 중인 대전이 없어요. 방을 만들거나 들어갈 방을 찾아보세요.', open: '들어갈 수 있는 방이 없어요. 직접 방을 만들어 보세요.', watch: '지금 관전할 대전이 없어요.', done: '끝난 판이 아직 없어요.' }[lobbyTab];
+  app.innerHTML = `<div class="lobh"><h2>대전</h2><button class="primary newroom" data-tab="new">${ICON.plus}방 만들기</button></div>
+    <div class="ltabs" role="tablist">${tabs.map(([k, l, n]) => `<button class="ltab ${lobbyTab === k ? 'on' : ''}" role="tab" aria-selected="${lobbyTab === k}" data-tab="${k}">${l}<b>${n}</b>${k === 'mine' && myTurnN ? `<i class="dot" title="내 차례 ${myTurnN}"></i>` : ''}</button>`).join('')}</div>
+    ${cur.length ? `<div class="rlist">${cur.map(roomCard).join('')}</div>` : `<div class="empty-note">${ringIcon('wait', 'k-wait')}<p>${emptyMsg}</p></div>`}`;
+  app.querySelectorAll('.ltab[data-tab]').forEach(b => b.onclick = () => { lobbyTab = b.dataset.tab; try { localStorage.setItem('lobbyTab', lobbyTab); } catch {} renderLobby(); });
+  const rl = app.querySelector('.rlist'); // 가로 화면: 마우스 휠을 가로 스크롤로
+  if (rl) rl.addEventListener('wheel', e => { if (getComputedStyle(rl).overflowX === 'auto' && Math.abs(e.deltaY) > Math.abs(e.deltaX) && rl.scrollWidth > rl.clientWidth) { rl.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
   const chooseDeck = async () => {
     const ok = decks.decks; if (!ok.length) { toast('먼저 덱을 만들어 주세요.'); location.hash = '#decks'; return null; }
-    return pick('어떤 덱으로 할까요?', ok.map(d => ({ label: esc(d.name) + (d.ok ? '' : ' ⚠'), value: d.id })));
+    return pick('어떤 덱으로 할까요?', ok.map(d => ({ label: esc(d.name) + (d.ok ? '' : ` <span class="chip warn">규칙 확인</span>`), value: d.id })));
   };
   app.querySelectorAll('[data-join]').forEach(b => b.onclick = async () => {
     const deckId = await chooseDeck(); if (!deckId) return;
@@ -449,23 +456,28 @@ async function renderLobby() {
   });
   app.querySelectorAll('[data-next]').forEach(b => b.onclick = async () => { try { const r = await api(`/api/rooms/${b.dataset.next}/next`, {}); location.hash = '#game/' + r.room.games[r.room.games.length - 1]; } catch (e) { toast(e.message); } });
   app.querySelectorAll('[data-close-room]').forEach(b => b.onclick = async () => { await api(`/api/rooms/${b.dataset.closeRoom}/close`, {}); renderLobby(); });
-  const f = $('#newroom');
-  if (f) f.onsubmit = async e => {
-    e.preventDefault(); const fd = Object.fromEntries(new FormData(f));
-    try { await api('/api/rooms', fd); lobbyTab = 'mine'; toast('방을 만들었어요. 상대가 들어오면 시작해요.'); renderLobby(); } catch (er) { toast(er.message); }
-  };
+  app.querySelector('.newroom').onclick = () => openSheet(newRoomForm(decks.decks), el => {
+    const f = el.querySelector('#newroom'); if (!f) return;
+    const syncDl = () => { const a = f.querySelector('input[name=mode]:checked')?.value === 'async'; f.querySelector('.dlrow').hidden = !a; };
+    f.querySelectorAll('input[name=mode]').forEach(x => x.onchange = syncDl); syncDl();
+    f.onsubmit = async e => {
+      e.preventDefault(); const fd = Object.fromEntries(new FormData(f));
+      try { await api('/api/rooms', fd); closeSheet(); lobbyTab = 'mine'; try { localStorage.setItem('lobbyTab', 'mine'); } catch {} toast('방을 만들었어요. 상대가 들어오면 시작해요.'); setTimeout(renderLobby, 40); } catch (er) { toast(er.message); }
+    };
+  });
 }
-function newRoomForm(decks) {
-  if (!decks.length) return `<div class="card-box"><h3>덱이 먼저 있어야 해요</h3><p>덱 화면에서 덱 리스트를 붙여 넣거나 카드를 골라 만들어 주세요.</p><a class="btn primary" href="#decks">덱 만들러 가기</a></div>`;
-  return `<form id="newroom" class="card-box"><h3>방 만들기</h3>
-    <label class="h">방 이름 (안 쓰면 이름으로)</label><input name="title" maxlength="30" style="width:100%">
-    <label class="h">내 덱</label><select name="deckId">${decks.map(d => `<option value="${d.id}">${esc(d.name)}${d.ok ? '' : ' (규칙 확인 필요)'}</option>`).join('')}</select>
-    <label class="h">진행 방식</label><select name="mode"><option value="live">실시간 (지금 같이)</option><option value="async">비동기 (편할 때 한 수씩)</option></select>
-    <label class="h">비동기 결정 기한</label><select name="deadlineH"><option>12</option><option selected>24</option><option>48</option><option>72</option></select> 시간
-    <label class="h">판수</label><select name="bestOf"><option value="1">1판</option><option value="3">3판 2선승 (대회)</option></select>
-    <label class="h">관전</label><select name="spectate"><option value="yes">허용 (공개 정보만)</option><option value="no">끔</option><option value="open">손패 공개 관전 (연습·가르치기)</option></select>
-    <label class="h">초대 (이 이름만 들어올 수 있어요, 비우면 누구나)</label><input name="invite" maxlength="12">
-    <div class="row" style="margin-top:12px"><button class="primary">방 만들기</button></div></form>`;
+function newRoomForm(decks) { // 고르는 것은 모두 단추로 (선택 상자 대신). 이름은 그대로라 서버는 같음
+  if (!decks.length) return `<button class="x sm" data-close>닫기</button><h3>덱이 먼저 있어야 해요</h3><p>덱 화면에서 덱 리스트를 붙여 넣거나 카드를 골라 만들어 주세요.</p><a class="btn primary" href="#decks">덱 만들러 가기</a>`;
+  const seg = (name, opts, on) => `<div class="rseg n${opts.length}" role="radiogroup">${opts.map(([v, l, s]) => `<label class="ropt"><input type="radio" name="${name}" value="${v}" ${v === on ? 'checked' : ''}><span><b>${l}</b>${s ? `<small>${s}</small>` : ''}</span></label>`).join('')}</div>`;
+  return `<button class="x sm" data-close>닫기</button><form id="newroom"><h3>방 만들기</h3>
+    <label class="h">방 이름 <small class="muted">안 쓰면 내 이름으로</small></label><input name="title" maxlength="30" style="width:100%" placeholder="예: 금요일 연습전">
+    <label class="h">내 덱</label>${seg('deckId', decks.map(d => [d.id, esc(d.name), d.ok ? '' : '규칙 확인 필요']), decks.find(d => d.ok)?.id || decks[0].id)}
+    <label class="h">진행 방식</label>${seg('mode', [['live', '실시간', '지금 같이'], ['async', '비동기', '편할 때 한 수씩']], 'live')}
+    <div class="dlrow"><label class="h">결정 기한 <small class="muted">비동기에서 한 번 결정할 때마다</small></label>${seg('deadlineH', [['12', '12시간'], ['24', '24시간'], ['48', '48시간'], ['72', '72시간']], '24')}</div>
+    <label class="h">판수</label>${seg('bestOf', [['1', '1판'], ['3', '3판 2선승', '대회처럼']], '1')}
+    <label class="h">관전</label>${seg('spectate', [['yes', '허용', '공개 정보만'], ['no', '끔'], ['open', '손패 공개', '연습·가르치기']], 'yes')}
+    <label class="h">초대 <small class="muted">이 이름만 들어올 수 있어요. 비우면 누구나</small></label><input name="invite" maxlength="12" style="width:100%">
+    <div class="acts1"><button class="primary">${ICON.plus}방 만들기</button></div></form>`;
 }
 
 // ---------- 덱 ----------

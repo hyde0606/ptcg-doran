@@ -22,7 +22,7 @@ const OUT = __dirname + '/out/';
     p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errs.push(name + ' console: ' + m.text()); });
     await p.goto(BASE + '/#login');
     await p.fill('#nm', name); await p.fill('#cd', 'doran'); await p.click('#go');
-    await p.waitForSelector('.tabs');
+    await p.waitForSelector('.ltabs');
     return p;
   };
   const A = await mk('링크'), B = await mk('친구', 1280, 900);
@@ -51,7 +51,7 @@ const OUT = __dirname + '/out/';
   if ((await A.inputValue('#q')) !== 'vlzkcb') errs.push('카드 추가 창이 검색어를 기억 못 함: ' + await A.inputValue('#q'));
   await A.click('.sheet [data-close]'); await A.waitForTimeout(200); await A.click('#back'); await A.waitForSelector('#nd');
   await A.goto(BASE + '/#lobby'); await A.waitForSelector('[data-tab=new]'); await A.click('[data-tab=new]');
-  await A.selectOption('select[name=mode]', 'async'); await A.click('#newroom button.primary');
+  await A.waitForSelector('#newroom'); await A.click('label.ropt:has(input[value=async])'); await A.click('#newroom button.primary');
   await A.waitForTimeout(400);
   await B.goto(BASE + '/#lobby'); await B.waitForSelector('[data-tab=open]'); await B.click('[data-tab=open]');
   await B.click('[data-join]'); await B.click('.sheet [data-i="0"]');
@@ -119,12 +119,12 @@ const OUT = __dirname + '/out/';
   }
   await B.setViewportSize({ width: 1280, height: 860 }); await B.waitForTimeout(1500); await B.screenshot({ path: OUT + 'game-1280.png' }); await B.setViewportSize({ width: 390, height: 844 }); await B.click('[data-dock]').catch(()=>{}); await B.waitForTimeout(800); await B.screenshot({ path: OUT + 'game-390.png' });
   // 대전 화면: 뒤로 가기 한 번은 안내만, 두 번이면 나감
-  await B.goto(BASE + '/#lobby'); await B.waitForSelector('.tabs'); await B.evaluate(u => { location.hash = u; }, new URL(gameUrl).hash); await B.waitForSelector('.area.bottom');
+  await B.goto(BASE + '/#lobby'); await B.waitForSelector('.ltabs'); await B.evaluate(u => { location.hash = u; }, new URL(gameUrl).hash); await B.waitForSelector('.area.bottom');
   await B.evaluate(() => history.back()); await B.waitForTimeout(400);
   if (!/#game/.test(B.url()) || !/한 번 더/.test(await B.textContent('#toast'))) errs.push('대전에서 뒤로 한 번: 안내 없이 나감 ' + B.url());
   await B.evaluate(() => history.back()); await B.waitForTimeout(500);
   if (!/#lobby/.test(B.url())) errs.push('대전에서 뒤로 두 번: 안 나가짐 ' + B.url());
-  await B.waitForSelector('.tabs');
+  await B.waitForSelector('.ltabs');
   for (const w of [260, 360]) { await B.setViewportSize({ width: w, height: 800 }); await B.waitForTimeout(150); const sw = await B.evaluate(() => document.documentElement.scrollWidth); if (sw > w + 1) errs.push(`로비 폭 ${w}: 넘침 ${sw}`); }
   await B.screenshot({ path: OUT + 'lobby-360.png' });
   console.log(errs.length ? '문제:\n' + errs.join('\n') : '문제 없음');
