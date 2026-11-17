@@ -18,8 +18,12 @@ async function api(path, body, method) {
 }
 function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
 async function loadCards() { if (!ALL) { ALL = await (await fetch('/cards.json')).json(); IDX = indexCards(ALL); } return ALL; }
-const cimg = c => c && (c.kimg || c.img);
-const bigImg = c => c ? (c.kimg || (c.img ? c.img.replace(/\.png$/, '_hires.png') : null)) : null;
+// 카드 그림: mix = 판·손패는 영문 그림(워터마크 없음) + 한글 이름표, 크게 볼 때 한글 그림 / en = 모두 영문 / kr = 모두 한글
+const ART_KINDS = [['mix', '판은 영문 그림, 크게 볼 때 한글 그림'], ['en', '모두 영문 그림'], ['kr', '모두 한글 그림']];
+let ART = (() => { try { return localStorage.getItem('art') || 'mix'; } catch { return 'mix'; } })();
+const hires = u => u ? u.replace(/\.png$/, '_hires.png') : null;
+const cimg = c => c && (ART === 'kr' ? (c.kimg || c.img) : (c.img || c.kimg));
+const bigImg = c => !c ? null : ART === 'en' ? (hires(c.img) || c.kimg) : (c.kimg || hires(c.img));
 const cname = c => { if (!c) return '?'; if (c.kn) return c.kn; if (!c.ko) return c.n; let k = c.ko; if (/^Mega /.test(c.n)) k = '메가' + k; if (/ ex$/.test(c.n)) k += ' ex'; return k; };
 
 // ---------- 선택 창 (뒤로 가기로 닫힘) ----------
@@ -284,8 +288,9 @@ const bottomSeat = () => G.view.me == null ? 0 : G.view.me;
 
 // ----- 카드 한 장 -----
 function cardFace(x, cls = '', extra = '') {
-  const c = cinfo(x.c);
-  return `<div class="pc ${cls}" data-k="${x.i}" ${extra}>${cimg(c) ? `<img src="${cimg(c)}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" loading="lazy" draggable="false">` : `<div class="ph">${esc(cname(c))}</div>`}</div>`;
+  const c = cinfo(x.c), src = cimg(c);
+  const tag = src && c.kn && src === c.img ? `<span class="kn" style="--len:${[...c.kn].length}">${esc(c.kn)}</span>` : ''; // 영문 그림 위 한글 이름표
+  return `<div class="pc ${cls}" data-k="${x.i}" ${extra}>${src ? `<img src="${src}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" loading="lazy" draggable="false">${tag}` : `<div class="ph">${esc(cname(c))}</div>`}</div>`;
 }
 const cardBack = (cls = '', extra = '') => `<div class="pc back ${cls}" ${extra}><div class="cb"></div></div>`;
 const TYPE_ICON = { Grass: '🌿', Fire: '🔥', Water: '💧', Lightning: '⚡', Psychic: '🔮', Fighting: '👊', Darkness: '🌙', Metal: '⚙️', Dragon: '🐉', Colorless: '⭐' };
@@ -719,7 +724,8 @@ function bindBoard() {
     if (t === 'coin') { const f = await ask('코인 던지기', '<label class="h">몇 번?</label><input name="n" type="number" min="1" max="20" value="1"><label class="h">무엇 때문에? (선택)</label><input name="why" maxlength="60" style="width:100%">', '던지기'); if (f) send({ type: 'coin', n: +f.n, why: f.why }); return; }
     if (t === 'effect') { const f = await ask('효과 쓰기', '<p>지금부터 하는 카드 이동, 데미지 등이 이 효과 아래에 묶여 기록돼요.</p><label class="h">어떤 카드의 효과인가요?</label><input name="title" maxlength="40" style="width:100%" placeholder="예: 보스의 지령"><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '시작', 'judge'); if (f) send({ type: 'effect', title: f.title || '카드 효과', note: f.note }); return; }
     if (t === 'effectEnd') { const f = await ask('효과 끝', '<p>상대에게 "이렇게 처리했어요"로 보여요.</p><label class="h">한 줄 설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '끝내기', 'judge'); if (f) send({ type: 'effectEnd', note: f.note }); return; }
-    if (t === 'more') { const k = await pick('더 보기', [{ label: '항복하기', value: 'concede', cls: 'bad' }, { label: '로비로', value: 'lobby' }]); if (k === 'lobby') location.hash = '#lobby'; if (k === 'concede' && await ask('항복할까요?', '<p>이 판은 상대 승리로 끝나요.</p>', '항복', 'bad')) send({ type: 'concede' }); }
+    if (t === 'more') { const k = await pick('더 보기', [{ label: '카드 그림 바꾸기', value: 'art' }, { label: '항복하기', value: 'concede', cls: 'bad' }, { label: '로비로', value: 'lobby' }]); if (k === 'lobby') location.hash = '#lobby';
+      if (k === 'art') { const a = await pick('카드 그림', ART_KINDS.map(([value, label]) => ({ label: (value === ART ? '✓ ' : '') + label, value }))); if (a) { ART = a; try { localStorage.setItem('art', a); } catch {} draw([]); } } if (k === 'concede' && await ask('항복할까요?', '<p>이 판은 상대 승리로 끝나요.</p>', '항복', 'bad')) send({ type: 'concede' }); }
   });
 }
 
