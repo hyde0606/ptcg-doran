@@ -482,7 +482,7 @@ function deckEditor(deck) {
   const openAdd = () => {
     let q = '', filt = 'all';
     openSheet(`<button class="x sm" data-close>닫기</button><h3>카드 추가 <span class="chip" id="acnt"></span></h3>
-      <input id="q" placeholder="이름 검색 (예: 피카츄, ㅍㅋㅊ, vzc)" autocomplete="off">
+      <input id="q" class="wide" placeholder="이름 검색 (예: 피카츄, ㅍㅋㅊ, vzc)" autocomplete="off">
       <div class="tabs g2" style="margin-top:8px">${[['all', '전체'], ['P', '포켓몬'], ['T', '트레이너스'], ['E', '에너지']].map(([k, l]) => `<button class="tab ${k === 'all' ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
       <p class="small muted" style="margin:6px 0">카드를 누르면 1장씩 들어가요.</p><div id="res" class="dkgrid add sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}"></div>`, el => {
       el.classList.add('wide');
@@ -631,6 +631,13 @@ function energyTabs(sl) { // 붙은 에너지: 카드 왼쪽 아래에 타입 �
   const n = sl.en.length; if (!n) return '';
   return `<div class="enrow" style="--n:${n}">${sl.en.map(x => { const e = cinfo(x.c); const ty = (e.n.match(/Basic (\w+) Energy/) || [])[1]; return typeIcon(ty || 'Special', 'en', `data-k="${x.i}" title="${esc(cname(e))}"`); }).join('')}</div>`;
 }
+// 이름 알약: 한 줄로, 글자 폭(w, 한글 1·영문 0.6·띄어쓰기 0.3)에 맞춰 글씨를 줄이고 끝의 ex는 작게. 글씨가 7px보다 작아질 만큼 카드가 작으면 숨김(카드에 인쇄된 이름이 보임)
+function nameBadge(nm) {
+  const m = nm.match(/^(.*\S)\s+(ex)$/i), base = m ? m[1] : nm;
+  const w = [...base].reduce((a, ch) => a + (/[\uAC00-\uD7A3\u3131-\u318E\u4E00-\u9FFF]/.test(ch) ? 1 : ch === ' ' ? .3 : .6), 0) + (m ? .95 : 0) + .84;
+  const t = Math.max(54, Math.ceil(13.46 * w / 6) * 6), cls = t <= 198 ? 't' + t : 't0'; // 글씨 = 카드 폭 × 0.52 / w ≥ 7px
+  return `<span class="nmb ${cls}" style="--lw:${w.toFixed(2)}">${esc(base)}${m ? `<small> ${m[2]}</small>` : ''}</span>`;
+}
 function slotHtml(sl, opt = {}) {
   const size = opt.active ? 'act' : 'bn';
   if (!sl) return `<div class="spot ${size} empty">${opt.active ? '<span>배틀 필드</span>' : ''}</div>`;
@@ -643,7 +650,7 @@ function slotHtml(sl, opt = {}) {
   const marks = [cd.poisoned ? '<b class="mk poison">독</b>' : '', cd.burned ? '<b class="mk burn">화상</b>' : '', cd.asleep ? '<b class="mk sleep">잠듦</b>' : '', cd.paralyzed ? '<b class="mk para">마비</b>' : '', cd.confused ? '<b class="mk conf">혼란</b>' : ''].join('');
   const under = sl.cards.length > 1 ? sl.cards.slice(0, -1).map((x, i) => `<div class="pc under" data-k="${x.i}" style="--u:${sl.cards.length - 1 - i}"></div>`).join('') : '';
   const nm = cname(c), hp = c.hp ? `<span class="hpb ${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}" title="남은 HP ${hpLeft} / ${c.hp}"><b>${hpLeft}</b>${(c.ty || [])[0] ? typeIcon(c.ty[0]) : ''}</span>` : '';
-  const over = `<div class="ctop"><span class="nmb" style="--len:${[...nm].length}">${esc(nm)}</span>${hp}</div>`;
+  const over = `<div class="ctop">${nameBadge(nm)}${hp}</div>`;
   return `<div class="spot ${size} filled" data-sid="${sl.sid}">
     <div class="rotwrap ${rot}">${under}${cardFace(t, 'onfield', '', over)}${energyTabs(sl)}
       ${sl.dmg ? `<span class="dmg" data-dmg="${sl.sid}">${sl.dmg}</span>` : ''}

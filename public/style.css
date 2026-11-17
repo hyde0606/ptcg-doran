@@ -413,6 +413,7 @@ body.mat-custom.mat-light, .mt-img.mt-light { --m-veil: rgba(255, 255, 255, .2);
 .spot.filled:hover .pc.onfield { transform: translateY(-4px); box-shadow: 0 10px 18px rgba(20, 50, 40, .4); }
 .rotwrap { position: relative; transition: transform .45s cubic-bezier(.3,.8,.3,1.2); }
 .rotwrap.r-sleep { transform: rotate(-90deg) scale(.8); } .rotwrap.r-para { transform: rotate(90deg) scale(.8); } .rotwrap.r-conf { transform: rotate(180deg); }
+input.wide { width: 100%; box-sizing: border-box; }
 /* 판 위 포켓몬 크기 기준 (--pcw = 그 카드 너비) */
 .spot { --pcw: var(--cw); } .spot.act { --pcw: calc(var(--cw) * 1.5); }
 /* 타입 아이콘 (자체 그림): 색 동그라미 + 흰 기호, 얇은 테두리 */
@@ -430,14 +431,42 @@ body.mat-custom.mat-light, .mt-img.mt-light { --m-veil: rgba(255, 255, 255, .2);
 /* 카드 위쪽: 이름 알약(왼쪽)·HP 알약(오른쪽, 숫자 + 타입 아이콘). 흰 바탕에 얇은 진한 테두리 */
 .pc .ctop { position: absolute; left: 3%; right: 3%; top: 2.6%; z-index: 2; display: flex; justify-content: space-between; align-items: flex-start; gap: 3%; pointer-events: none; }
 .nmb, .hpb { background: #fff; color: #1f2830; font-family: var(--fh); border-radius: .55em; box-shadow: inset 0 0 0 max(1px, .09em) #33404d, 0 .1em .25em rgba(0, 0, 0, .28); }
-.nmb { min-width: 0; max-width: 58%; font-size: max(8px, min(10.5cqw, calc(52cqw / var(--len, 6) * 1.7))); line-height: 1.22; padding: .1em .42em .06em; word-break: keep-all; overflow-wrap: anywhere; }
-.hpb { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: .16em; font-size: max(9px, 12.5cqw); line-height: 1.15; padding: .08em .1em .08em .36em; }
+.nmb { flex: none; white-space: nowrap; font-size: min(10.5cqw, calc(52cqw / var(--lw, 5))); line-height: 1.22; padding: .1em .42em .06em; }
+.nmb small { font-size: .78em; }
+.hpb { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: .16em; font-size: max(9px, 11.8cqw); line-height: 1.12; padding: .06em .1em .06em .36em; }
 .hpb b { font-weight: normal; letter-spacing: -.02em; }
 .hpb .ty { font-size: 1.04em; }
 .hpb.mid { color: #b86a00; box-shadow: inset 0 0 0 max(1.2px, .1em) #f0a020, 0 .1em .25em rgba(0, 0, 0, .28); }
 .hpb.low { color: #d22f26; box-shadow: inset 0 0 0 max(1.2px, .1em) #e8473c, 0 .1em .25em rgba(0, 0, 0, .28); animation: hplow 1.4s ease-in-out infinite; }
 @keyframes hplow { 50% { background: #ffe9e6; } }
-@container (max-width: 58px) { .nmb { display: none; } .hpb { font-size: max(8px, 15cqw); } }
+@container (max-width: 51.9px) { .hpb { font-size: max(8px, 15cqw); } }
+/* 이름 알약은 글씨가 7px보다 작아질 카드에서는 숨김: tNN = 보이는 가장 작은 카드 폭(px) */
+@container (max-width: 53.9px) { .nmb.t54 { display: none; } }
+@container (max-width: 59.9px) { .nmb.t60 { display: none; } }
+@container (max-width: 65.9px) { .nmb.t66 { display: none; } }
+@container (max-width: 71.9px) { .nmb.t72 { display: none; } }
+@container (max-width: 77.9px) { .nmb.t78 { display: none; } }
+@container (max-width: 83.9px) { .nmb.t84 { display: none; } }
+@container (max-width: 89.9px) { .nmb.t90 { display: none; } }
+@container (max-width: 95.9px) { .nmb.t96 { display: none; } }
+@container (max-width: 101.9px) { .nmb.t102 { display: none; } }
+@container (max-width: 107.9px) { .nmb.t108 { display: none; } }
+@container (max-width: 113.9px) { .nmb.t114 { display: none; } }
+@container (max-width: 119.9px) { .nmb.t120 { display: none; } }
+@container (max-width: 125.9px) { .nmb.t126 { display: none; } }
+@container (max-width: 131.9px) { .nmb.t132 { display: none; } }
+@container (max-width: 137.9px) { .nmb.t138 { display: none; } }
+@container (max-width: 143.9px) { .nmb.t144 { display: none; } }
+@container (max-width: 149.9px) { .nmb.t150 { display: none; } }
+@container (max-width: 155.9px) { .nmb.t156 { display: none; } }
+@container (max-width: 161.9px) { .nmb.t162 { display: none; } }
+@container (max-width: 167.9px) { .nmb.t168 { display: none; } }
+@container (max-width: 173.9px) { .nmb.t174 { display: none; } }
+@container (max-width: 179.9px) { .nmb.t180 { display: none; } }
+@container (max-width: 185.9px) { .nmb.t186 { display: none; } }
+@container (max-width: 191.9px) { .nmb.t192 { display: none; } }
+@container (max-width: 197.9px) { .nmb.t198 { display: none; } }
+.nmb.t0 { display: none; }
 .marks { position: absolute; top: calc(var(--pcw) * .24); left: calc(var(--pcw) * -.1); display: flex; flex-direction: column; gap: 3px; z-index: 4; }
 .mk { font-size: .68rem; padding: 0 7px; border-radius: 999px; color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); border: 1.5px solid #fff; }
 .mk.poison { background: #9b4fd6; } .mk.burn { background: #f05a3f; } .mk.sleep { background: #5b7cf0; } .mk.para { background: #e5b300; } .mk.conf { background: #e05aa6; }
