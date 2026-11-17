@@ -1042,18 +1042,20 @@ function rwTargets(a, b) { // 두 장면 사이에 바뀐 곳 (화면 요소 선
 function hlFrame(w, h) { // 강조 틀: 가는 선 하나, 왼쪽 위·오른쪽 아래 모서리만 비스듬히 (링크 님이 고른 모양으로 바꿀 자리)
   const o = 2, c = Math.max(6, Math.min(12, Math.min(w, h) * .14)), f = n => n.toFixed(1);
   const d = `M${f(o + c)} ${f(o)}H${f(w - o)}V${f(h - o - c)}L${f(w - o - c)} ${f(h - o)}H${f(o)}V${f(o + c)}Z`;
-  return `<svg viewBox="0 0 ${f(w)} ${f(h)}" aria-hidden="true"><path class="hd" pathLength="1" d="${d}" fill="none" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+  return `<svg viewBox="0 0 ${f(w)} ${f(h)}" aria-hidden="true"><path class="hd" pathLength="1" d="${d}" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
 }
 function rwHighlight(sels) {
   const layer = app.querySelector('.hl-layer'), tb = app.querySelector('.table'); if (!layer || !tb) return;
   sels.forEach(s => app.querySelectorAll(s).forEach(el => el.classList.add('rwon')));
   setTimeout(() => { // 카드가 다 움직인 뒤에 틀을 그림
     if (!layer.isConnected) return;
-    const T = tb.getBoundingClientRect(), m = 6;
+    const T = tb.getBoundingClientRect(), m = 6, pn = app.querySelector('.rwpanel')?.getBoundingClientRect();
+    const lim = pn && pn.bottom > T.bottom - 30 ? pn.top : T.bottom; // 세로 화면: 아래 안내판 위까지만
     layer.innerHTML = sels.flatMap(s => [...app.querySelectorAll(s)].slice(0, 1)).map(el => {
       const r = el.getBoundingClientRect(); if (!r.width) return '';
-      const w = r.width + m * 2, h = Math.min(r.height, T.bottom - r.top) + m * 2;
-      return `<div class="hlf" style="left:${(r.left - T.left - m).toFixed(1)}px;top:${(r.top - T.top - m).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px">${hlFrame(w, h)}</div>`;
+      const top = Math.max(r.top, T.top + m), bot = Math.min(r.bottom, lim - m); if (bot - top < 8) return '';
+      const w = r.width + m * 2, h = bot - top + m * 2;
+      return `<div class="hlf" style="left:${(r.left - T.left - m).toFixed(1)}px;top:${(top - T.top - m).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px">${hlFrame(w, h)}</div>`;
     }).join('');
   }, reduceMotion() ? 0 : 520);
 }
@@ -1064,14 +1066,17 @@ function drawRw(forward) {
   const stepLines = before ? liveLines.filter(l => l.k === rw.k - 1) : [];
   const caps = stepLines.filter(l => l.txt && !l.turn).map(l => esc(stripWho(l.txt, on)) + (l.own ? ` <span class="muted">(${esc(l.own)})</span>` : ''));
   const turnL = stepLines.find(l => l.turn);
-  const cap = rw.k === rw.k0 ? '처음부터 한 단계씩 보여 드릴게요.' : caps.length ? caps.join('<br>') : turnL ? esc(turnL.txt.replace(/─/g, '').trim()) : '차례를 넘겼어요.';
+  const startL = turnL && (turnL.txt.match(/차례: (.+) \(/) || [])[1] === on ? turnL : null, drew = startL ? (startL.txt.match(/\(([^)]+)\)/) || [])[1] : '';
+  const cap = rw.k === rw.k0 ? '처음부터 한 단계씩 보여 드릴게요.' : startL ? `차례를 시작했어요${drew ? ` (${esc(drew)})` : ''}.` : caps.length ? caps.join('<br>') : turnL ? esc(turnL.txt.replace(/─/g, '').trim()) : '차례를 넘겼어요.';
+  const capLen = cap.replace(/<[^>]+>/g, '').length;
   const total = rw.k1 - rw.k0, at = rw.k - rw.k0, end = rw.k >= rw.k1;
   G.view = cur; G.lines = liveLines.filter(l => l.k < rw.k);
   app.innerHTML = `<div class="arena rwmode"><div class="table">${matHtml(true)}<div class="hl-layer"></div>
-    <div class="rwcap"><b class="rwh">${esc(on)} 님 차례 다시 보기</b><span class="rwt">${cap}</span></div>
+    <div class="rwpanel"><div class="rwcap ${capLen > 70 ? 'long' : ''}"><b class="rwh">${esc(on)} 님 차례 다시 보기</b> <span class="rwt">${cap}</span></div>
     <div class="rwbar"><button class="sm" data-rw="close">✕ 그만 보기</button><button class="sm" data-rw="prev" aria-label="이전" ${at ? '' : 'disabled'}>◀</button>
-      ${end ? '<button class="sm primary" data-rw="close">판으로 돌아가기</button>' : `<button class="sm ${rw.playing ? '' : 'primary'}" data-rw="play">${rw.playing ? '⏸ 멈춤' : '▶ 재생'}</button>`}
-      <button class="sm" data-rw="next" aria-label="다음" ${end ? 'disabled' : ''}>▶</button><span class="pill">${at} / ${total}</span></div></div></div>`;
+      ${end ? '<button class="sm primary rwgo" data-rw="close" title="판으로 돌아가기">판으로</button>' : `<button class="sm rwgo ${rw.playing ? '' : 'primary'}" data-rw="play">${rw.playing ? '⏸ 멈춤' : '▶ 재생'}</button>`}
+      <button class="sm" data-rw="next" aria-label="다음" ${end ? 'disabled' : ''}>▶</button><span class="pill">${at} / ${total}</span></div></div></div></div>`;
+  const pn = app.querySelector('.rwpanel'); if (pn) app.querySelector('.arena').style.setProperty('--rwph', `${pn.offsetHeight + 12}px`);
   app.querySelectorAll('[data-rw]').forEach(b => b.onclick = () => {
     const k = b.dataset.rw;
     if (k === 'close') return endRewatch();
