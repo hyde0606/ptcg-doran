@@ -195,16 +195,48 @@ label.h { display: block; color: var(--head); margin: 12px 0 4px; }
 .use { font-family: var(--fh); font-size: .74rem; padding: 1px 9px; border-radius: 999px; background: var(--panel2); color: var(--muted); white-space: nowrap; }
 .use.done { background: #dff7ea; color: #1e9e5a; text-decoration: line-through; }
 
-/* 둥근 버튼 (오른쪽) */
-.fabs { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); z-index: 22; display: flex; flex-direction: column; gap: 10px; align-items: center; }
-.fab { width: 58px; height: 58px; min-height: 0; border-radius: 50%; padding: 0; background: #fff; color: var(--head); box-shadow: 0 4px 0 #d4e3ee, 0 8px 18px rgba(40, 90, 140, .2); flex-direction: column; gap: 0; position: relative; }
-.fab .ic { font-size: 1.3rem; line-height: 1; }
-.fab .fl { font-size: .62rem; line-height: 1.1; margin-top: 2px; white-space: nowrap; }
-.fab.judge { background: linear-gradient(180deg, #b19aff, #8f6bff); color: #fff; box-shadow: 0 4px 0 #6a47d6, 0 8px 18px rgba(143, 107, 255, .35); }
-.fab.big { width: 82px; height: 82px; background: linear-gradient(180deg, #ffb35c, #ff7a2f); color: #fff; box-shadow: 0 5px 0 #d65a17, 0 10px 24px rgba(255, 122, 47, .45); animation: breathe 2s infinite; }
-.fab.big .ic { font-size: 1.6rem; } .fab.big .fl { font-size: .82rem; }
+/* 둥근 버튼 (오른쪽): 볼 줄무늬 링, 약하게 (시안 6-약) */
+.fabs { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); z-index: 22; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.fabw { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.fabw .fl { font-family: var(--fh); font-size: .74rem; line-height: 1.45; color: #24543d; background: rgba(255,255,255,.9); padding: 0 9px; border-radius: 999px; white-space: nowrap; pointer-events: none; box-shadow: 0 1px 3px rgba(20,60,40,.12); }
+.fab { --c: #2fa5d8; --c2: #9fe3c2; --band: color-mix(in srgb, var(--c) 70%, #333); --sx: 1.2; --sy: 1.2; --bx: 1.4; --by: 1.4; --d: 0s; --face: #fff;
+  position: relative; width: 56px; height: 56px; min-height: 0; padding: 0; border-radius: 50%; display: grid; place-items: center; gap: 0;
+  background: linear-gradient(var(--face) 0 46%, var(--band) 46% 54%, var(--face) 54%); color: var(--c);
+  box-shadow: inset 0 0 0 3px var(--c), 0 4px 10px rgba(20,60,40,.16); transition: translate .2s, box-shadow .2s, filter .2s; }
+.fab.k-log { --c: #2f8fe0; --c2: #9ccaf3; }
+.fab.k-coin { --c: #f2b32b; --c2: #ffe08f; }
+.fab.k-fx { --c: #8b5cf6; --c2: #c9b4ff; }
+.fab.k-more { --c: #2fb57a; --c2: #9fe3c2; }
+.fab.on { --face: color-mix(in srgb, var(--c) 14%, #fff); }
+.fabw:nth-child(2) .fab { --d: -.6s; } .fabw:nth-child(3) .fab { --d: -1.2s; } .fabw:nth-child(4) .fab { --d: -1.8s; }
+.fab .core { position: absolute; inset: 25%; z-index: 2; border-radius: 50%; background: #fff; border: 2px solid var(--band); display: grid; place-items: center; }
+.fab .core svg { width: 66%; height: 66%; }
+.fab .fx { position: absolute; inset: -3px; border-radius: inherit; pointer-events: none; display: none; font-style: normal; }
+.fab .f1 { display: block; border: 2px solid var(--c); animation: fping 2.4s ease-out infinite; animation-delay: var(--d); }
+.fab.on .f1 { animation-duration: 1.4s; }
+@keyframes fping { 0% { transform: scale(1); opacity: .55; } 80%, 100% { transform: scale(var(--sx), var(--sy)); opacity: 0; } }
+@media (hover: hover) {
+  .fab:hover { filter: none; translate: 0 -1.5px; box-shadow: inset 0 0 0 3px var(--c), 0 7px 12px rgba(20,60,40,.19); }
+  .fab:not(.wide):hover { animation: fwob 2s ease-in-out infinite; }
+}
+@keyframes fwob { 0%, 55%, 100% { rotate: 0deg; } 65% { rotate: -5deg; } 77% { rotate: 4deg; } 89% { rotate: -2deg; } }
+.fab:active { transform: none; }
+.fab.pop, .fab.pop:hover { animation: fpress .6s ease-out; }
+.fab.pop .f3 { display: block; border: 2px solid var(--c); animation: fburst .6s ease-out forwards; }
+.fab.pop .f4 { display: block; inset: 0; z-index: 1; background: color-mix(in srgb, var(--c) 15%, transparent); animation: fflash .6s ease-out forwards; }
+.fab.pop .core { animation: fcore .6s ease-out; }
+@keyframes fpress { 0% { scale: 1; } 22% { scale: .94; } 62% { scale: 1.03; } 100% { scale: 1; } }
+@keyframes fburst { 0% { transform: scale(1); opacity: .65; } 100% { transform: scale(var(--bx), var(--by)); opacity: 0; } }
+@keyframes fflash { 0% { opacity: 0; } 20% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fcore { 0%, 100% { background: #fff; } 25% { background: color-mix(in srgb, var(--c2) 60%, #fff); } }
+.fab.wide { --c: #2fa5d8; --c2: #38c6a0; --sx: 1.06; --sy: 1.28; --bx: 1.1; --by: 1.45; --d: -.9s; width: auto; height: 50px; border-radius: 999px; padding: 0 22px 0 18px;
+  grid-auto-flow: column; gap: 8px; color: #fff; font-size: 1.05rem; background: linear-gradient(90deg, var(--c2), var(--c)); box-shadow: 0 4px 10px rgba(20,60,40,.18); margin-top: 2px; }
+.fab.wide svg { width: 20px; height: 20px; position: relative; z-index: 2; }
+.fab.wide span { position: relative; z-index: 2; white-space: nowrap; }
+@media (hover: hover) { .fab.wide:hover { filter: brightness(1.06); box-shadow: 0 7px 12px rgba(20,60,40,.22); } }
+.fab.wide.pop .f4 { background: rgba(255,255,255,.25); }
 @keyframes breathe { 50% { filter: brightness(1.12); outline: 6px solid rgba(255, 160, 80, .35); } }
-.fab .badge { position: absolute; top: -3px; right: -3px; background: var(--bad); color: #fff; font-style: normal; border-radius: 999px; padding: 0 6px; font-size: .74rem; border: 2px solid #fff; }
+.fab .badge { position: absolute; top: -5px; right: -5px; z-index: 3; background: var(--bad); color: #fff; font-style: normal; border-radius: 999px; padding: 0 6px; font-size: .74rem; border: 2px solid #fff; }
 
 /* 손패 (아래에 겹쳐서) */
 .handbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 21; pointer-events: none; }
@@ -283,8 +315,8 @@ label.h { display: block; color: var(--head); margin: 12px 0 4px; }
   .matwrap { padding: 52px 4px 0; }
   .mat { padding: 8px 6px; border-radius: 22px; box-shadow: 0 0 0 4px #fff, 0 12px 30px rgba(30, 90, 70, .2); }
   .fabs { top: auto; bottom: calc(var(--cw) * 1.05 + 8px); right: 6px; transform: none; flex-direction: row; flex-wrap: wrap-reverse; justify-content: flex-end; max-width: 70%; gap: 6px; }
-  .fab { width: 46px; height: 46px; } .fab .fl { display: none; } .fab .ic { font-size: 1.1rem; }
-  .fab.big { width: 62px; height: 62px; } .fab.big .fl { display: block; font-size: .66rem; }
+  .fab { width: 46px; height: 46px; } .fabw .fl { display: none; }
+  .fab.wide { height: 44px; padding: 0 14px 0 12px; font-size: .92rem; gap: 6px; margin-top: 0; } .fab.wide svg { width: 17px; height: 17px; }
   .fan { padding: 0 8px; }
   .hud { max-width: calc(100% - 20px); padding-right: 8px; }
   .hud.me { bottom: calc(var(--cw) * 1.05 + 70px); }

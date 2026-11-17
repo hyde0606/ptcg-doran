@@ -361,21 +361,38 @@ function topBarHtml(readOnly) {
   const dl = v.deadline ? `<span class="pill warn">⏳ ${fmtLeft(v.deadline - Date.now())}</span>` : '';
   return `<div class="topbar"><span class="pill main">${turnInfo}</span>${dl}${readOnly ? '' : '<span class="pill ghost" id="specs"></span>'}</div>`;
 }
+// 오른쪽 둥근 버튼: 볼 줄무늬 링 (시안 6-약). 가만히 있어도 옅은 파동, 마우스를 올리면 살짝 갸웃, 누르면 가운데 단추가 빛나요.
+const FAB_ICON = {
+  log: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm8 1.5V8h3.5L14 4.5ZM8 11v1.8h8V11H8Zm0 3.5v1.8h8v-1.8H8Zm0-7V9h4V7.5H8Z"/></svg>',
+  coin: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.7" fill="none" stroke="currentColor" stroke-width="2.3"/><path fill="currentColor" d="M12 6.9l1.55 3.15 3.45.5-2.5 2.44.59 3.44L12 14.8l-3.09 1.63.59-3.44L7 10.55l3.45-.5z"/></svg>',
+  hand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 3.5a1.3 1.3 0 0 1 2.6 0V11h.6V2.6a1.3 1.3 0 0 1 2.6 0V11h.6V4.2a1.3 1.3 0 0 1 2.6 0v9.6c0 4-2.7 7.2-6.6 7.2-2.4 0-4-1.2-5.3-3.1l-3-4.6a1.4 1.4 0 0 1 2.3-1.6L9 14V3.5Z"/></svg>',
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="2.3" fill="currentColor"/><circle cx="12" cy="12" r="2.3" fill="currentColor"/><circle cx="18.5" cy="12" r="2.3" fill="currentColor"/></svg>',
+  flag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 2.5h1.8v19H5v-19Zm2.8 1h11.4l-2.6 4.4 2.6 4.4H7.8V3.5Z"/></svg>',
+};
+const FAB_FX = '<i class="fx f1"></i><i class="fx f3"></i><i class="fx f4"></i>';
+const fabBtn = (t, ic, l, k, extra = '') => `<div class="fabw"><button class="fab ${k}" data-t="${t}" aria-label="${l}">${FAB_FX}<span class="core">${FAB_ICON[ic]}</span>${extra}</button><span class="fl">${l}</span></div>`;
 function fabHtml() {
   const v = G.view, me = meSeat();
-  if (me == null || v.phase === 'over') return `<div class="fabs"><button class="fab" data-t="log"><span class="ic">📜</span><span class="fl">기록</span></button></div>`;
+  if (me == null || v.phase === 'over') return `<div class="fabs">${fabBtn('log', 'log', '기록', 'k-log')}</div>`;
   const myTurn = v.phase === 'play' && v.current === me;
   const open = v.openGroup[me];
   const pend = v.groups.filter(g => g.who !== me && g.status !== 'ok').length;
-  const fab = (t, ic, l, cls = '', badge = '') => `<button class="fab ${cls}" data-t="${t}"><span class="ic">${ic}</span><span class="fl">${l}</span>${badge}</button>`;
   return `<div class="fabs">
-    ${fab('log', '📜', '기록', '', pend ? `<i class="badge">${pend}</i>` : '')}
-    ${fab('coin', '🪙', '코인')}
-    ${open ? fab('effectEnd', '✋', '효과 끝', 'judge') : fab('effect', '✋', '효과 쓰기', 'judge')}
-    ${fab('more', '⋯', '더 보기')}
-    ${myTurn ? `<button class="fab big" data-t="endTurn"><span class="ic">▶</span><span class="fl">차례 끝</span></button>` : ''}
+    ${fabBtn('log', 'log', '기록', 'k-log', pend ? `<i class="badge">${pend}</i>` : '')}
+    ${fabBtn('coin', 'coin', '코인', 'k-coin')}
+    ${open ? fabBtn('effectEnd', 'check', '효과 끝', 'k-fx on') : fabBtn('effect', 'hand', '효과 쓰기', 'k-fx')}
+    ${fabBtn('more', 'more', '더 보기', 'k-more')}
+    ${myTurn ? `<button class="fab wide" data-t="endTurn">${FAB_FX}${FAB_ICON.flag}<span>차례 끝내기</span></button>` : ''}
   </div>`;
 }
+// 누르면 버튼마다 '누를 때' 움직임을 한 번
+document.addEventListener('pointerdown', e => {
+  const f = e.target.closest && e.target.closest('.fab');
+  if (!f) return;
+  f.classList.remove('pop'); void f.offsetWidth; f.classList.add('pop');
+  setTimeout(() => f.classList.remove('pop'), 650);
+});
 function matHtml(readOnly = false) {
   const bs = bottomSeat(), os = 1 - bs;
   return `${topBarHtml(readOnly)}${hudHtml(os, false)}<div class="matwrap"><div class="mat ${readOnly ? 'ro' : ''}">${areaHtml(os, false)}${midHtml(readOnly)}${areaHtml(bs, true)}</div></div>${hudHtml(bs, true)}${handHtml(bs)}`;
