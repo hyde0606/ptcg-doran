@@ -1,6 +1,6 @@
 // Cloudflare Worker: 로그인, 방, 덱, 대전(Durable Object) 연결
 import { DurableObject } from 'cloudflare:workers';
-import { newGame, apply, viewFor, replay, waitingOn } from '../public/lib/engine.js';
+import { newGame, apply, viewFor, replay, waitingOn, fixJosa } from '../public/lib/engine.js';
 import { indexCards, checkDeck, expand } from '../public/lib/deck.js';
 
 const json = (o, status = 200, headers = {}) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
@@ -95,7 +95,7 @@ export default {
     if (path === '/api/decks' && req.method === 'GET') return json({ decks: await lobby.decks(uid) });
     if (path === '/api/decks' && req.method === 'POST') {
       const b = await req.json(); const idx = await cardIndex(env, req);
-      const list = (b.list || []).filter(x => idx.byId[x.id] && x.n > 0).map(x => ({ id: x.id, n: Math.min(60, x.n | 0) }));
+      const list = (b.list || []).filter(x => idx.byId[x.id] && x.n > 0).map(x => ({ id: x.id, n: Math.min(60, x.n | 0), ...(x.c ? { c: 1 } : {}) })); // c: 덱 목록에 겹쳐 보일 대표 카드
       const chk = checkDeck(list, idx);
       return json({ deck: await lobby.saveDeck(uid, { id: b.id, name: String(b.name || '이름 없는 덱').slice(0, 30), list, ok: chk.ok }), check: chk });
     }
@@ -276,7 +276,7 @@ export class Game extends DurableObject {
     const out = [];
     const push = (e, k, step) => {
       if (e.quiet && seat !== e.ownBy && !over) return;
-      out.push({ k, txt: e.pub, own: (over || seat === e.ownBy) ? e.own || null : null, chat: !!e.chat, gid: step?.gid || null, rw: !!step?.rewound, who: k >= 0 ? G.log[k]?.who : null, t: k >= 0 ? G.log[k]?.t : null, turn: !!e.turn });
+      out.push({ k, txt: e.chat ? e.pub : fixJosa(e.pub), own: (over || seat === e.ownBy) ? fixJosa(e.own) || null : null, chat: !!e.chat, gid: step?.gid || null, rw: !!step?.rewound, who: k >= 0 ? G.log[k]?.who : null, t: k >= 0 ? G.log[k]?.t : null, turn: !!e.turn });
     };
     if (from === 0) for (const e of G.ev0) push(e, -1);
     G.steps.forEach((st, k) => { if (k >= from) for (const e of st.ev) push(e, k, st); });
@@ -292,7 +292,19 @@ export class Game extends DurableObject {
     const last = G.log.length ? G.log[G.log.length - 1].t : this.meta('created');
     return last + G.init.cfg.deadlineH * 3600e3;
   }
+  // 판을 만들 때 저장한 카드 정보의 한글 칸(이름·그림·글)을 지금 카드 자료로 맞춤. 기록 줄 이름이 영어로 남지 않게 (한 번 맞추면 저장)
+  async fresh() {
+    if (this.kfresh) return; this.kfresh = true;
+    try {
+      const init = this.meta('init'); if (!init) return;
+      const idx = await cardIndex(this.env, { url: 'https://assets.local/' }); let ch = false;
+      for (const id in init.cards) { const c = init.cards[id], cur = idx.byId[id]; if (!c || !cur) continue;
+        for (const f of ['kn', 'kimg', 'kab', 'kat', 'kr', 'kra', 'ksa', 'kset', 'kno']) if (cur[f] !== undefined && JSON.stringify(cur[f]) !== JSON.stringify(c[f])) { c[f] = cur[f]; ch = true; } }
+      if (ch) { this.setMeta('init', init); this.cache = null; }
+    } catch (e) { console.log('fresh cards', e); }
+  }
   async fetch(req) {
+    await this.fresh();
     const G = this.load(); if (!G) return new Response('없는 판', { status: 404 });
     const uid = req.headers.get('x-uid'), name = decodeURIComponent(req.headers.get('x-name') || '');
     const seat = this.seatOf(G, uid);
@@ -308,6 +320,7 @@ export class Game extends DurableObject {
   broadcastSpecs() { const sp = this.spectators(); for (const w of this.ctx.getWebSockets()) try { w.send(JSON.stringify({ t: 'specs', specs: sp })); } catch {} }
   async webSocketMessage(ws, msg) {
     const at = ws.deserializeAttachment(); let m; try { m = JSON.parse(msg); } catch { return; }
+    await this.fresh();
     const G = this.load();
     if (m.t === 'ping') return ws.send('{"t":"pong"}');
     if (m.t === 'specChat' && at.seat == null) { // 관전자 채팅 (판에는 영향 없음)
@@ -365,7 +378,8 @@ export class Game extends DurableObject {
     this.push(G, false, G.log.length - 1); await this.report(G);
   }
   // 기보: k번째 행동까지의 장면 (진행 중이면 내 시점/관전 시점, 끝났으면 전체 공개)
-  history(uid, k) {
+  async history(uid, k) {
+    await this.fresh();
     const G = this.load(); if (!G) return { error: '판을 찾을 수 없어요.' };
     const seat = this.seatOf(G, uid), over = G.s.phase === 'over';
     if (seat == null && G.init.cfg.spectate === 'no' && !over) return { error: '관전이 꺼진 판이에요.' };

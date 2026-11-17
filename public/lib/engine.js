@@ -28,6 +28,23 @@ const coin = s => rnd(s) < 0.5; // true = 앞면
 // ---------- 카드 정보 ----------
 export const TYPE_KO = { Grass: '풀', Fire: '불꽃', Water: '물', Lightning: '번개', Psychic: '초', Fighting: '격투', Darkness: '악', Metal: '강철', Dragon: '드래곤', Colorless: '무색', Fairy: '페어리' };
 export const COND_KO = { asleep: '잠듦', confused: '혼란', paralyzed: '마비', poisoned: '독', burned: '화상' };
+// 조사 맞추기: '피카츄을(를)' → '피카츄를', '드래런치(으)로' → '드래런치로'. 앞 낱말의 끝소리(받침 없음 0, 있음 1, ㄹ 8)로 고름
+const endSound = str => {
+  const t = String(str).replace(/[\s」』)\]>"'’”.,!?·~…-]+$/u, ''), ch = t.slice(-1); if (!ch) return 0;
+  const c = ch.charCodeAt(0);
+  if (c >= 0xAC00 && c <= 0xD7A3) { const j = (c - 0xAC00) % 28; return j === 0 ? 0 : j === 8 ? 8 : 1; }
+  if (/[0-9]/.test(ch)) return { 0: 1, 1: 8, 3: 1, 6: 1, 7: 8, 8: 8 }[ch] || 0; // 영·일·삼·육·칠·팔 (10, 100 → 십·백)
+  if (/ex$/i.test(t)) return 0; // 엑스
+  if (/(^|[^A-Za-z])[A-Z]{1,4}$/.test(t)) return { L: 8, M: 1, N: 1, R: 8 }[ch] || 0; // 글자 이름으로 읽음 (엘·엠·엔·알)
+  if (/(ng|[mn])$/i.test(t)) return 1;
+  if (/l$/i.test(t)) return 8;
+  return 0;
+};
+const KJ = { '을(를)': ['을', '를'], '이(가)': ['이', '가'], '은(는)': ['은', '는'], '과(와)': ['과', '와'], '와(과)': ['과', '와'], '(으)로': ['으로', '로'] };
+export function fixJosa(str) {
+  if (typeof str !== 'string' || !str.includes('(')) return str;
+  return str.replace(/을\(를\)|이\(가\)|은\(는\)|과\(와\)|와\(과\)|\(으\)로/g, (m, off) => { const e = endSound(str.slice(0, off)), [a, b] = KJ[m]; return m === '(으)로' ? (e && e !== 8 ? a : b) : (e ? a : b); });
+}
 const info = (s, iid) => s.cards[s.inst[iid]] || { n: '?', st: '?' };
 const nm = (s, iid) => {
   const c = info(s, iid);
@@ -127,7 +144,7 @@ function visibleTo(s, iid, who) {
 }
 
 // ---------- 확인 요청(프롬프트) ----------
-function addPrompt(s, pr) { pr.id = 'q' + (s.nextId++); s.prompts.push(pr); return pr; }
+function addPrompt(s, pr) { pr.id = 'q' + (s.nextId++); pr.text = fixJosa(pr.text); s.prompts.push(pr); return pr; }
 function checkKO(s) {
   for (const p of [0, 1]) for (const slot of allSlots(s.p[p])) {
     const hp = top(s, slot).hp || 0;
@@ -185,7 +202,7 @@ export function apply(s, who, a, idx = 0) {
   };
   const finishWarns = (title) => {
     if (!warns.length) return null;
-    if (!a.force) return { ok: false, warn: warns, ev: [] };
+    if (!a.force) return { ok: false, warn: warns.map(fixJosa), ev: [] };
     judged('규칙 예외: ' + title);
     const g = groupOf(s, gid); g.note = (g.note ? g.note + ' / ' : '') + warns.join(' / ') + (a.note ? ' — ' + a.note : '');
     say(`⚑ ${me}: 경고를 넘기고 진행 (${warns.join(', ')})${a.note ? ' — ' + a.note : ''}`);

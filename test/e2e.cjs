@@ -28,14 +28,16 @@ const OUT = __dirname + '/out/';
   const A = await mk('링크'), B = await mk('친구', 1280, 900);
   for (const p of [A, B]) {
     await p.goto(BASE + '/#decks'); await p.waitForSelector('#nd'); await p.click('#nd');
-    await p.fill('#paste', DECK); await p.click('#imp');
+    await p.click('#imp'); await p.fill('#paste', DECK); await p.click('#go');
     await p.waitForSelector('#chk .chip.ok');
+    await p.click('#add'); await p.waitForSelector('#q');
     await p.fill('#q', 'ㅍㅋㅊ'); await p.waitForTimeout(200);
-    const found = await p.$$eval('#res .c', els => els.map(e => e.textContent).join('|'));
+    const found = await p.$$eval('#res .dkc .cnm', els => els.map(e => e.textContent).join('|'));
     if (!/피카츄/.test(found)) errs.push('초성 검색 실패: ' + found.slice(0, 80));
     await p.fill('#q', 'vlzkcb'); await p.waitForTimeout(200);
-    const f2 = await p.$$eval('#res .c', els => els.length);
+    const f2 = await p.$$eval('#res .dkc', els => els.length);
     if (!f2) errs.push('영문 자판 검색 실패');
+    await p.click('.sheet [data-close]'); await p.waitForTimeout(150);
     await p.click('#save'); await p.waitForSelector('#nd');
   }
   await A.goto(BASE + '/#lobby'); await A.waitForSelector('[data-tab=new]'); await A.click('[data-tab=new]');
@@ -54,7 +56,7 @@ const OUT = __dirname + '/out/';
       const hands = await p.$$('[data-hand]');
       let placed = false;
       for (const h of hands) {
-        await h.click(); await p.waitForSelector('.sheet .in');
+        await h.click({ position: { x: 8, y: 12 } }); await p.waitForSelector('.sheet .in');
         const bt = await p.$('.sheet .acts button');
         if (bt && /배틀|벤치/.test(await bt.textContent())) { const btns = await p.$$('.sheet .acts button'); await btns[tries === 0 ? 0 : 1].click(); placed = true; await p.waitForTimeout(250); break; }
         await p.click('.sheet [data-close]'); await p.waitForTimeout(80);
@@ -73,8 +75,8 @@ const OUT = __dirname + '/out/';
   const energies = async () => { const out = []; for (const h of await cur.$$('[data-hand]')) { if (/Energy|에너지/.test(await h.innerHTML())) out.push(h); } return out; };
   let en = await energies();
   if (en.length >= 2) {
-    await en[0].click(); await cur.click('.sheet .acts button.primary'); await cur.click('.sheet .acts button'); await cur.waitForTimeout(300);
-    en = await energies(); await en[0].click(); await cur.click('.sheet .acts button.primary'); await cur.click('.sheet .acts button'); await cur.waitForTimeout(300);
+    await en[0].click({ position: { x: 8, y: 12 } }); await cur.click('.sheet .acts button.primary'); await cur.click('.sheet .acts button'); await cur.waitForTimeout(300);
+    en = await energies(); await en[0].click({ position: { x: 8, y: 12 } }); await cur.click('.sheet .acts button.primary'); await cur.click('.sheet .acts button'); await cur.waitForTimeout(300);
     const w = await cur.textContent('.sheet .in'); if (!/이미 에너지/.test(w)) errs.push('에너지 2번째 경고 없음: ' + w.slice(0, 60));
     await cur.fill('.sheet input[name=note]', '시험: 특성 효과'); await cur.click('.sheet [data-ok]'); await cur.waitForTimeout(400);
     await oth.waitForSelector('.grp [data-dispute]');
