@@ -396,7 +396,7 @@ body.mat-custom.mat-light, .mt-img.mt-light { --m-veil: rgba(255, 255, 255, .2);
 .seg .opt { flex-direction: row; justify-content: flex-start; padding: 8px 14px; text-align: left; min-height: 46px; }
 .snd { display: grid; gap: 12px; }
 .snd .r { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.snd .r .nm { font-family: var(--fh); color: var(--head); min-width: 70px; }
+.snd .r .nm { font-family: var(--fh); color: var(--head); min-width: 6em; } /* 소리·폰 화면의 단추가 같은 세로줄에 */
 .snd input[type=range] { flex: 1 1 140px; min-width: 120px; -webkit-appearance: none; appearance: none; height: 10px; padding: 0; border: 0; border-radius: 999px; box-shadow: inset 0 1px 2px rgba(0,0,0,.08); background: linear-gradient(90deg, var(--r1), var(--r2)) 0 0 / var(--v, 50%) 100% no-repeat, #e3edf5; cursor: pointer; }
 .snd input[type=range]:focus { box-shadow: 0 0 0 4px color-mix(in srgb, var(--r2) 18%, transparent); }
 .snd input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle, #fff 0 17%, var(--band) 18% 30%, transparent 31%), linear-gradient(#fff 0 45%, var(--band) 45% 55%, #fff 55%); box-shadow: inset 0 0 0 2.5px var(--r2), 0 2px 5px rgba(0,0,0,.2); }
@@ -946,3 +946,22 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 @media (max-width: 420px) { body.in-game .brand .bt { display: none; } }
 @media (max-width: 340px) { .brand .bt { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---------- 폰 화면: 홈 화면에 추가 안내 ---------- */
+.a2hs { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 8px 8px 10px; border-radius: 20px; background: linear-gradient(90deg, #e2f8f2, #e3f2fc) padding-box, linear-gradient(135deg, var(--r1), var(--r2)) border-box; border: 2px solid transparent; }
+.a2hs .ring { width: 40px; height: 40px; }
+.a2t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; word-break: keep-all; }
+.a2t b { font-family: var(--fh); font-weight: 400; color: var(--head); font-size: 1rem; }
+.a2t span { font-size: .8rem; color: var(--muted); }
+.a2hs .primary { flex: none; white-space: nowrap; }
+.a2hs .ib { flex: none; }
+.a2steps { list-style: none; counter-reset: a2; padding: 0; margin: 12px 0; display: grid; gap: 8px; word-break: keep-all; }
+.a2steps li { counter-increment: a2; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 16px; background: #f1f7fb; border: 1.5px solid #dce8f1; line-height: 1.45; }
+.a2steps li::before { content: counter(a2); flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-family: var(--fh); font-size: .95rem; color: #fff; background: linear-gradient(135deg, var(--r1), var(--r2)); }
+.a2steps .a2ic { flex: none; width: 34px; height: 34px; border-radius: 11px; background: #fff; box-shadow: 0 1px 3px rgba(40, 90, 140, .16); display: grid; place-items: center; color: var(--r2); font-style: normal; overflow: hidden; }
+.a2steps .a2ic .ic { width: 22px; height: 22px; }
+.a2steps .a2ic img { width: 100%; height: 100%; display: block; }
+.a2steps .a2dots { font-family: var(--fb, inherit); font-size: 1.3rem; line-height: 1; color: var(--r2); }
+.a2steps b { font-family: var(--fh); font-weight: 400; color: var(--head); }
+@media (max-width: 380px) { .a2hs .ring { display: none; } .a2hs { padding-left: 12px; } }
+@media (max-width: 300px) { .a2hs .primary .ic { display: none; } }

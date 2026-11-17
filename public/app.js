@@ -50,6 +50,10 @@ const ICON = {
   info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>'),
   down: svg('<path d="M6 9l6 6 6-6"/>'),
   chat: svg('<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/>'),
+  expand: svg('<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>'),
+  shrink: svg('<path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>'),
+  share: svg('<path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M8.5 10.5H6v10h12v-10h-2.5"/>'),
+  homeAdd: svg('<rect x="6" y="2.8" width="12" height="18.4" rx="2.6"/><path d="M12 8.5v6M9 11.5h6"/>'),
 };
 const ringIcon = (ic, k = '', ping = false) => `<span class="ring ${k} ${ping ? 'ping' : ''}"><i>${ICON[ic]}</i></span>`;
 
@@ -238,6 +242,7 @@ async function route() {
   const h = location.hash || '#lobby';
   if (!ME && h !== '#login') { location.hash = '#login'; return; }
   const [base, arg] = h.split('/');
+  armFs(base);
   document.body.classList.toggle('nohdr', base === '#game' || base === '#replay'); // 맨 위 머리줄은 로비·덱 목록·설정에서만 (덱 고치기는 deckEditor에서 숨김)
   nav(base === '#me' ? '#settings' : base);
   Sound.music(base === '#game' ? 'battle' : 'lobby');
@@ -251,6 +256,60 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 const go = h => { if (location.hash === h) route(); else location.hash = h; };
+
+// ---------- 폰에서 주소창 줄이기: 홈 화면에 추가(앱처럼 열림), 안드로이드는 대전판에서 전체 화면 ----------
+// 브라우저는 사람이 누르기 전에는 전체 화면을 막아 두고, 아이폰 사파리는 웹페이지 전체 화면을 아예 막아 둠 → 아이폰은 홈 화면에 추가를 안내
+const UA = navigator.userAgent;
+const IS_IOS = /iPhone|iPod|iPad/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+const IS_KAKAO = /KAKAOTALK/i.test(UA), IS_SAMSUNG = /SamsungBrowser/i.test(UA);
+const isPhone = () => matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 820;
+const isApp = () => navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: minimal-ui)').matches || (matchMedia('(display-mode: fullscreen)').matches && !document.fullscreenElement); // 전체 화면 버튼으로 바꾼 것은 앱이 아님
+const fsOk = () => !!(document.fullscreenEnabled && document.documentElement.requestFullscreen);
+const inFs = () => !!document.fullscreenElement;
+const fsAuto = () => pref('fsAuto', 'on') === 'on';
+let installEvt = null, fsArm = false;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; document.querySelectorAll('[data-a2hs]').forEach(b => b.innerHTML = `${ICON.homeAdd}설치하기`); });
+window.addEventListener('appinstalled', () => { installEvt = null; setPref('a2hs', 'done'); document.querySelector('.a2hs')?.remove(); });
+const fsEnter = () => document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+function toggleFs() { if (inFs()) document.exitFullscreen().catch(() => {}); else fsEnter().catch(() => toast('이 브라우저는 전체 화면을 허락하지 않아요. 홈 화면에 추가해 보세요.')); }
+// 대전판·기보에 들어온 뒤 처음 누를 때 전체 화면. 스스로 빠져나오면 다음에 판에 들어올 때까지 다시 바꾸지 않음
+function armFs(base) { fsArm = (base === '#game' || base === '#replay') && fsAuto() && fsOk() && isPhone() && !isApp() && !inFs(); }
+document.addEventListener('pointerup', () => { if (fsArm) { fsArm = false; if (!inFs()) fsEnter().catch(() => {}); } }, true);
+function a2hsBanner() {
+  if (!isPhone() || isApp() || pref('a2hs', '')) return '';
+  return `<div class="a2hs">${ringIcon('homeAdd', 'k-open')}<div class="a2t"><b>주소창 없이 크게 보기</b><span>홈 화면에 추가해 앱처럼 열기</span></div>
+    <button class="primary sm" data-a2hs>${ICON.homeAdd}${installEvt ? '설치하기' : '방법 보기'}</button><button class="sm ib" data-a2hs-x aria-label="안내 닫기">${ICON.x}</button></div>`;
+}
+function bindA2hs(root) {
+  root.querySelectorAll('[data-a2hs]').forEach(b => b.onclick = openA2hs);
+  root.querySelectorAll('[data-a2hs-x]').forEach(b => b.onclick = () => { setPref('a2hs', 'hide'); b.closest('.a2hs')?.remove(); toast('설정 → 폰 화면에서 언제든 다시 볼 수 있어요.'); });
+}
+async function openA2hs() {
+  if (installEvt) { // 안드로이드 크롬: 브라우저의 설치 창을 바로 띄움
+    const e = installEvt; installEvt = null; e.prompt();
+    const r = await e.userChoice.catch(() => null);
+    if (r && r.outcome === 'accepted') { setPref('a2hs', 'done'); document.querySelector('.a2hs')?.remove(); toast('홈 화면의 도란 대전 아이콘으로 열어 주세요.'); }
+    return;
+  }
+  const st = (ic, t) => `<li><i class="a2ic">${ic}</i><span>${t}</span></li>`, dots = '<b class="a2dots">⋮</b>';
+  const open3 = st(`<img src="/icons/icon-192.png" alt="">`, '홈 화면에 생긴 <b>도란 대전</b> 아이콘으로 열어요.');
+  const steps = IS_KAKAO ? [st(IS_IOS ? ICON.share : dots, `카카오톡 화면 ${IS_IOS ? '오른쪽 아래 <b>공유</b>' : '오른쪽 위 <b>⋮</b>'} 단추를 누르고 <b>다른 브라우저로 열기</b>를 골라요.`), st(ICON.homeAdd, '열린 브라우저에서 이 안내(설정 → 폰 화면)를 다시 열어 주세요.')]
+    : IS_IOS ? [st(ICON.share, '화면 아래쪽(아이패드는 위쪽) <b>공유</b> 단추를 눌러요.'), st(ICON.homeAdd, '목록을 내려 <b>홈 화면에 추가</b>를 누르고, 오른쪽 위 <b>추가</b>를 눌러요.'), open3]
+    : IS_SAMSUNG ? [st('<b class="a2dots">≡</b>', '화면 아래쪽 <b>≡</b> 메뉴를 눌러요.'), st(ICON.homeAdd, '<b>현재 페이지 추가</b> → <b>홈 화면</b>을 눌러요.'), open3]
+    : [st(dots, '화면 오른쪽 위 <b>⋮</b> 메뉴를 눌러요.'), st(ICON.homeAdd, '<b>홈 화면에 추가</b> 또는 <b>앱 설치</b>를 눌러요.'), open3];
+  openSheet(`<button class="x sm" data-close>닫기</button><h3>주소창 없이 크게 보기</h3>
+    <p class="muted small" style="margin-top:0">홈 화면에 추가하면 주소창 없이 앱처럼 열려요. ${IS_IOS ? '아이폰은 맨 위 시계 줄만 남아요.' : '안드로이드는 맨 위 시계 줄까지 숨겨져요.'}</p>
+    <ol class="a2steps">${steps.join('')}</ol>
+    <p class="small muted" style="margin:0">홈 화면에서 처음 열 때 입장 코드를 한 번 더 넣어야 할 수도 있어요.</p>`);
+}
+function screenHtml() { // 설정 → 폰 화면
+  const rows = [];
+  if (fsOk()) rows.push(`<div class="r"><span class="nm">전체 화면</span><button class="sw" data-fsauto aria-label="대전판에 들어가면 전체 화면으로"></button><button class="sm" data-fsnow>${inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}지금 전체 화면`}</button></div>`);
+  rows.push(`<div class="r"><span class="nm">홈 화면 추가</span>${isApp() ? '<span class="small muted">지금 앱으로 열려 있어요</span>' : `<button class="sm" data-a2hs>${ICON.homeAdd}${installEvt ? '설치하기' : '방법 보기'}</button>`}</div>`);
+  return `<section class="set"><h3>폰 화면</h3><div class="snd">${rows.join('')}
+    <p class="small muted" style="margin:0">홈 화면에 추가하면 주소창 없이 앱처럼 열려요.${fsOk() ? ' 전체 화면을 켜 두면 폰에서 대전판에 들어가 처음 누를 때 주소창이 사라져요(아이폰 사파리는 지원하지 않아요).' : ''} 이 설정은 이 기기에만 저장돼요.</p></div></section>`;
+}
+document.addEventListener('fullscreenchange', () => document.querySelectorAll('[data-fsnow]').forEach(b => b.innerHTML = inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}지금 전체 화면`));
 
 function renderLogin() {
   app.innerHTML = `<div class="card-box hero">
@@ -294,6 +353,7 @@ function settingsHtml(inSheet) {
       <div class="r"><span class="nm">효과음</span><button class="sw" data-sw="sfx" aria-label="효과음 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('sfxVol')}" style="--v:${vol('sfxVol')}%" data-vol="sfxVol" aria-label="효과음 크기"><button class="sm" data-try>${ICON.play}들어 보기</button></div>
       <div class="r"><span class="nm">배경음악</span><button class="sw" data-sw="bgm" aria-label="배경음악 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('bgmVol')}" style="--v:${vol('bgmVol')}%" data-vol="bgmVol" aria-label="배경음악 크기"></div>
       <p class="small muted" style="margin:0">효과음과 배경음악은 모두 이 사이트에서 직접 만든 소리예요. 소리 설정은 이 기기에만 저장돼요.</p></div></section>
+    ${screenHtml()}
     ${!inSheet && SK.admin ? `<section class="set admin"><h3>모임 기본값 <span class="chip k-admin">관리자</span></h3>
       <p class="small muted">처음 들어온 사람과 '모임 기본'을 고른 사람에게 보이는 모양이에요. 각자 다른 것을 고른 사람은 그대로예요.</p>
       ${admin('back', '카드 뒷면')}${admin('mat', '매트')}
@@ -350,6 +410,7 @@ function bindSettings(root, onArt, inSheet) {
   const mark = () => {
     root.querySelectorAll('[data-set]').forEach(b => { const on = b.dataset.v === curOf[b.dataset.set](); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
     root.querySelectorAll('[data-sw]').forEach(b => { const on = Sound.get(b.dataset.sw); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+    root.querySelectorAll('[data-fsauto]').forEach(b => { const on = fsAuto(); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
   };
   mark();
   // 사진 고르기 (숨긴 파일 칸 하나를 같이 씀)
@@ -392,6 +453,9 @@ function bindSettings(root, onArt, inSheet) {
     onArt && onArt(); refresh();
   });
   root.querySelectorAll('[data-sw]').forEach(b => b.onclick = () => { const k = b.dataset.sw; Sound.set(k, !Sound.get(k)); mark(); if (k === 'sfx') Sound.sfx('notify'); });
+  root.querySelectorAll('[data-fsauto]').forEach(b => b.onclick = () => { setPref('fsAuto', fsAuto() ? 'off' : 'on'); mark(); Sound.sfx('tap'); });
+  root.querySelectorAll('[data-fsnow]').forEach(b => b.onclick = toggleFs);
+  bindA2hs(root);
   root.querySelectorAll('[data-vol]').forEach(r => { r.oninput = () => { Sound.set(r.dataset.vol, r.value / 100); r.style.setProperty('--v', r.value + '%'); }; r.onchange = () => { if (r.dataset.vol === 'sfxVol') Sound.sfx('coin'); }; });
   const tr = root.querySelector('[data-try]');
   if (tr) tr.onclick = () => ['draw', 'place', 'attack', 'coin', 'turnMine'].forEach((n, i) => setTimeout(() => Sound.sfx(n), i * 450));
@@ -440,7 +504,7 @@ async function renderLobby() {
   };
   const lists = { mine, open, watch, done }, cur = lists[lobbyTab] || [];
   const emptyMsg = { mine: '진행 중인 대전이 없어요. 방을 만들거나 들어갈 방을 찾아보세요.', open: '들어갈 수 있는 방이 없어요. 직접 방을 만들어 보세요.', watch: '지금 관전할 대전이 없어요.', done: '끝난 판이 아직 없어요.' }[lobbyTab];
-  app.innerHTML = `<div class="lobh"><h2>대전</h2><button class="primary newroom" data-tab="new">${ICON.plus}방 만들기</button></div>
+  app.innerHTML = `<div class="lobh"><h2>대전</h2><button class="primary newroom" data-tab="new">${ICON.plus}방 만들기</button></div>${a2hsBanner()}
     <div class="ltabs" role="tablist">${tabs.map(([k, l, n]) => `<button class="ltab ${lobbyTab === k ? 'on' : ''}" role="tab" aria-selected="${lobbyTab === k}" data-tab="${k}">${l}<b>${n}</b>${k === 'mine' && myTurnN ? `<i class="dot" title="내 차례 ${myTurnN}"></i>` : ''}</button>`).join('')}</div>
     ${cur.length ? `<div class="rlist">${cur.map(roomCard).join('')}</div>` : `<div class="empty-note">${ringIcon('wait', 'k-wait')}<p>${emptyMsg}</p></div>`}`;
   app.querySelectorAll('.ltab[data-tab]').forEach(b => b.onclick = () => { lobbyTab = b.dataset.tab; try { localStorage.setItem('lobbyTab', lobbyTab); } catch {} renderLobby(); });
@@ -456,6 +520,7 @@ async function renderLobby() {
   });
   app.querySelectorAll('[data-next]').forEach(b => b.onclick = async () => { try { const r = await api(`/api/rooms/${b.dataset.next}/next`, {}); location.hash = '#game/' + r.room.games[r.room.games.length - 1]; } catch (e) { toast(e.message); } });
   app.querySelectorAll('[data-close-room]').forEach(b => b.onclick = async () => { await api(`/api/rooms/${b.dataset.closeRoom}/close`, {}); renderLobby(); });
+  bindA2hs(app);
   app.querySelector('.newroom').onclick = () => openSheet(newRoomForm(decks.decks), el => {
     const f = el.querySelector('#newroom'); if (!f) return;
     const syncDl = () => { const a = f.querySelector('input[name=mode]:checked')?.value === 'async'; f.querySelector('.dlrow').hidden = !a; };
@@ -1328,7 +1393,10 @@ function bindBoard() {
     if (t === 'coin') return openCoin();
     if (t === 'effect') { const f = await ask('효과 쓰기', '<p>지금부터 하는 카드 이동, 데미지 등이 이 효과 아래에 묶여 기록돼요.</p><label class="h">어떤 카드의 효과인가요?</label><input name="title" maxlength="40" style="width:100%" placeholder="예: 보스의 지령"><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '시작', 'judge'); if (f) send({ type: 'effect', title: f.title || '카드 효과', note: f.note }); return; }
     if (t === 'effectEnd') { const f = await ask('효과 끝', '<p>상대에게 "이렇게 처리했어요"로 보여요.</p><label class="h">한 줄 설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '끝내기', 'judge'); if (f) send({ type: 'effectEnd', note: f.note }); return; }
-    if (t === 'more') { const k = await pick('더 보기', [{ label: `${ICON.gear}설정`, value: 'set' }, { label: '항복하기', value: 'concede', cls: 'bad' }, { label: '로비로', value: 'lobby' }]); if (k === 'lobby') location.hash = '#lobby';
+    if (t === 'more') { const k = await pick('더 보기', [{ label: `${ICON.gear}설정`, value: 'set' },
+        ...(fsOk() ? [{ label: inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}전체 화면`, value: 'fs' }] : isApp() ? [] : [{ label: `${ICON.homeAdd}주소창 없이 보기`, value: 'a2hs' }]),
+        { label: '항복하기', value: 'concede', cls: 'bad' }, { label: '로비로', value: 'lobby' }]); if (k === 'lobby') location.hash = '#lobby';
+      if (k === 'fs') toggleFs(); if (k === 'a2hs') openA2hs();
       if (k === 'set') openSettings(() => draw([])); if (k === 'concede' && await ask('항복할까요?', '<p>이 판은 상대 승리로 끝나요.</p>', '항복', 'bad')) send({ type: 'concede' }); }
   });
 }
