@@ -151,6 +151,71 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 @keyframes zoomin { from { transform: scale(.6) rotate(-6deg); opacity: 0; } }
 .cardinfo .txt { flex: 1 1 220px; min-width: 0; }
 .cardinfo .atk { border-top: 2px dotted var(--line); padding-top: 6px; margin-top: 6px; }
+/* 카드 그림 칸: 합친 카드는 한글판 위에 같은 그림의 영문판을 그림 칸 높이만큼만 겹침 */
+.cpic { position: relative; display: block; }
+.cpic > img { width: 100%; display: block; }
+.pc img.band, .cpic > img.band { position: absolute; left: 0; top: 0; width: 100%; height: 100%; clip-path: inset(var(--bt) 0 var(--bb) 0); }
+.alt { display: block; font-family: var(--fb); font-size: .74rem; line-height: 1.35; color: var(--muted); font-weight: normal; }
+.cardinfo .big { display: flex; flex-direction: column; align-items: center; gap: 8px; box-shadow: none; }
+.cardinfo .big .cpic { width: 100%; border-radius: 14px; overflow: hidden; box-shadow: 0 14px 34px rgba(30, 60, 90, .35); }
+.cardinfo .big .cpic > img { border-radius: 0; }
+.cardinfo.only { justify-content: center; clear: both; } /* 닫기 단추(오른쪽에 뜸) 아래로 내려서 카드가 옆으로 밀려나지 않게 */
+.cardinfo.only .big { width: min(320px, 100%); }
+.cardinfo .zbtn svg { width: 17px; height: 17px; }
+.cardinfo .atk .alt { margin-top: -2px; }
+.ecost { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .3); vertical-align: -2px; }
+/* 크게 보기 */
+.zoomov { position: fixed; inset: 0; z-index: 130; background: rgba(16, 30, 44, .82); backdrop-filter: blur(4px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)); animation: fade .18s; }
+.zoomov .x { position: absolute; top: max(12px, env(safe-area-inset-top)); right: 12px; }
+.zoomov .zseg { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.zoomov .zseg button[aria-pressed="true"] { --c: var(--r2); --c2: var(--r1); color: var(--teal2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--r2) 30%, transparent); }
+.zoomov .zimg { flex: 0 1 auto; min-height: 0; display: flex; justify-content: center; max-width: 100%; }
+.zoomov .zimg .cpic { height: min(72vh, calc((100vw - 28px) * 88 / 63)); aspect-ratio: 63 / 88; border-radius: 18px; overflow: hidden; box-shadow: 0 20px 50px rgba(0, 0, 0, .45); animation: zoomin .3s cubic-bezier(.2, .9, .3, 1.2); }
+.zoomov .zimg .cpic > img { height: 100%; object-fit: cover; }
+.zoomov .zcap { margin: 0; max-width: 520px; text-align: center; color: #e9f2f8; font-size: .9rem; line-height: 1.5; }
+.zoomov .zcap b { display: block; font-family: var(--fh); font-weight: normal; font-size: 1.1rem; color: #ffe2a8; }
+/* 덱 만들기 목록: 크기, 밑 글자 숨기기 */
+.cardgrid .c .cpic > img { margin: 0; }
+.cardgrid.sz-s { grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 9px; }
+.cardgrid.sz-s .c { font-size: .72rem; }
+.cardgrid.sz-l { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px; }
+.cardgrid.noinfo .c .cnm, .cardgrid.noinfo .c .cno { display: none; }
+.cardgrid .c .cnm { overflow-wrap: anywhere; }
+/* 덱 리스트: 줄마다 그림(잘라서·작은 카드·없음) + 이름 + 장수 */
+.dlist { display: flex; flex-direction: column; gap: 6px; }
+.dlist .dgrp { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--fh); color: var(--head); padding: 6px 4px 2px; border-bottom: 2px dotted var(--line); }
+.dlist .dgrp:not(:first-child) { margin-top: 6px; }
+.dlist .drow { --c: #c6d6e3; --c2: #dce8f1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 50px; padding: 5px 12px 5px 6px; border-radius: 16px; border-width: 2px; text-align: left; justify-content: stretch; color: var(--text); font-size: .92rem; }
+.dlist.d-none .drow { grid-template-columns: minmax(0, 1fr) auto; padding-left: 14px; }
+.dlist .drow .art { position: relative; display: block; width: 64px; aspect-ratio: 82 / 53; overflow: hidden; border-radius: 9px; background: linear-gradient(135deg, #fff6d9, #ffe3a3); }
+.dlist .drow .art img { position: absolute; width: 122%; max-width: none; left: -11%; top: -29%; }
+.dlist .drow .cpic.sm { width: 38px; border-radius: 5px; overflow: hidden; box-shadow: 0 2px 5px rgba(30, 60, 90, .25); }
+.dlist .drow .dtx { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.dlist .drow .dnm { font-family: var(--fh); color: var(--head); overflow-wrap: anywhere; }
+.dlist .drow small { font-size: .74rem; }
+.dlist .drow .dct { font-family: var(--fh); font-size: 1.05rem; color: #e2661c; }
+/* 설정: 카드 표시 */
+.dgh { display: flex; align-items: center; gap: 7px; margin: 20px 0 10px; padding-bottom: 5px; border-bottom: 2px dotted var(--line); font-family: var(--fh); font-size: 1.05rem; color: var(--head); }
+.dgh::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--r1); box-shadow: 0 0 0 2.5px #fff, 0 0 0 4px var(--r2); }
+.dopts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
+.dopts.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@container (max-width: 900px) { .dopts.n3 { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 620px) { .dopts { grid-template-columns: minmax(0, 1fr); } }
+.dopt { display: flex; flex-direction: column; min-width: 0; }
+.dopt h5 { margin: 0 0 2px; font-family: var(--fh); font-weight: normal; font-size: .98rem; color: var(--head); }
+.dopt p { margin: 0 0 7px; flex: 1; }
+.dopt .seg2 { margin-top: auto; }
+.seg2 { display: grid; gap: 6px; }
+.seg2.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .seg2.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.seg2 button { white-space: normal; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.25; text-align: center; padding: 4px 8px; height: 100%; border-radius: 18px; }
+@container (max-width: 300px) { .seg2 button { font-size: .84rem; padding: 4px 5px; } }
+.seg2 button.on { --c: var(--r2); --c2: var(--r1); color: var(--teal2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--r2) 18%, transparent), 0 4px 10px rgba(40, 90, 140, .14); }
+.seg.dpre { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.seg.dpre .wide { grid-column: 1 / -1; }
+.seg.dpre .opt { align-items: flex-start; }
+@container (max-width: 760px) { .seg.dpre { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 300px) { .seg.dpre { grid-template-columns: minmax(0, 1fr); } }
+.set.disp h3 .chip { vertical-align: 2px; margin-left: 4px; }
 
 /* 입장 화면 */
 .hero { max-width: 440px; margin: 28px auto; text-align: left; }
@@ -181,7 +246,7 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 .opt.opt.on::after { content: '✓'; position: absolute; top: -8px; right: -8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: .9rem; color: #fff; background: linear-gradient(135deg, var(--r1), var(--r2)); box-shadow: 0 0 0 2.5px #fff, 0 2px 6px rgba(0,0,0,.2); animation: none; border: 0; left: auto; bottom: auto; opacity: 1; transform: none; }
 .opt .pc { --cw: 60px; max-width: 100%; }
 /* 꾸미기 칸 수: 내 것 9칸(모임 기본+7종+내 사진), 관리자 8칸(7종+모임 사진). 칸 너비는 설정 상자 폭으로 정함 */
-.setwrap { container-type: inline-size; }
+.setwrap { container-type: inline-size; word-break: keep-all; overflow-wrap: anywhere; }
 .opts.n9 { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px; }
 .opts.n8 { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; }
 @container (max-width: 760px) { .opts.n9 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; } .opts.n8 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -447,6 +512,12 @@ body.mat-night .hlf svg, body.mat-dark .hlf svg { filter: drop-shadow(0 0 .6px r
 @keyframes hlbreathe { 0%, 100% { transform: translate(3px, 3px); } 50% { transform: translate(1.6px, 1.6px); } }
 @keyframes hlsweep { from { transform: translateX(0); } to { transform: translateX(var(--dist)); } }
 .hlf .hd { stroke-dasharray: 1 1; animation: hldraw .85s cubic-bezier(.5, .05, .25, 1) both; }
+/* 사람 판정 구름 말풍선: 에어브러시라 바깥 그림자는 더 옅게, 통 하고 나타남. 점 세 개는 입력 중 표시처럼 차례로 통통 */
+.hlf.soft { animation: hlpop .5s cubic-bezier(.2, .9, .3, 1.35) both; }
+.hlf.soft svg { filter: drop-shadow(0 0 .5px rgba(6, 34, 46, .55)); }
+body.mat-night .hlf.soft svg, body.mat-dark .hlf.soft svg { filter: drop-shadow(0 0 1.2px rgba(170, 220, 255, .55)); }
+.hlf .hdot { transform-box: fill-box; transform-origin: center; animation: hldot 1.5s ease-in-out infinite; }
+@keyframes hldot { 0%, 55%, 100% { transform: translateY(0); opacity: .45; } 25% { transform: translateY(-2px); opacity: 1; } }
 @keyframes hlin { from { opacity: 0; transform: scale(1.08); } to { opacity: 1; transform: none; } }
 @keyframes hldraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 .arena.rwmode .pc.inhand.rwlift { transform: translateY(calc(var(--cw) * .42)); z-index: 10; }

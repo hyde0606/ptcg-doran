@@ -1,5 +1,5 @@
 # 영문 기준 public/cards.json 에 한글 카드 자료를 덧붙이고, 영문에 없는 한국판 카드는 새 카드로 넣는다. (원본 자료는 읽기만 한다)
-#   python tools/build-cards-kr.py <cards_kr.json> --en card-src/cards_en.json --hash card-src/art_hash.json [--match card-src/kr_match.json] [--korea-only] [--out public/cards.json] [-v]
+#   python tools/build-cards-kr.py <cards_kr.json> --en card-src/cards_en.json --hash card-src/art_hash.json [--match card-src/kr_match.json] [--korea-only] [--same-art 40] [--out public/cards.json] [-v]
 # - --korea-only  : (선택) 한글 짝이 없는 영문 카드(한국 미발매 카드)를 결과에서 뺀다. 다시 넣으려면 build-cards.py 부터 다시 돌린다.
 # - cards_kr.json : 한글 카드 자료 (pokemoncard.co.kr 기준)
 # - --en          : (선택) 영문 원본. 그림 작가·레어도로 같은 그림의 한글판을 고르는 데 쓴다.
@@ -7,7 +7,7 @@
 # - --match       : (선택) 손으로 정한 짝 {"영문 id": "한글 code"}. 자동 짝짓기보다 먼저 쓴다. "_" 로 시작하는 키는 메모.
 #                   한글 code 는 레귤레이션과 상관없이 찾는다(G 마크뿐인 한글판도 쓸 수 있음).
 #                   "fix:<한글 code>": {"hp": 70} 처럼 적으면 한글 원본에 빠진 칸을 채운다.
-# 덧붙이는 칸: kn, kimg, kab, kat, kr, kset, kno  (n 등 기존 칸은 그대로 둔다)
+# 덧붙이는 칸: kn, kimg, kab, kat, kr, kset, kno, kra(한글판 레어도), ksa(영문판과 그림이 같으면 1)  (n 등 기존 칸은 그대로 둔다)
 # 새로 넣는 한국판 카드: id 는 "kr-<한글 code>", kro=1, 이름·기술·문장은 한글 그대로
 import json, sys, re, collections
 sys.stdout.reconfigure(encoding='utf-8')
@@ -22,6 +22,7 @@ if VERBOSE: args.remove('-v')
 KOREA_ONLY = '--korea-only' in args  # 한글 짝이 없는 영문 카드(한국 미발매)는 빼고 쓴다
 if KOREA_ONLY: args.remove('--korea-only')
 EN_SRC, HASH_SRC, MATCH_SRC, OUT = opt('--en'), opt('--hash'), opt('--match'), opt('--out', 'public/cards.json')
+SAME_ART = int(opt('--same-art', '40'))  # 영문판과 한글판 그림 지문 차이가 이 값 이하면 같은 그림(ksa=1): 크게 보기 영문판·합친 카드에 씀
 KR_SRC = args[0]
 
 TY = {'풀': 'Grass', '불꽃': 'Fire', '물': 'Water', '번개': 'Lightning', '초': 'Psychic', '격투': 'Fighting',
@@ -36,7 +37,7 @@ GROUP = {'Supporter': 'Supporter', 'Item': 'ItemTool', 'Pokémon Tool': 'ItemToo
 # 영문 "누구의" 포켓몬 → 한글 이름 앞부분 (없거나 틀려도 "…의 ○○" 꼴로 다시 찾는다)
 OWNER_KO = {'Team Rocket': '로켓단', 'Misty': '이슬', 'Iono': '모야모', 'N': 'N', 'Lillie': '릴리에', 'Hop': '호브',
             'Arven': '페퍼', 'Larry': '청목', 'Cynthia': '난천', 'Erika': '민화', 'Marnie': '마리', 'Steven': '성호', 'Brock': '웅'}
-KFIELDS = ('kn', 'kimg', 'kab', 'kat', 'kr', 'kset', 'kno')
+KFIELDS = ('kn', 'kimg', 'kab', 'kat', 'kr', 'kset', 'kno', 'kra', 'ksa')
 HASH_OK, HASH_MARGIN = 70, 12        # 트레이너스: 1등이 이 값 이하로 다르고, 이름이 다른 2등보다 이만큼 가까우면 표를 준다
 HASH_OK2, HASH_MARGIN2 = 80, 15      # 위 기준으로 표가 하나도 없는 이름만, 조금 느슨하게
 
@@ -189,6 +190,7 @@ def overlay(c, k):
     rules = kr_rules(k, c['st'] == 'P')
     if rules: c['kr'] = rules
     c['kset'] = k.get('set_code'); c['kno'] = k.get('number')
+    if k.get('rarity'): c['kra'] = k['rarity']
 
 def ident(k):
     """같은 카드(다른 판 포함)를 가리키는 열쇠."""
@@ -196,7 +198,7 @@ def ident(k):
     if is_pk(k): return ('P', sp(k['name']), pk_key_kr(k))
     return ('T', kr_kind(k), sp(k['name']))
 
-stat = collections.Counter(); far = 0; how = collections.Counter(); covered = set()
+stat = collections.Counter(); far = 0; how = collections.Counter(); covered = set(); hist = collections.Counter()
 for c in cards:
     k = by_code.get(MANUAL.get(c['id']))
     if k: how['manual'] += 1
@@ -216,7 +218,10 @@ for c in cards:
         if pool: k = pick(c['id'], pool)
     if k:
         overlay(c, k); stat[c['st']] += 1; covered.add(ident(k))
-        if hd(c['id'], k['code']) > HASH_OK: far += 1
+        d = hd(c['id'], k['code'])
+        if d > HASH_OK: far += 1
+        if d <= SAME_ART: c['ksa'] = 1
+        if d < 999: hist[min(d // 10 * 10, 150)] += 1
     else:
         for f in KFIELDS: c.pop(f, None)
 
@@ -245,7 +250,7 @@ def kr_card(k):
     name = (k.get('name') or '').strip()
     c = {'id': 'kr-' + k['code'], 'kro': 1, 'n': name, 'kn': name, 'st': st, 'sub': kr_sub(k),
          'set': k.get('set_code'), 'no': k.get('number'), 'rm': k.get('regulation_mark'),
-         'kimg': k.get('image_url'), 'kset': k.get('set_code'), 'kno': k.get('number')}
+         'kimg': k.get('image_url'), 'kset': k.get('set_code'), 'kno': k.get('number'), 'kra': k.get('rarity')}
     if kr_basic_energy(k):
         c['n'] = 'Basic ' + TY.get(BASIC_E.fullmatch(name).group(1), 'Colorless') + ' Energy'  # 판에서 에너지 타입을 이 이름으로 읽는다
     if pokemon:
@@ -279,12 +284,13 @@ print(json.dumps({
     'en_total': len(cards), 'matched': sum(stat.values()), 'dropped_no_kr': len(dropped),
     'by_type': {t: f"{stat[t]}/{tot[t]}" for t in 'PTE'},
     'matched_by': dict(how), 'manual_pairs': len(MANUAL),
-    'picked_print_art_differs': far,
+    'picked_print_art_differs': far, 'same_art': sum(1 for c in cards if c.get('ksa')),
     'kr_std_cards': len(kr), 'kr_kinds': kr_kinds, 'kr_kinds_linked': kr_kinds - len(groups),
     'kr_only_added': len(added), 'kr_only_no_hp': [c['id'] for c in added if c['st'] == 'P' and not c.get('hp')], 'kr_only_by_type': dict(collections.Counter(c['st'] for c in added)),
     'trainer_names_translated': len(trans),
 }, ensure_ascii=False))
 if VERBOSE:
+    print('art hash distance (EN vs picked KR, by 10):', ' '.join(f'{d}:{hist[d]}' for d in sorted(hist)))
     print('KR only added:', ' / '.join(f"{c['kn']} {c.get('kset')} {c.get('kno')}" for c in added))
     print('EN unmatched:', ' / '.join(sorted({f"{c['n']} ({c['id']})" for c in cards if not c.get('kn')})))
     print('trans:', ' / '.join(f'{k[1]}={v}' for k, v in sorted(trans.items(), key=lambda x: x[0][1])))

@@ -36,8 +36,10 @@ function pick(o, rules) { // 허용된 값만 남김
   for (const [k, ok] of Object.entries(rules)) if (o[k] != null && ok.includes(o[k])) out[k] = o[k];
   return out;
 }
-const PREF_RULES = { back: [...BACK_KEYS, 'group', 'mine'], mat: [...MAT_KEYS, 'group', 'mine'], art: [...ART_KEYS, 'group'] };
-const GROUP_RULES = { back: [...BACK_KEYS, 'custom'], mat: [...MAT_KEYS, 'custom'], art: ART_KEYS };
+// 카드 표시: 그림(한글판/합친 카드/영문판), 글자, 상세 화면, 크게 보기 첫 화면, 목록 카드 밑 글자, 목록 카드 크기, 덱 화면 그림
+const DISP_RULES = { dimg: ['kr', 'mix', 'en'], dtext: ['ko', 'en', 'both'], ddet: ['text', 'card'], dzoom: ['en', 'mix', 'kr'], dinfo: ['show', 'hide'], dsize: ['s', 'm', 'l'], ddeck: ['art', 'card', 'none'] };
+const PREF_RULES = { back: [...BACK_KEYS, 'group', 'mine'], mat: [...MAT_KEYS, 'group', 'mine'], art: [...ART_KEYS, 'group'], disp: ['group', 'mine'], ...DISP_RULES };
+const GROUP_RULES = { back: [...BACK_KEYS, 'custom'], mat: [...MAT_KEYS, 'custom'], art: ART_KEYS, ...DISP_RULES };
 async function meInfo(env, lobby, me) { return { user: me, admin: await isAdmin(env, lobby, me), ...(await lobby.skin(me.uid)) }; }
 
 let CARDS = null;

@@ -28,6 +28,7 @@ const ICON = {
   check: svg('<path d="M5 12.5 9.5 17 19 7"/>'),
   user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.5-6 8-6s7 1.5 8 6"/>'),
   play: svg('<path d="M8 5v14l11-7z"/>'),
+  zoom: svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
 };
 const ringIcon = (ic, k = '', ping = false) => `<span class="ring ${k} ${ping ? 'ping' : ''}"><i>${ICON[ic]}</i></span>`;
@@ -53,15 +54,40 @@ function effSkin(kind) { // 지금 내 화면에 보일 것
   if (p === 'group') return groupSkin(kind);
   return { preset: p };
 }
-let ART = 'mix';
+// 카드 표시 (각자 고르거나 '모임 기본' 따르기). D = 지금 내 화면에 쓰는 값
+const DISP_OPTS = [
+  { k: 'dimg', t: '카드 그림', d: '판·손패·목록에 작게 나오는 카드 그림이에요. 합친 카드는 그림 칸만 영문판이고 이름과 설명은 한글판이에요.', o: [['kr', '한글판'], ['mix', '합친 카드'], ['en', '영문판']] },
+  { k: 'dtext', t: '카드 글자', d: '카드 이름, 특성, 기술 설명을 어떤 말로 보여 줄지 골라요. 한국어 + 영어는 영어 이름을 작게 같이 보여 줘요.', o: [['ko', '한국어'], ['en', '영어'], ['both', '한국어 + 영어']] },
+  { k: 'ddet', t: '카드를 눌렀을 때', d: '설명 없이 카드만 크게 볼 수도 있어요.', o: [['text', '글자 + 작은 카드'], ['card', '카드만 크게']] },
+  { k: 'dzoom', t: '크게 보기 첫 화면', d: "'크게 보기'를 누르면 먼저 나오는 그림이에요. 영문판은 워터마크가 없어요. 열린 뒤에도 바꿀 수 있어요.", o: [['en', '영문판'], ['mix', '합친 카드'], ['kr', '한글판']] },
+  { k: 'dinfo', t: '목록 카드 밑 글자', d: '덱 만들기 목록에서 이름과 번호를 숨기면 카드만 보여요.', o: [['show', '보이기'], ['hide', '숨기기']] },
+  { k: 'dsize', t: '목록 카드 크기', d: '덱 만들기의 카드 찾기 목록이에요.', o: [['s', '작게'], ['m', '보통'], ['l', '크게']] },
+  { k: 'ddeck', t: '덱 리스트 그림', d: '덱 리스트 줄마다 붙는 그림이에요. 그림만 잘라서는 영문판 그림 부분이라 워터마크가 없어요.', o: [['art', '그림만 잘라서'], ['card', '작은 카드'], ['none', '그림 없이']] },
+];
+const DISP_DEF = { dimg: 'kr', dtext: 'ko', ddet: 'text', dzoom: 'en', dinfo: 'show', dsize: 'm', ddeck: 'art' };
+const DISP_PRESETS = [
+  ['rec', '추천', '글자는 한국어, 크게 볼 땐 워터마크 없는 영문판', {}],
+  ['cardonly', '카드만', '설명 없이 카드 그림만', { ddet: 'card', dinfo: 'hide', ddeck: 'card' }],
+  ['en', '영어로만', '카드 그림도 글자도 영문판', { dimg: 'en', dtext: 'en' }],
+  ['kr', '한글판만', '어디서든 한글판 그림', { dzoom: 'kr', ddeck: 'card' }],
+].map(([k, l, d, o]) => ({ k, l, d, v: { ...DISP_DEF, ...o } }));
+const sameDisp = (a, b) => DISP_OPTS.every(o => a[o.k] === b[o.k]);
+const validDisp = (o, src, base) => { const out = { ...base }; for (const x of DISP_OPTS) if (src && x.o.some(y => y[0] === src[x.k])) out[x.k] = src[x.k]; return out; };
+const groupDisp = () => validDisp(DISP_OPTS, SK.group, DISP_DEF);
+let D = { ...DISP_DEF };
+function applyDisp() {
+  const p = SK.prefs || {}, g = groupDisp();
+  if (p.disp === 'mine') D = validDisp(DISP_OPTS, p, g);
+  else if (!p.disp && (p.art === 'en' || p.art === 'kr')) D = { ...g, dimg: p.art, ...(p.art === 'kr' ? { dzoom: 'kr' } : {}) }; // 예전 '카드 그림' 설정
+  else D = g;
+}
 function applySkin() {
   const b = document.body;
   [...b.classList].filter(c => /^(back|mat)-/.test(c)).forEach(c => b.classList.remove(c));
   const bk = effSkin('back'), mt = effSkin('mat');
   if (bk.img) { b.classList.add('back-custom'); b.style.setProperty('--bk-img', imgUrl(bk.img)); } else b.classList.add('back-' + bk.preset);
   if (mt.img) { b.classList.add('mat-custom', mt.img.dark ? 'mat-dark' : 'mat-light'); b.style.setProperty('--mt-img', imgUrl(mt.img)); } else b.classList.add('mat-' + mt.preset);
-  const a = SK.prefs?.art || 'group';
-  ART = a === 'group' ? (SK.group?.art || SKIN_DEF.art) : a;
+  applyDisp();
 }
 function setSkin(info) { // /api/me 등에서 받은 꾸미기 정보 반영
   SK = { group: info.group || {}, prefs: info.prefs, imgs: info.imgs || {}, gimgs: info.gimgs || {}, admin: !!info.admin };
@@ -89,12 +115,32 @@ async function api(path, body, method) {
 }
 function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidden = false; Sound.sfx('notify'); clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
 async function loadCards() { if (!ALL) { ALL = await (await fetch('/cards.json')).json(); IDX = indexCards(ALL); } return ALL; }
-// 카드 그림: mix = 판·손패는 영문 그림(워터마크 없음) + 한글 이름표, 크게 볼 때 한글 그림 / en = 모두 영문 / kr = 모두 한글
-const ART_KINDS = [['mix', '판은 영문 그림, 크게 볼 때 한글 그림'], ['en', '모두 영문 그림'], ['kr', '모두 한글 그림']];
+// 카드 그림: kr = 한글판, en = 영문판(워터마크 없음), mix = 합친 카드(한글판 위에 그림 칸만 같은 그림의 영문판)
 const hires = u => u ? u.replace(/\.png$/, '_hires.png') : null;
-const cimg = c => c && (ART === 'kr' ? (c.kimg || c.img) : (c.img || c.kimg));
-const bigImg = c => !c ? null : ART === 'en' ? (hires(c.img) || c.kimg) : (c.kimg || hires(c.img));
-const cname = c => { if (!c) return '?'; if (c.kn) return c.kn; if (!c.ko) return c.n; let k = c.ko; if (/^Mega /.test(c.n)) k = '메가' + k; if (/ ex$/.test(c.n)) k += ' ex'; return k; };
+const canMix = c => !!(c && c.kimg && c.img && c.ksa); // 영문판과 한글판 그림이 같은 카드만
+function picMode(c, want) { // 고른 그림 → 실제로 보일 그림 (없으면 있는 쪽)
+  if (!c) return null;
+  if (want === 'mix' && canMix(c)) return 'mix';
+  if (want === 'en' && c.img) return 'en';
+  if (c.kimg) return 'kr';
+  return c.img ? 'en' : null;
+}
+const BAND = c => { // 합친 카드에서 영문판을 쓰는 세로 범위 (카드 높이 %, 위·아래)
+  if (c.st !== 'P') return [13.5, 54];
+  if (c.kra === 'AR') return [11.5, 50.5];
+  if ((c.sub || []).includes('ex') || /^(SAR|SR|UR|HR|MUR|SSR|BWR)$/.test(c.kra || '')) return [12, 50.5];
+  return [11.5, 47];
+};
+function picHtml(c, want, big = false) { // 카드 그림 <img> (합친 카드는 두 장 겹침). 감싸는 칸은 position: relative
+  const m = picMode(c, want); if (!m) return '';
+  const nm = esc(cname(c)), lazy = big ? '' : 'loading="lazy"';
+  const en = big ? hires(c.img) : c.img, fb = big ? ` onerror="if(!this.dataset.s){this.dataset.s=1;this.src='${c.img}'}"` : '';
+  if (m === 'mix') { const [t, b] = BAND(c); return `<img src="${c.kimg}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"><img class="band" src="${en}" alt="" referrerpolicy="no-referrer" ${lazy} draggable="false" style="--bt:${t}%;--bb:${100 - b}%"${fb}>`; }
+  return `<img src="${m === 'kr' ? c.kimg : en}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"${m === 'en' ? fb : ''}>`;
+}
+const cnameKo = c => { if (!c) return '?'; if (c.kn) return c.kn; if (!c.ko) return c.n; let k = c.ko; if (/^Mega /.test(c.n)) k = '메가' + k; if (/ ex$/.test(c.n)) k += ' ex'; return k; };
+const cname = c => !c ? '?' : D.dtext === 'en' && !c.kro ? c.n : cnameKo(c); // 화면에 쓰는 이름 (카드 글자 설정)
+const altName = c => D.dtext === 'both' && c && !c.kro && c.n !== cnameKo(c) ? c.n : ''; // '한국어 + 영어 이름'일 때 덧붙일 영문 이름
 
 // ---------- 선택 창 (뒤로 가기로 닫힘) ----------
 const sheetStack = [];
@@ -113,6 +159,7 @@ function closeSheet(fromPop) {
 }
 let backArmed = 0;
 window.addEventListener('popstate', () => {
+  if (ZOOM) { closeZoom(); return; }
   if (!$('#sheet').hidden) { closeSheet(true); return; }
 });
 function pick(title, options) { // options: [{label, value, cls}]
@@ -199,7 +246,7 @@ function settingsHtml(inSheet) {
       <div class="photo-row">${gi ? `<button class="sm" data-up="${kind}" data-scope="group">${ICON.plus}사진 바꾸기</button><button class="sm" data-del="${kind}" data-scope="group">사진 지우기</button>` : `<span class="small muted">'모임 사진' 칸을 누르면 사진을 올려 모두의 기본으로 쓸 수 있어요.</span>`}</div>`;
   };
   return `${mine('back', '카드 뒷면')}${mine('mat', '매트')}
-    <section class="set"><h3>카드 그림</h3><div class="seg"><button class="opt" data-set="art" data-v="group"><span>모임 기본 따르기<small class="sub">지금: ${esc((ART_KINDS.find(x => x[0] === (SK.group?.art || SKIN_DEF.art)) || ART_KINDS[0])[1])}</small></span></button>${ART_KINDS.map(([k, l]) => opt('art', k, l, '')).join('')}</div></section>
+    ${dispHtml(false)}
     <section class="set"><h3>소리</h3><div class="snd">
       <div class="r"><span class="nm">효과음</span><button class="sw" data-sw="sfx" aria-label="효과음 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('sfxVol')}" style="--v:${vol('sfxVol')}%" data-vol="sfxVol" aria-label="효과음 크기"><button class="sm" data-try>${ICON.play}들어 보기</button></div>
       <div class="r"><span class="nm">배경음악</span><button class="sw" data-sw="bgm" aria-label="배경음악 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('bgmVol')}" style="--v:${vol('bgmVol')}%" data-vol="bgmVol" aria-label="배경음악 크기"></div>
@@ -207,8 +254,20 @@ function settingsHtml(inSheet) {
     ${!inSheet && SK.admin ? `<section class="set admin"><h3>모임 기본값 <span class="chip k-admin">관리자</span></h3>
       <p class="small muted">처음 들어온 사람과 '모임 기본'을 고른 사람에게 보이는 모양이에요. 각자 다른 것을 고른 사람은 그대로예요.</p>
       ${admin('back', '카드 뒷면')}${admin('mat', '매트')}
-      <h4>카드 그림</h4><div class="seg">${ART_KINDS.map(([k, l]) => opt('g-art', k, l, '')).join('')}</div></section>` : ''}
+      ${dispHtml(true)}</section>` : ''}
     ${inSheet ? '' : `<section class="set"><h3>내 정보</h3><div class="row"><span class="grow">${esc(ME.name)} 님으로 들어와 있어요.</span><button id="lo">로그아웃</button></div></section>`}`;
+}
+// 카드 표시: 빠른 설정(모임 기본·추천·카드만·영어로만·한글판만) + 항목별로 고르기. admin = 모임 기본값 고르기
+function dispHtml(admin) {
+  const cur = admin ? groupDisp() : D, g = groupDisp(), mineOn = !admin && SK.prefs?.disp === 'mine';
+  const pre = DISP_PRESETS.find(x => sameDisp(x.v, cur));
+  const nowName = !admin && !mineOn && SK.prefs?.disp !== 'mine' ? '모임 기본' : pre ? pre.l : '직접 고름';
+  const rows = [...(admin ? [] : [{ k: 'group', l: '모임 기본 따르기', d: `관리자가 정한 모양이에요. 지금: ${(DISP_PRESETS.find(x => sameDisp(x.v, g)) || { l: '직접 고른 조합' }).l}` }]), ...DISP_PRESETS];
+  const on = r => admin ? pre && pre.k === r.k : r.k === 'group' ? !mineOn : mineOn && pre && pre.k === r.k;
+  return `${admin ? '<h4>카드 표시</h4>' : `<section class="set disp"><h3>카드 표시 <span class="chip">${esc(nowName)}</span></h3>`}
+    <div class="seg dpre">${rows.map(r => `<button class="opt ${r.k === 'group' ? 'wide' : ''} ${on(r) ? 'on' : ''}" aria-pressed="${!!on(r)}" data-dpre="${r.k}" data-scope="${admin ? 'group' : 'me'}"><span>${esc(r.l)}<small class="sub">${esc(r.d)}</small></span></button>`).join('')}</div>
+    ${[['판과 카드 정보', ['dimg', 'dtext', 'ddet', 'dzoom']], ['덱 만들기', ['dinfo', 'dsize', 'ddeck']]].map(([gt, ks]) => `<div class="dgh">${esc(gt)}</div><div class="dopts n${ks.length}">${DISP_OPTS.filter(o => ks.includes(o.k)).map(o => `<div class="dopt"><h5 id="do-${admin ? 'g' : 'm'}-${o.k}">${esc(o.t)}</h5>${o.d && !admin ? `<p class="small muted">${esc(o.d)}</p>` : ''}<div class="seg2 n${o.o.length}" role="group" aria-labelledby="do-${admin ? 'g' : 'm'}-${o.k}">${o.o.map(([v, l]) => `<button class="sm ${cur[o.k] === v ? 'on' : ''}" aria-pressed="${cur[o.k] === v}" data-dk="${o.k}" data-v="${v}" data-scope="${admin ? 'group' : 'me'}">${esc(l)}</button>`).join('')}</div></div>`).join('')}</div>`).join('')}
+    ${admin ? '' : '</section>'}`;
 }
 // 사진 줄이기: 카드 뒷면은 카드 비율로 가운데를 잘라 440px, 매트는 긴 쪽 1600px. 밝기도 재서 매트 선 색을 고름
 async function prepImage(file, kind) {
@@ -268,6 +327,21 @@ function bindSettings(root, onArt, inSheet) {
     SK.group = { ...SK.group, [gk]: v }; applySkin(); mark(); if (gk !== 'art') Sound.sfx('place');
     save('/api/group', { [gk]: v });
   });
+  // 카드 표시: 고르면 바로 적용하고 저장 (내 것은 disp=mine 으로 모든 항목을 함께 저장)
+  const dispSave = (scope, vals) => {
+    if (scope === 'group') { SK.group = { ...SK.group, ...vals }; applySkin(); onArt && onArt(); refresh(); return save('/api/group', vals); }
+    SK.prefs = { back: 'group', mat: 'group', art: 'group', ...SK.prefs, ...vals }; applySkin(); onArt && onArt(); refresh(); return save('/api/prefs', vals);
+  };
+  root.querySelectorAll('[data-dpre]').forEach(b => b.onclick = () => {
+    const k = b.dataset.dpre, sc = b.dataset.scope; Sound.sfx('place');
+    if (k === 'group') return dispSave('me', { disp: 'group' });
+    const v = DISP_PRESETS.find(x => x.k === k).v;
+    dispSave(sc, sc === 'group' ? { ...v } : { disp: 'mine', ...v });
+  });
+  root.querySelectorAll('[data-dk]').forEach(b => b.onclick = () => {
+    const sc = b.dataset.scope, k = b.dataset.dk, v = b.dataset.v; Sound.sfx('tap');
+    dispSave(sc, sc === 'group' ? { [k]: v } : { disp: 'mine', ...D, [k]: v });
+  });
   root.querySelectorAll('[data-up]').forEach(b => b.onclick = () => pickPhoto(b.dataset.up, b.dataset.scope));
   root.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     try { const r = await fetch(`/api/img?kind=${b.dataset.del}&scope=${b.dataset.scope}`, { method: 'DELETE', credentials: 'same-origin' }); const j = await r.json(); if (!r.ok) throw new Error(j.error || '지우지 못했어요.'); setSkin(j); toast('사진을 지웠어요.'); }
@@ -282,7 +356,7 @@ function bindSettings(root, onArt, inSheet) {
   if (lo) lo.onclick = async () => { await api('/api/logout', {}); ME = null; try { localStorage.removeItem('skin'); } catch {} setSkin({}); location.hash = '#login'; };
 }
 function renderSettings() {
-  app.innerHTML = `<div class="card-box" style="max-width:860px;margin:0 auto"><h2>설정</h2><p class="muted small" style="margin-top:0">고르면 바로 바뀌어요. 카드 뒷면·매트·카드 그림은 내 계정에 저장돼서 다른 기기에서도 그대로예요.</p><div class="setwrap">${settingsHtml(false)}</div></div>`;
+  app.innerHTML = `<div class="card-box" style="max-width:860px;margin:0 auto"><h2>설정</h2><p class="muted small" style="margin-top:0">고르면 바로 바뀌어요. 카드 뒷면·매트·카드 표시는 내 계정에 저장돼서 다른 기기에서도 그대로예요.</p><div class="setwrap">${settingsHtml(false)}</div></div>`;
   bindSettings(app.querySelector('.setwrap'), null, false);
 }
 function openSettings(onArt) { openSheet(`<button class="x sm" data-close>닫기</button><h3>설정</h3><div class="setwrap">${settingsHtml(true)}</div>`, el => bindSettings(el.querySelector('.setwrap'), onArt, true)); }
@@ -371,21 +445,31 @@ function deckEditor(deck) {
       <div class="row"><input id="q" class="grow" placeholder="이름 검색 (예: 피카츄, ㅍㅋㅊ, vzc)"></div>
       <div class="tabs g2" style="margin-top:8px">${[['all', '전체'], ['P', '포켓몬'], ['T', '트레이너스'], ['E', '에너지']].map(([k, l]) => `<button class="tab ${k === 'all' ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
       <div id="res" class="cardgrid"></div></div>
-    <div class="side"><div class="card-box"><h3>덱 리스트 <span id="cnt" class="chip"></span></h3><div id="lst" class="cardgrid"></div></div>
+    <div class="side"><div class="card-box"><h3>덱 리스트 <span id="cnt" class="chip"></span></h3><div id="lst" class="dlist"></div></div>
       <div class="card-box"><h3>리스트 붙여 넣기</h3><p class="small muted">PTCGL에서 내보낸 덱 리스트를 붙여 넣으면 지금 리스트를 바꿔요.</p><textarea id="paste" placeholder="4 Pikachu ex SVP 106&#10;..."></textarea><button id="imp" class="blue" style="margin-top:6px">불러오기</button><div id="bad" class="small"></div></div></div></div>`;
-  const card = (c, n, on) => `<div class="c ${on ? 'on' : ''}" data-id="${c.id}">${cimg(c) ? `<img loading="lazy" referrerpolicy="no-referrer" src="${cimg(c)}" alt="${esc(cname(c))}">` : `<div class="ph">${esc(cname(c))}</div>`}${n ? `<span class="n">${n}</span>` : ''}<div>${esc(cname(c))}</div><div class="muted">${esc(c.set || '')} ${esc(c.no || '')}</div></div>`;
+  const setNo = c => D.dtext !== 'en' && c.kset ? `${c.kset} ${c.kno || ''}` : `${c.set || ''} ${c.no || ''}`;
+  const card = (c, n, on) => `<div class="c ${on ? 'on' : ''}" data-id="${c.id}">${picMode(c, D.dimg) ? `<span class="cpic">${picHtml(c, D.dimg)}</span>` : `<div class="ph">${esc(cname(c))}</div>`}${n ? `<span class="n">${n}</span>` : ''}<div class="cnm">${esc(cname(c))}${altName(c) ? `<small class="alt">${esc(altName(c))}</small>` : D.dtext === 'both' ? '<small class="alt">&nbsp;</small>' : ''}</div><div class="muted cno">${esc(setNo(c))}</div></div>`;
+  const KIND = { P: '포켓몬', T: '트레이너스', E: '에너지' }, KIND_EN = { P: 'Pokémon', T: 'Trainer', E: 'Energy' };
+  const sub = c => c.st === 'P' ? `${(c.sub || []).includes('Stage 2') ? '2진화' : (c.sub || []).includes('Stage 1') ? '1진화' : '기본'}${(c.sub || []).includes('ex') ? ' · ex' : ''}${c.hp ? ` · HP ${c.hp}` : ''}` : (c.sub || []).filter(x => x !== 'Basic').join(' · ');
+  const row = (c, n) => { // 덱 리스트 한 줄: 그림(잘라서·작은 카드·없음) + 이름 + 장수
+    const pic = D.ddeck === 'none' ? '' : D.ddeck === 'art' ? `<span class="art">${c.img || c.kimg ? `<img src="${c.img || c.kimg}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</span>` : `<span class="cpic sm">${picHtml(c, D.dimg)}</span>`;
+    return `<button class="drow" data-id="${c.id}">${pic}<span class="dtx"><span class="dnm">${esc(cname(c))}</span>${altName(c) ? `<small class="alt">${esc(altName(c))}</small>` : ''}<small class="muted">${esc(sub(c))}</small></span><span class="dct">×${n}</span></button>`;
+  };
   const drawList = () => {
     const ch = checkDeck(list, IDX);
     $('#cnt').textContent = count() + ' / 60';
     $('#chk').innerHTML = ch.ok ? '<span class="chip ok">덱 규칙 통과</span>' : ch.problems.map(p => `<span class="chip warn">${esc(p)}</span>`).join(' ');
     const sorted = [...list].sort((a, b) => ('PTE'.indexOf(IDX.byId[a.id].st) - 'PTE'.indexOf(IDX.byId[b.id].st)) || cname(IDX.byId[a.id]).localeCompare(cname(IDX.byId[b.id])));
-    $('#lst').innerHTML = sorted.map(x => card(IDX.byId[x.id], x.n)).join('') || '<p class="muted">왼쪽에서 카드를 눌러 넣어요.</p>';
-    $('#lst').querySelectorAll('.c').forEach(el => el.onclick = () => cardSheet(el.dataset.id));
+    $('#lst').className = 'dlist d-' + D.ddeck;
+    $('#lst').innerHTML = [...'PTE'].map(st => { const xs = sorted.filter(x => IDX.byId[x.id].st === st); if (!xs.length) return '';
+      return `<div class="dgrp"><span>${D.dtext === 'en' ? KIND_EN[st] : KIND[st]}</span><span>${xs.reduce((a, b) => a + b.n, 0)}장</span></div>` + xs.map(x => row(IDX.byId[x.id], x.n)).join(''); }).join('') || '<p class="muted">왼쪽에서 카드를 눌러 넣어요.</p>';
+    $('#lst').querySelectorAll('.drow').forEach(el => el.onclick = () => cardSheet(el.dataset.id));
   };
   const drawRes = () => {
     let items = ALL.filter(c => filt === 'all' || c.st === filt);
-    if (q.trim()) { const m = KS.matcher(q); items = items.map(c => [m(KS.norm(cname(c)), KS.norm(c.n), c._sc ||= {}), c]).filter(h => h[0] >= 0).sort((a, b) => a[0] - b[0]).map(h => h[1]); }
+    if (q.trim()) { const m = KS.matcher(q); items = items.map(c => [m(KS.norm(cnameKo(c)), KS.norm(c.n), c._sc ||= {}), c]).filter(h => h[0] >= 0).sort((a, b) => a[0] - b[0]).map(h => h[1]); }
     else items = items.filter(c => c.rm >= 'I' || c.st === 'E').reverse().sort((a, b) => (a.kro ? 1 : 0) - (b.kro ? 1 : 0)); // 최신 카드부터, 한국판 전용 카드는 뒤로
+    $('#res').className = `cardgrid sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}`;
     $('#res').innerHTML = items.slice(0, 60).map(c => card(c, list.find(x => x.id === c.id)?.n)).join('') || '<p class="muted">찾는 카드가 없어요.</p>';
     $('#res').querySelectorAll('.c').forEach(el => el.onclick = () => cardSheet(el.dataset.id));
   };
@@ -409,24 +493,50 @@ function deckEditor(deck) {
   if ($('#del')) $('#del').onclick = async () => { if (!(await ask('덱을 지울까요?', '<p>지우면 되돌릴 수 없어요.</p>', '지우기', 'bad'))) return; await api('/api/decks/' + deck.id, null, 'DELETE'); go('#decks'); };
   drawList(); drawRes();
 }
-function cardInfoHtml(c) {
+function cardInfoHtml(c) { // 카드를 눌렀을 때: 글자 + 작은 카드 / 카드만 크게 (표시 설정)
   if (!c) return '<p>카드 정보가 없어요.</p>';
-  const cost = cs => (cs || []).map(t => `<i title="${TYPE_KO[t] || t}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${TYPE_COLOR[t] || '#ccc'};border:1px solid rgba(0,0,0,.3)"></i>`).join('');
-  return `<div class="cardinfo">${cimg(c) ? `<div class="big"><img src="${bigImg(c)}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" onerror="if(!this.dataset.s){this.dataset.s=1;this.src='${cimg(c)}'}"></div>` : ''}<div class="txt"><h3>${esc(cname(c))}</h3><div class="small muted">${c.kro ? '한국판 카드' : esc(c.n)} · ${esc(c.set || '')} ${esc(c.no || '')} · 레귤레이션 ${esc(c.rm || '—')}</div>
-    <div class="row" style="margin:4px 0">${(c.sub || []).map(s => `<span class="chip">${esc(s)}</span>`).join('')}${c.hp ? `<span class="chip">HP ${c.hp}</span>` : ''}${(c.ty || []).map(t => `<span class="chip">${TYPE_KO[t] || t}</span>`).join('')}</div>
-    ${(c.ab || []).map((a, i) => { const k = (c.kab || [])[i] || a; return `<div class="atk"><b>특성 ${esc(k.n)}</b><div>${esc(k.t)}</div></div>`; }).join('')}
-    ${(c.at || []).map((a, i) => { const k = (c.kat || [])[i] || a; return `<div class="atk"><b>${cost(a.c)} ${esc(k.n)} ${esc(a.d || '')}</b><div>${esc(k.t || '')}</div></div>`; }).join('')}
-    ${(c.kr || c.r || []).map(t => `<div class="small muted atk">${esc(t)}</div>`).join('')}
-    ${c.st === 'P' ? `<div class="small atk">약점 ${(c.wk || []).map(t => TYPE_KO[t]).join(', ') || '—'} · 저항력 ${(c.rs || []).map(r => TYPE_KO[r[0]] + ' ' + r[1]).join(', ') || '—'} · 후퇴 ${c.rt || 0}</div>` : ''}
-    ${c.kn ? '' : '<div class="small muted atk">이 카드는 아직 한글 자료와 연결되지 않아 영문으로 보여요.</div>'}</div></div>`;
+  const en = D.dtext === 'en' && !c.kro, alt = s2 => D.dtext === 'both' && s2 ? `<small class="alt">${esc(s2)}</small>` : '';
+  const pic = picMode(c, D.dimg) ? `<div class="big"><span class="cpic">${picHtml(c, D.dimg, D.ddet === 'card')}</span><button class="sm zbtn" data-zoom="${esc(c.id)}">${ICON.zoom}크게 보기</button></div>` : '';
+  if (D.ddet === 'card' && pic) return `<div class="cardinfo only">${pic}</div>`;
+  const cost = cs => (cs || []).map(t => `<i class="ecost" title="${TYPE_KO[t] || t}" style="background:${TYPE_COLOR[t] || '#ccc'}"></i>`).join('');
+  const L = en ? { ab: 'Ability', w: 'Weakness', r: 'Resistance', rt: 'Retreat', reg: 'Regulation' } : { ab: '특성', w: '약점', r: '저항력', rt: '후퇴', reg: '레귤레이션' };
+  const tyName = t => en ? t : TYPE_KO[t] || t;
+  const setLine = en || !c.kset ? `${c.set || ''} ${c.no || ''}` : `${c.kset} ${c.kno || ''}`;
+  return `<div class="cardinfo">${pic}<div class="txt"><h3>${esc(en ? c.n : cnameKo(c))}${alt(c.kro ? '' : c.n !== cnameKo(c) ? c.n : '')}</h3><div class="small muted">${c.kro ? '한국판 카드 · ' : ''}${esc(setLine)} · ${L.reg} ${esc(c.rm || '')}${c.kra && !en ? ` · ${esc(c.kra)}` : ''}</div>
+    <div class="row" style="margin:4px 0">${(c.sub || []).map(x => `<span class="chip">${esc(x)}</span>`).join('')}${c.hp ? `<span class="chip">HP ${c.hp}</span>` : ''}${(c.ty || []).map(t => `<span class="chip">${esc(tyName(t))}</span>`).join('')}</div>
+    ${(c.ab || []).map((a, i) => { const k = en ? a : (c.kab || [])[i] || a; return `<div class="atk"><b>${L.ab} ${esc(k.n)}</b>${alt(en ? '' : a.n !== k.n ? a.n : '')}<div>${esc(k.t)}</div></div>`; }).join('')}
+    ${(c.at || []).map((a, i) => { const k = en ? a : (c.kat || [])[i] || a; return `<div class="atk"><b>${cost(a.c)} ${esc(k.n)} ${esc(a.d || '')}</b>${alt(en ? '' : a.n !== k.n ? a.n : '')}<div>${esc(k.t || '')}</div></div>`; }).join('')}
+    ${((en ? c.r : c.kr || c.r) || []).map(t => `<div class="small muted atk">${esc(t)}</div>`).join('')}
+    ${c.st === 'P' ? `<div class="small atk">${L.w} ${(c.wk || []).map(tyName).join(', ') || '—'} · ${L.r} ${(c.rs || []).map(r => tyName(r[0]) + ' ' + r[1]).join(', ') || '—'} · ${L.rt} ${c.rt || 0}</div>` : ''}
+    ${c.kn || en ? '' : '<div class="small muted atk">이 카드는 아직 한글 자료와 연결되지 않아 영문으로 보여요.</div>'}</div></div>`;
 }
+// 크게 보기: 영문판 · 합친 카드 · 한글판 (있는 것만). 뒤로 가기로 닫힘
+let ZOOM = null;
+function openZoom(c) {
+  if (!c) return;
+  const sides = [['en', '영문판'], ['mix', '합친 카드'], ['kr', '한글판']].filter(([k]) => picMode(c, k) === k);
+  if (!sides.length) return;
+  const ov = document.createElement('div'); ov.className = 'zoomov'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+  document.body.appendChild(ov); ZOOM = ov; history.pushState({ zoom: 1 }, ''); Sound.sfx('open');
+  let side = sides.some(x => x[0] === D.dzoom) ? D.dzoom : sides[0][0];
+  const cap = { en: c.ksa ? '한글판과 그림이 같은 영문판 카드예요. 워터마크가 없어요.' : '영문판 카드예요. 한글판과 그림이 다를 수 있어요.', mix: '그림 칸은 영문판, 이름과 설명은 한글판으로 합쳤어요.', kr: '공식 사이트 한글판 그림이에요. 크게 보면 워터마크가 보여요.' };
+  const paint = () => {
+    ov.innerHTML = `<button class="x sm" data-zx>닫기</button>${sides.length > 1 ? `<div class="zseg" role="group" aria-label="그림 고르기">${sides.map(([k, l]) => `<button class="sm" data-side="${k}" aria-pressed="${k === side}">${l}</button>`).join('')}</div>` : ''}
+      <div class="zimg"><span class="cpic">${picHtml(c, side, true)}</span></div><p class="zcap"><b>${esc(side === 'en' ? c.n : cnameKo(c))}</b>${esc(cap[side])}</p>`;
+    ov.querySelectorAll('[data-side]').forEach(b => b.onclick = e => { e.stopPropagation(); side = b.dataset.side; paint(); });
+  };
+  paint();
+  ov.onclick = e => { if (e.target === ov || e.target.closest('[data-zx]') || e.target.classList.contains('zimg')) history.back(); };
+}
+function closeZoom() { if (ZOOM) { ZOOM.remove(); ZOOM = null; } }
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-zoom]'); if (b) { e.stopPropagation(); openZoom(cinfo(b.dataset.zoom)); } }, true);
 
 // ---------- 대전 ----------
 let G = null; // { id, view, lines, cards, ws, pend:{}, specs, ui }
 function cinfo(cid) { // 판에 저장된 카드 정보 + 지금 카드 자료의 한글 이름·그림·문장
   const base = (G && G.cards[cid]) || (IDX && IDX.byId[cid]) || { n: '?' };
   const cur = IDX && IDX.byId[cid];
-  return cur && cur.kn ? { ...base, kn: cur.kn, kimg: cur.kimg, kab: cur.kab, kat: cur.kat, kr: cur.kr } : base; // 한글은 항상 지금 자료 우선
+  return cur && cur.kn ? { ...base, kn: cur.kn, kimg: cur.kimg, kab: cur.kab, kat: cur.kat, kr: cur.kr, kra: cur.kra, ksa: cur.ksa, kset: cur.kset, kno: cur.kno } : base; // 한글은 항상 지금 자료 우선
 }
 const nmOf = x => x ? cname(cinfo(x.c)) : '?';
 const topOf = sl => sl.cards[sl.cards.length - 1];
@@ -477,9 +587,9 @@ const bottomSeat = () => G.view.me == null ? 0 : G.view.me;
 
 // ----- 카드 한 장 -----
 function cardFace(x, cls = '', extra = '') {
-  const c = cinfo(x.c), src = cimg(c);
-  const tag = src && c.kn && src === c.img ? `<span class="kn" style="--len:${[...c.kn].length}">${esc(c.kn)}</span>` : ''; // 영문 그림 위 한글 이름표
-  return `<div class="pc ${cls}" data-k="${x.i}" ${extra}>${src ? `<img src="${src}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" loading="lazy" draggable="false">${tag}` : `<div class="ph">${esc(cname(c))}</div>`}</div>`;
+  const c = cinfo(x.c), m = picMode(c, D.dimg);
+  const tag = m === 'en' && c.kn && D.dtext !== 'en' ? `<span class="kn" style="--len:${[...c.kn].length}">${esc(c.kn)}</span>` : ''; // 영문 그림 위 한글 이름표
+  return `<div class="pc ${cls}" data-k="${x.i}" ${extra}>${m ? picHtml(c, D.dimg) + tag : `<div class="ph">${esc(cname(c))}</div>`}</div>`;
 }
 const cardBack = (cls = '', extra = '') => `<div class="pc back ${cls}" ${extra}><div class="cb"></div></div>`;
 const TYPE_ICON = { Grass: '🌿', Fire: '🔥', Water: '💧', Lightning: '⚡', Psychic: '🔮', Fighting: '👊', Darkness: '🌙', Metal: '⚙️', Dragon: '🐉', Colorless: '⭐' };
@@ -920,7 +1030,7 @@ async function onZone(z, p) {
   const v = G.view, me = meSeat(), P = v.p[p], mine = p === me;
   if (z === 'discard' || z === 'lost') {
     const cards = P[z];
-    openSheet(`<button class="x sm" data-close>닫기</button><h3>${mine ? '내' : esc(P.name) + ' 님'} ${z === 'discard' ? '트래시' : '로스트존'} (${cards.length}장)</h3><div class="cardgrid">${cards.map(x => { const c = cinfo(x.c); return `<div class="c" data-i="${x.i}">${cimg(c) ? `<img src="${cimg(c)}" referrerpolicy="no-referrer" alt="${esc(cname(c))}">` : `<div class="ph">${esc(cname(c))}</div>`}<div>${esc(cname(c))}</div></div>`; }).join('') || '<p class="muted">비어 있어요.</p>'}</div>`, el => {
+    openSheet(`<button class="x sm" data-close>닫기</button><h3>${mine ? '내' : esc(P.name) + ' 님'} ${z === 'discard' ? '트래시' : '로스트존'} (${cards.length}장)</h3><div class="cardgrid">${cards.map(x => { const c = cinfo(x.c); return `<div class="c" data-i="${x.i}">${picMode(c, D.dimg) ? `<span class="cpic">${picHtml(c, D.dimg)}</span>` : `<div class="ph">${esc(cname(c))}</div>`}<div>${esc(cname(c))}</div></div>`; }).join('') || '<p class="muted">비어 있어요.</p>'}</div>`, el => {
       el.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => { const i = b.dataset.i; closeSheet(); await new Promise(r => setTimeout(r, 30)); if (me == null) return; if (mine) moveMenu([i], cname(cinfo(cards.find(x => x.i === i).c))); else { const to = await pick('상대 카드 옮기기', [{ label: '상대 덱 위로', value: { z: 'deck', p, pos: 'top' } }, { label: '상대 손패로', value: { z: 'hand', p } }, { label: '상대 로스트존으로', value: { z: 'lost', p } }]); if (to) send({ type: 'move', iids: [i], to }); } });
     });
     return;
@@ -1023,8 +1133,8 @@ function rwLoc(v) { // 카드 번호 → 있는 곳
   if (v.stadium) m.set(v.stadium.i, 'stad');
   return m;
 }
-function rwTargets(a, b, lines = []) { // 두 장면 사이에 바뀐 곳: [{s: 화면 요소 선택자, kind: move(움직임) | target(기술 대상) | big(센 장면)}]
-  const A = rwLoc(a), B = rwLoc(b), out = [], rank = { move: 0, target: 1, big: 2 };
+function rwTargets(a, b, lines = []) { // 두 장면 사이에 바뀐 곳: [{s: 화면 요소 선택자, kind: move(움직임) | target(기술 대상) | judge(사람 판정) | big(센 장면)}]
+  const A = rwLoc(a), B = rwLoc(b), out = [], rank = { move: 0, target: 1, judge: 2, big: 3 };
   const add = (s, kind = 'move') => { const o = out.find(x => x.s === s); if (!o) out.push({ s, kind }); else if (rank[kind] > rank[o.kind]) o.kind = kind; };
   const ko = lines.some(l => /기절|프라이즈/.test(l.txt || ''));
   const sel = (loc, i) => { const [z, p] = loc.split(':');
@@ -1046,11 +1156,14 @@ function rwTargets(a, b, lines = []) { // 두 장면 사이에 바뀐 곳: [{s: 
     if (!b.p[p].hand && a.p[p].handN !== b.p[p].handN) add('.ohand');
     if (a.p[p].prizesN !== b.p[p].prizesN) add(`.prizes[data-p="${p}"]`, 'big');
   }
+  if (lines.some(l => l.gid)) out.forEach(o => { if (o.kind !== 'big' || o.s.startsWith('.mat')) o.kind = 'judge'; }); // 사람이 판정한 단계: 기절·프라이즈 말고는 모두 말풍선
   return out.sort((x, y) => rank[y.kind] - rank[x.kind]).slice(0, 5);
 }
-// 강조 틀 (링크 님이 고른 것, '가는 테두리 도감' 기준): 움직임 = 14번 볼 띠, 기술 대상 = 6번 자 눈금, 센 장면 = 1번 색 어긋남
+// 강조 틀 (링크 님이 고른 것, '가는 테두리 도감' 기준): 움직임 = 14번 볼 띠, 기술 대상 = 6번 자 눈금, 센 장면 = 1번 색 어긋남, 사람 판정 = C-2 촘촘 구름 말풍선 + 에어브러시
+let HLN = 0;
 function hlFrame(w, h, kind = 'move') {
   const f = n => (+n).toFixed(1), o = 2, x0 = o, y0 = o, x1 = w - o, y1 = h - o, cx = w / 2, cy = h / 2;
+  if (kind === 'judge') return hlCloud(w, h, f, x0, y0, x1, y1);
   const ln = (d, sw = 1.4, c = '#fff', cls = '', op = 1) => `<path class="${cls}" d="${d}" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`;
   const dr = (d, sw = 1.4) => `<path class="hd" pathLength="1" d="${d}" fill="none" stroke="#fff" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
   const svg = body => `<svg viewBox="0 0 ${f(w)} ${f(h)}" aria-hidden="true">${body}</svg>`;
@@ -1073,6 +1186,31 @@ function hlFrame(w, h, kind = 'move') {
   const ring = (x, dl) => `<g class="hpop"><circle cx="${f(x)}" cy="${f(cy)}" r="3.4" fill="none" stroke="#fff" stroke-width="1.4"/><circle cx="${f(x)}" cy="${f(cy)}" r="1.2" fill="#fff"/></g><g class="hlate"><circle class="hping" style="animation-delay:${dl}s" cx="${f(x)}" cy="${f(cy)}" r="3.4" fill="none" stroke="#fff" stroke-width="1"/></g>`;
   return svg(`${dr(top)}${dr(bot)}${ln(`M${f(x0 - 3.4)} ${f(cy)}h-5M${f(x1 + 3.4)} ${f(cy)}h5`, 1.2, '#fff', 'hlate')}${ring(x0, 0)}${ring(x1, -1.3)}`);
 }
+// 사람 판정: 모서리가 크게 둥근 말풍선의 변을 따라 작은 혹이 촘촘히 이어지고(3.8초에 한 번 1배 ↔ 1.5배로 숨 쉬기),
+// 꼬리는 왼쪽 아래, 위쪽 오른편 틈에 하늘색 점 세 개. 에어브러시 질감은 요소 크기를 절반쯤 따라가게 맞춤(카드 너비 133px 기준)
+function hlCloud(w, h, f, x0, y0, x1, y1) {
+  const cw = Math.max(20, w - 12), sd = Math.min(1.15, Math.max(.55, Math.pow(cw / 133, .55))), u = 1.108 * sd;
+  const r = Math.min(22 * sd, Math.min(w, h) * .3), gE = x1 - r, gS = gE - 24.4 * sd;
+  const tE = x0 + r + 5.5 * u, tS = tE + 11.5 * u, tx = tE - 5.5 * u, ty = y1 + 12 * u;
+  const bw = 12.7 * sd, bh = 2.66 * sd;
+  const fill = (a, b) => { const len = Math.abs(b - a); if (len < bw * .5) return []; const n = Math.max(1, Math.round(len / bw)), st = (b - a) / n; return Array.from({ length: n }, (_, i) => [a + st * (i + .5), Math.abs(st)]); };
+  const top = gS - 2 > x0 + r + 2 ? fill(x0 + r + 2, gS - 2) : [], right = fill(y0 + r + 2, y1 - r), bot = x1 - r - 2 > tS + 3 ? fill(x1 - r - 2, tS + 3) : [], left = fill(y1 - r, y0 + r + 2);
+  const D = m => { const hh = f(bh * m);
+    let d = `M${f(x1 - r)} ${f(y0)}A${f(r)} ${f(r)} 0 0 1 ${f(x1)} ${f(y0 + r)}`;
+    for (const [c, bw2] of right) d += `V${f(c - bw2 / 2)}A${f(bw2 / 2)} ${hh} 90 0 1 ${f(x1)} ${f(c + bw2 / 2)}`;
+    d += `V${f(y1 - r)}A${f(r)} ${f(r)} 0 0 1 ${f(x1 - r)} ${f(y1)}`;
+    for (const [c, bw2] of bot) d += `H${f(c + bw2 / 2)}A${f(bw2 / 2)} ${hh} 0 0 1 ${f(c - bw2 / 2)} ${f(y1)}`;
+    d += `H${f(tS)}C${f(tS - 2 * u)} ${f(y1 + 6 * u)} ${f(tS - 8 * u)} ${f(y1 + 10.5 * u)} ${f(tx)} ${f(ty)}C${f(tx + 4.5 * u)} ${f(y1 + 8.5 * u)} ${f(tx + 6 * u)} ${f(y1 + 4 * u)} ${f(tE)} ${f(y1)}H${f(x0 + r)}A${f(r)} ${f(r)} 0 0 1 ${f(x0)} ${f(y1 - r)}`;
+    for (const [c, bw2] of left) d += `V${f(c + bw2 / 2)}A${f(bw2 / 2)} ${hh} 90 0 1 ${f(x0)} ${f(c - bw2 / 2)}`;
+    d += `V${f(y0 + r)}A${f(r)} ${f(r)} 0 0 1 ${f(x0 + r)} ${f(y0)}`;
+    for (const [c, bw2] of top) d += `H${f(c - bw2 / 2)}A${f(bw2 / 2)} ${hh} 0 0 1 ${f(c + bw2 / 2)} ${f(y0)}`;
+    return d + `H${f(gS)}`; };
+  const dA = D(1), dB = D(1.5), id = 'hla' + (++HLN), q = Math.pow(cw / 133, .45), n4 = v => (+v).toFixed(3);
+  const anim = reduceMotion() ? '' : `<animate attributeName="d" values="${dA};${dB};${dA}" keyTimes="0;.5;1" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1" dur="3.8s" repeatCount="indefinite"/>`;
+  const air = `<filter id="${id}" x="-25%" y="-25%" width="150%" height="150%"><feGaussianBlur in="SourceGraphic" stdDeviation="${n4(1.389 * q)}" result="soft"/><feTurbulence type="fractalNoise" baseFrequency="${n4(1.444 / q)}" numOctaves="1" seed="3" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  3.2 0 0 0 -1.25" result="dots"/><feComposite in="soft" in2="dots" operator="in" result="spray"/><feGaussianBlur in="SourceGraphic" stdDeviation="${n4(.833 * q)}" result="core"/><feMerge><feMergeNode in="spray"/><feMergeNode in="spray"/><feMergeNode in="core"/></feMerge></filter>`;
+  const dr = Math.max(1.8, 2.55 * sd), dots = [6, 11.5, 17].map((x, i) => `<circle class="hdot" style="animation-delay:${(i * .22).toFixed(2)}s" cx="${f(gS + x * u)}" cy="${f(y0)}" r="${f(dr)}" fill="#a6deff"/>`).join('');
+  return `<svg viewBox="0 0 ${f(w)} ${f(h)}" aria-hidden="true"><defs>${air}</defs><g filter="url(#${id})"><path class="hd" pathLength="1" d="${dA}" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${anim}</path><g class="hlate">${dots}</g></g></svg>`;
+}
 function rwHighlight(sels) {
   const layer = app.querySelector('.hl-layer'), tb = app.querySelector('.table'); if (!layer || !tb) return;
   sels.forEach(t => app.querySelectorAll(t.s).forEach(el => el.classList.add('rwon')));
@@ -1084,7 +1222,7 @@ function rwHighlight(sels) {
       const r = el.getBoundingClientRect(); if (!r.width) return '';
       const top = Math.max(r.top, T.top + m), bot = Math.min(r.bottom, lim - m); if (bot - top < 8) return '';
       const w = r.width + m * 2, h = bot - top + m * 2;
-      return `<div class="hlf" style="left:${(r.left - T.left - m).toFixed(1)}px;top:${(top - T.top - m).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px">${hlFrame(w, h, kind)}</div>`;
+      return `<div class="hlf${kind === 'judge' ? ' soft' : ''}" style="left:${(r.left - T.left - m).toFixed(1)}px;top:${(top - T.top - m).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px">${hlFrame(w, h, kind)}</div>`;
     }).join('');
   }, reduceMotion() ? 0 : 520);
 }
