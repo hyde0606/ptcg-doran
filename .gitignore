@@ -3,3 +3,4 @@ public/cards.json
 .wrangler/
 .dev.vars
 test/out/
+card-src/

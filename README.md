@@ -26,6 +26,7 @@
 ```bash
 npm install
 python3 tools/build-cards.py <cards_en.json> <sets_en.json> public/cards.json
+# 카드 자료가 없으면 먼저: python3 tools/fetch-cards.py card-src  (공개 자료에서 받아요)
 printf 'GROUP_CODE=모임코드\nSECRET=아무긴문자열\n' > .dev.vars
 npx wrangler dev
 node test/engine.test.js      # 엔진 시험

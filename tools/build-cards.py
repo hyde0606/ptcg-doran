@@ -1,7 +1,7 @@
 # Build compact card file for the battle site from project card data.
 import json, sys
 src = sys.argv[1]; sets_src = sys.argv[2]; out = sys.argv[3]
-cards = json.load(open(src)); sets = {s['id']: s for s in json.load(open(sets_src))}
+cards = json.load(open(src, encoding='utf-8')); sets = {s['id']: s for s in json.load(open(sets_src, encoding='utf-8'))}
 keep = []
 for c in cards:
     basic_energy = c['supertype'] == 'Energy' and 'Basic' in (c.get('subtypes') or [])
@@ -17,12 +17,12 @@ for c in cards:
         'at': [{'n': a['name'], 'c': a.get('cost') or [], 'd': a.get('damage', ''), 't': a.get('text', '')} for a in c.get('attacks') or []],
         'wk': [w['type'] for w in c.get('weaknesses') or []],
         'rs': [[r['type'], r['value']] for r in c.get('resistances') or []],
-        'rt': c.get('retreat') or 0, 'r': c.get('rules') or [],
+        'rt': c.get('retreat') or c.get('convertedRetreatCost') or 0, 'r': c.get('rules') or [],
     }
     if c['supertype'] == 'Energy' and not basic_energy: k['r'] = c.get('rules') or []
     if basic_energy:
         ty = c['name'].replace('Basic ', '').replace(' Energy', '')
         k['ko'] = '기본 ' + {'Grass':'풀','Fire':'불꽃','Water':'물','Lightning':'번개','Psychic':'초','Fighting':'격투','Darkness':'악','Metal':'강철'}.get(ty, ty) + ' 에너지'
     keep.append({x: y for x, y in k.items() if y not in (None, [], '')} | {'id': c['id'], 'n': c['name'], 'st': k['st']})
-json.dump(keep, open(out, 'w'), ensure_ascii=False, separators=(',', ':'))
+json.dump(keep, open(out, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
 print(len(keep), 'cards')
