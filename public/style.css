@@ -439,6 +439,7 @@ input.wide { width: 100%; box-sizing: border-box; }
 .hpb.mid { color: #b86a00; box-shadow: inset 0 0 0 max(1.2px, .1em) #f0a020, 0 .1em .25em rgba(0, 0, 0, .28); }
 .hpb.low { color: #d22f26; box-shadow: inset 0 0 0 max(1.2px, .1em) #e8473c, 0 .1em .25em rgba(0, 0, 0, .28); animation: hplow 1.4s ease-in-out infinite; }
 @keyframes hplow { 50% { background: #ffe9e6; } }
+.pc .ctop.mg { top: 1.2%; } .ctop.mg .hpb { font-size: max(8px, 10cqw); line-height: 1.1; padding-block: .04em; }
 @container (max-width: 51.9px) { .hpb { font-size: max(8px, 15cqw); } }
 /* 이름 알약은 글씨가 7px보다 작아질 카드에서는 숨김: tNN = 보이는 가장 작은 카드 폭(px) */
 @container (max-width: 53.9px) { .nmb.t54 { display: none; } }

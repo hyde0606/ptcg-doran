@@ -650,7 +650,7 @@ function slotHtml(sl, opt = {}) {
   const marks = [cd.poisoned ? '<b class="mk poison">독</b>' : '', cd.burned ? '<b class="mk burn">화상</b>' : '', cd.asleep ? '<b class="mk sleep">잠듦</b>' : '', cd.paralyzed ? '<b class="mk para">마비</b>' : '', cd.confused ? '<b class="mk conf">혼란</b>' : ''].join('');
   const under = sl.cards.length > 1 ? sl.cards.slice(0, -1).map((x, i) => `<div class="pc under" data-k="${x.i}" style="--u:${sl.cards.length - 1 - i}"></div>`).join('') : '';
   const nm = cname(c), hp = c.hp ? `<span class="hpb ${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}" title="남은 HP ${hpLeft} / ${c.hp}"><b>${hpLeft}</b>${(c.ty || [])[0] ? typeIcon(c.ty[0]) : ''}</span>` : '';
-  const over = `<div class="ctop">${nameBadge(nm)}${hp}</div>`;
+  const over = `<div class="ctop${(c.sub || []).includes('MEGA') ? ' mg' : ''}">${nameBadge(nm)}${hp}</div>`; // 메가 ex는 HP 밑 '메가진화한 모습' 띠가 보이게 조금 위로·작게
   return `<div class="spot ${size} filled" data-sid="${sl.sid}">
     <div class="rotwrap ${rot}">${under}${cardFace(t, 'onfield', '', over)}${energyTabs(sl)}
       ${sl.dmg ? `<span class="dmg" data-dmg="${sl.sid}">${sl.dmg}</span>` : ''}
