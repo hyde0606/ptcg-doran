@@ -1,5 +1,6 @@
 # 영문 기준 public/cards.json 에 한글 카드 자료를 덧붙이고, 영문에 없는 한국판 카드는 새 카드로 넣는다. (원본 자료는 읽기만 한다)
-#   python tools/build-cards-kr.py <cards_kr.json> --en card-src/cards_en.json --hash card-src/art_hash.json [--match card-src/kr_match.json] [--out public/cards.json] [-v]
+#   python tools/build-cards-kr.py <cards_kr.json> --en card-src/cards_en.json --hash card-src/art_hash.json [--match card-src/kr_match.json] [--korea-only] [--out public/cards.json] [-v]
+# - --korea-only  : (선택) 한글 짝이 없는 영문 카드(한국 미발매 카드)를 결과에서 뺀다. 다시 넣으려면 build-cards.py 부터 다시 돌린다.
 # - cards_kr.json : 한글 카드 자료 (pokemoncard.co.kr 기준)
 # - --en          : (선택) 영문 원본. 그림 작가·레어도로 같은 그림의 한글판을 고르는 데 쓴다.
 # - --hash        : (선택) tools/kr-art-hash.cjs 가 만든 그림 지문. 트레이너스 짝짓기와 같은 그림 고르기에 쓴다.
@@ -18,6 +19,8 @@ def opt(name, default=None):
     return default
 VERBOSE = '-v' in args
 if VERBOSE: args.remove('-v')
+KOREA_ONLY = '--korea-only' in args  # 한글 짝이 없는 영문 카드(한국 미발매)는 빼고 쓴다
+if KOREA_ONLY: args.remove('--korea-only')
 EN_SRC, HASH_SRC, MATCH_SRC, OUT = opt('--en'), opt('--hash'), opt('--match'), opt('--out', 'public/cards.json')
 KR_SRC = args[0]
 
@@ -265,11 +268,15 @@ for k in kr:
 added = [kr_card(pick(None, ks)) for ks in groups.values()]
 added.sort(key=lambda c: (c.get('kset') or '', c.get('kno') or ''))
 
-json.dump(cards + added, open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
+dropped = [c for c in cards if KOREA_ONLY and not c.get('kn')]
+keep = [c for c in cards if not (KOREA_ONLY and not c.get('kn'))]
+if len(dropped) > len(cards) * 0.05:  # 한글 자료를 잘못 줬을 때 카드가 거의 다 지워지는 것을 막는다
+    sys.exit(f'--korea-only: 빼려는 카드가 {len(dropped)}장으로 너무 많아요. 한글 자료 경로를 확인해 주세요. (아무것도 쓰지 않음)')
+json.dump(keep + added, open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
 tot = collections.Counter(c['st'] for c in cards)
 kr_kinds = len({ident(k) for k in kr})
 print(json.dumps({
-    'en_total': len(cards), 'matched': sum(stat.values()),
+    'en_total': len(cards), 'matched': sum(stat.values()), 'dropped_no_kr': len(dropped),
     'by_type': {t: f"{stat[t]}/{tot[t]}" for t in 'PTE'},
     'matched_by': dict(how), 'manual_pairs': len(MANUAL),
     'picked_print_art_differs': far,
