@@ -125,17 +125,21 @@ function picMode(c, want) { // 고른 그림 → 실제로 보일 그림 (없으
   if (c.kimg) return 'kr';
   return c.img ? 'en' : null;
 }
-const BAND = c => { // 합친 카드에서 영문판을 쓰는 세로 범위 (카드 높이 %, 위·아래)
-  if (c.st !== 'P') return [13.5, 54];
+const BAND = c => { // 합친 카드에서 영문판을 쓰는 세로 범위 (카드 높이 %, 위·아래). PC에서 한글판 그림 칸 테두리를 재서 맞춤 (2026-11-18)
+  const s = c.sub || [];
+  if (c.st === 'E') return [13.5, 64.8, s.includes('ACE SPEC')]; // ACE SPEC 특수 에너지는 55.5% 아래 오른쪽 세로 'ACE SPEC' 칸(9.5%)을 뺌
+  if (c.st !== 'P') return [13.5, 52.3];
+  if (s.includes('MEGA')) return [13.6, 50.9]; // '○○이 메가진화한 모습' 띠 아래부터
+  if (s.includes('Tera')) return [16.8, 50.9]; // 그림 위에 깔린 테라스탈 규칙 상자 아래부터
   if (c.kra === 'AR') return [11.5, 50.5];
-  if ((c.sub || []).includes('ex') || /^(SAR|SR|UR|HR|MUR|SSR|BWR)$/.test(c.kra || '')) return [12, 50.5];
-  return [11.5, 47];
+  if (s.includes('ex') || /^(SAR|SR|UR|HR|MUR|SSR|BWR)$/.test(c.kra || '')) return [12, 50.9];
+  return [11.8, 47.4]; // 보통 포켓몬: 진화 줄 아래 ~ 도감 줄 위
 };
 function picHtml(c, want, big = false) { // 카드 그림 <img> (합친 카드는 두 장 겹침). 감싸는 칸은 position: relative
   const m = picMode(c, want); if (!m) return '';
   const nm = esc(cname(c)), lazy = big ? '' : 'loading="lazy"';
   const en = big ? hires(c.img) : c.img, fb = big ? ` onerror="if(!this.dataset.s){this.dataset.s=1;this.src='${c.img}'}"` : '';
-  if (m === 'mix') { const [t, b] = BAND(c); return `<img src="${c.kimg}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"><img class="band" src="${en}" alt="" referrerpolicy="no-referrer" ${lazy} draggable="false" style="--bt:${t}%;--bb:${100 - b}%"${fb}>`; }
+  if (m === 'mix') { const [t, b, ace] = BAND(c), clip = ace ? `;clip-path:polygon(0 ${t}%,100% ${t}%,100% 55.5%,90.5% 55.5%,90.5% ${b}%,0 ${b}%)` : ''; return `<img src="${c.kimg}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"><img class="band" src="${en}" alt="" referrerpolicy="no-referrer" ${lazy} draggable="false" style="--bt:${t}%;--bb:${100 - b}%${clip}"${fb}>`; }
   return `<img src="${m === 'kr' ? c.kimg : en}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"${m === 'en' ? fb : ''}>`;
 }
 const cnameKo = c => { if (!c) return '?'; if (c.kn) return c.kn; if (!c.ko) return c.n; let k = c.ko; if (/^Mega /.test(c.n)) k = '메가' + k; if (/ ex$/.test(c.n)) k += ' ex'; return k; };
