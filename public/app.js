@@ -646,13 +646,6 @@ function energyTabs(sl) { // 붙은 에너지: 카드 왼쪽 아래에 타입 �
   const n = sl.en.length; if (!n) return '';
   return `<div class="enrow" style="--n:${n}">${sl.en.map(x => { const e = cinfo(x.c); const ty = (e.n.match(/Basic (\w+) Energy/) || [])[1]; return typeIcon(ty || 'Special', 'en', `data-k="${x.i}" title="${esc(cname(e))}"`); }).join('')}</div>`;
 }
-// 이름 알약: 한 줄로, 글자 폭(w, 한글 1·영문 0.6·띄어쓰기 0.3)에 맞춰 글씨를 줄이고 끝의 ex는 작게. 글씨가 7px보다 작아질 만큼 카드가 작으면 숨김(카드에 인쇄된 이름이 보임)
-function nameBadge(nm) {
-  const m = nm.match(/^(.*\S)\s+(ex)$/i), base = m ? m[1] : nm;
-  const w = [...base].reduce((a, ch) => a + (/[\uAC00-\uD7A3\u3131-\u318E\u4E00-\u9FFF]/.test(ch) ? 1 : ch === ' ' ? .3 : .6), 0) + (m ? .95 : 0) + .84;
-  const t = Math.max(54, Math.ceil(13.46 * w / 6) * 6), cls = t <= 198 ? 't' + t : 't0'; // 글씨 = 카드 폭 × 0.52 / w ≥ 7px
-  return `<span class="nmb ${cls}" style="--lw:${w.toFixed(2)}">${esc(base)}${m ? `<small> ${m[2]}</small>` : ''}</span>`;
-}
 function slotHtml(sl, opt = {}) {
   const size = opt.active ? 'act' : 'bn';
   if (!sl) return `<div class="spot ${size} empty">${opt.active ? '<span>배틀 필드</span>' : ''}</div>`;
@@ -664,11 +657,11 @@ function slotHtml(sl, opt = {}) {
   const pct = c.hp ? hpLeft / c.hp * 100 : 100;
   const marks = [cd.poisoned ? '<b class="mk poison">독</b>' : '', cd.burned ? '<b class="mk burn">화상</b>' : '', cd.asleep ? '<b class="mk sleep">잠듦</b>' : '', cd.paralyzed ? '<b class="mk para">마비</b>' : '', cd.confused ? '<b class="mk conf">혼란</b>' : ''].join('');
   const under = sl.cards.length > 1 ? sl.cards.slice(0, -1).map((x, i) => `<div class="pc under" data-k="${x.i}" style="--u:${sl.cards.length - 1 - i}"></div>`).join('') : '';
-  const nm = cname(c), hp = c.hp ? `<span class="hpb ${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}" title="남은 HP ${hpLeft} / ${c.hp}"><b>${hpLeft}</b>${(c.ty || [])[0] ? typeIcon(c.ty[0]) : ''}</span>` : '';
-  const over = `<div class="ctop${(c.sub || []).includes('MEGA') ? ' mg' : ''}">${nameBadge(nm)}${hp}</div>`; // 메가 ex는 HP 밑 '메가진화한 모습' 띠가 보이게 조금 위로·작게
+  // PTCGL처럼 이름 상자 없이: 오른쪽 위 HP 상자(남은 HP + 타입 기호) + 왼쪽 아래 에너지. 데미지는 남은 HP로 보여요 (HP를 모르는 카드만 데미지 배지)
+  const hp = c.hp ? `<span class="hpb ${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}" title="남은 HP ${hpLeft} / ${c.hp}"><b>${hpLeft}</b>${(c.ty || [])[0] ? typeIcon(c.ty[0]) : ''}</span>` : '';
   return `<div class="spot ${size} filled" data-sid="${sl.sid}">
-    <div class="rotwrap ${rot}">${under}${cardFace(t, 'onfield', '', over)}${energyTabs(sl)}
-      ${sl.dmg ? `<span class="dmg" data-dmg="${sl.sid}">${sl.dmg}</span>` : ''}
+    <div class="rotwrap ${rot}">${under}${cardFace(t, 'onfield', '', '')}${hp}${energyTabs(sl)}
+      ${sl.dmg && !c.hp ? `<span class="dmg" data-dmg="${sl.sid}">${sl.dmg}</span>` : ''}
       ${sl.tl.length ? `<div class="tools">${sl.tl.map(x => `<span data-k="${x.i}" title="도구: ${esc(nmOf(x))}">${TOOL_SVG}</span>`).join('')}</div>` : ''}
     </div>
     ${marks ? `<div class="marks">${marks}</div>` : ''}</div>`;
@@ -687,41 +680,43 @@ function prizesHtml(p) { // 겹쳐 쌓은 사이드 더미 + 남은 수
   const cards = Array.from({ length: n }, (_, k) => P.prizes ? cardFace(P.prizes[k], 'pz', `style="--k:${k}"`) : cardBack('pz', `style="--k:${k}"`)).join('');
   return `<div class="prizes" data-zone="prizes" data-p="${p}" style="--n:${Math.max(1, n)}"><div class="pzstack">${cards || '<div class="zone-mark">사이드</div>'}</div><span class="cnt" title="남은 사이드">${n}</span></div>`;
 }
-const USES = [['energy', '⚡', '에너지'], ['supporter', '👤', '서포트'], ['retreat', '↩', '후퇴'], ['attack', '⚔', '기술']];
+const USES = [['energy', 'bolt', '에너지'], ['supporter', 'user', '서포트'], ['retreat', 'retreat', '후퇴'], ['attack', 'battle', '기술']];
 function areaHtml(p, isBottom) {
   const v = G.view, P = v.p[p];
   const now = v.phase === 'play' && v.current === p;
-  const uses = now ? `<span class="uses">${USES.map(([k, ic, l]) => `<span class="use ${P.used[k] ? 'done' : ''}" title="${l} ${P.used[k] ? '(이번 차례에 썼어요)' : '(아직 안 썼어요)'}"><i>${ic}</i><span class="ul">${l}</span></span>`).join('')}</span>` : '';
+  const uses = now ? `<span class="uses">${USES.map(([k, ic, l]) => `<span class="use ${P.used[k] ? 'done' : ''}" title="${l} ${P.used[k] ? '(이번 차례에 썼어요)' : '(아직 안 썼어요)'}"><i>${ICON[ic]}</i><span class="ul">${l}</span></span>`).join('')}</span>` : '';
   const state = v.phase === 'setup' ? `<b class="zst ${P.ready ? 'ok' : ''}">${P.ready ? '준비 완료' : '준비 중'}</b>` : '';
-  const tag = `<span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><i class="av">${esc(P.name.slice(0, 1))}</i><span class="zn">${esc(P.name)}</span>${state}${v.phase === 'setup' && P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}${uses}</span>`;
+  // 이름표와 '이번 차례에 쓴 것'은 벤치 칸 테두리에 걸쳐서 (가로 화면은 이름표 왼쪽·쓴 것 오른쪽, 세로 화면은 나란히)
+  const tag = `<div class="ztags"><span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><i class="av">${esc(P.name.slice(0, 1))}</i><span class="zn">${esc(P.name)}</span>${state}${v.phase === 'setup' && P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}</span>${uses}</div>`;
   return `<section class="area ${isBottom ? 'bottom' : 'top'} ${now ? 'now' : ''}" data-area="${p}">
-      <div class="g-pz">${prizesHtml(p)}</div>
+      <div class="g-pz zone">${prizesHtml(p)}</div>
       <div class="g-act">${slotHtml(P.active, { active: true })}</div>
-      <div class="g-pile">${pilesHtml(p)}</div>
-      <div class="g-bench">${tag}<div class="benchrow">${P.bench.map(b => slotHtml(b)).join('')}</div>${P.bench.length ? '' : '<span class="bempty">벤치</span>'}</div>
+      <div class="g-pile zone">${pilesHtml(p)}</div>
+      <div class="g-bench zone">${tag}<div class="benchrow">${P.bench.map(b => slotHtml(b)).join('')}</div>${P.bench.length ? '' : '<span class="bempty">벤치</span>'}</div>
     </section>`;
 }
 function handHtml(p) { // 내 손패: 아래쪽 일자 줄 (위쪽만 보이고, 누르면 올라옴). 볼 수 없는 손패는 뒷면
   const P = G.view.p[p], n = P.hand ? P.hand.length : P.handN, mine = G.view.me === p;
-  if (!P.hand) return `<div class="handbar peek backs"><div class="fan" style="--n:${n}">${Array.from({ length: Math.min(n, 12) }, (_, i) => cardBack('inhand', `style="--i:${i}"`)).join('')}</div><span class="hcnt">${n}</span></div>`;
-  return `<div class="handbar ${mine ? '' : 'peek'}"><div class="fan" style="--n:${n}">${P.hand.map((x, i) => cardFace(x, 'inhand', `${mine ? `data-hand="${x.i}"` : ''} style="--i:${i}"`)).join('') || '<span class="nohand">손패 없음</span>'}</div>${n ? `<span class="hcnt" title="손패">${n}</span>` : ''}</div>`;
+  if (!P.hand) return `<div class="handbar peek backs"><div class="fan" style="--n:${Math.min(n, 15)}">${Array.from({ length: Math.min(n, 15) }, (_, i) => cardBack('inhand', `style="--i:${i}"`)).join('')}</div></div>`;
+  return `<div class="handbar ${mine ? '' : 'peek'}"><div class="fan" style="--n:${n}">${P.hand.map((x, i) => cardFace(x, 'inhand', `${mine ? `data-hand="${x.i}"` : ''} style="--i:${i}"`)).join('') || '<span class="nohand">손패 없음</span>'}</div></div>`;
 }
 function oppHandHtml(p) { // 상대 손패: 맨 위에 뒷면이 살짝 보임
   const P = G.view.p[p], n = P.hand ? P.hand.length : P.handN;
-  const cards = P.hand ? P.hand.map((x, i) => cardFace(x, 'oh', `style="--i:${i}"`)).join('') : Array.from({ length: Math.min(n, 12) }, (_, i) => cardBack('oh', `style="--i:${i}"`)).join('');
-  return `<div class="ohand" data-zone="hand" data-p="${p}" style="--n:${Math.min(n, 12)}"><div class="ofan">${cards}</div><span class="hcnt" title="상대 손패">${n}</span></div>`;
+  const cards = P.hand ? P.hand.map((x, i) => cardFace(x, 'oh', `style="--i:${i}"`)).join('') : Array.from({ length: Math.min(n, 15) }, (_, i) => cardBack('oh', `style="--i:${i}"`)).join('');
+  return `<div class="ohand" data-zone="hand" data-p="${p}" title="상대 손패 ${n}장" style="--n:${Math.min(n, 15)}"><div class="ofan">${cards}</div></div>`;
 }
 function midHtml(readOnly) {
   const v = G.view;
   const stadium = v.stadium ? `<div class="stadium" data-stadium="1">${cardFace(v.stadium, 'stad')}</div>` : '<div class="stadium none" title="스타디움 없음"><span>스타디움</span></div>';
-  const last = [...G.lines].reverse().find(l => !l.chat && l.txt);
-  return `<div class="fieldline">${stadium}<div class="centerball"></div>${last && !readOnly ? `<div class="ticker">${esc(last.txt)}</div>` : ''}</div>`;
+  return `<div class="fieldline">${stadium}</div>`;
 }
 const fmtShort = ms => { if (ms <= 0) return '지남'; const m = Math.max(1, Math.round(ms / 60000)); return m >= 60 ? `${Math.floor(m / 60)}시간` : m >= 1 ? `${m}분` : '곧'; };
 function rbarHtml(readOnly) { // 오른쪽 세로 막대: 위 사람 남은 사이드(빨강) · 차례/남은 시간 · 아래 사람 남은 사이드(파랑)
   const v = G.view, bs = bottomSeat(), os = 1 - bs;
   const cur = v.phase === 'play' ? (v.current === bs ? 'me' : 'opp') : '';
-  const mid = v.phase === 'setup' ? '<b>준비</b>' : v.phase === 'over' ? '<b>끝</b>' : `<small>${v.turn}번째</small>${v.deadline ? `<b title="${fmtLeft(v.deadline - Date.now())}">${fmtShort(v.deadline - Date.now())}</b>` : '<b>차례</b>'}`;
+  const U = v.phase === 'play' ? v.p[v.current].used : null; // 세로 화면: 이번 차례에 쓴 것(에너지·서포트·후퇴·기술)을 막대 가운데에 작게
+  const cu = U ? `<span class="cuses" title="${esc(v.p[v.current].name)} 님이 이번 차례에 쓴 것">${USES.map(([k, ic, l]) => `<i class="${U[k] ? 'done' : ''}" title="${l} ${U[k] ? '(썼어요)' : '(아직)'}">${ICON[ic]}</i>`).join('')}</span>` : '';
+  const mid = v.phase === 'setup' ? '<b>준비</b>' : v.phase === 'over' ? '<b>끝</b>' : `<small>${v.turn}번째</small>${v.deadline ? `<b title="${fmtLeft(v.deadline - Date.now())}">${fmtShort(v.deadline - Date.now())}</b>` : '<b>차례</b>'}${cu}`;
   return `<div class="rbar">
     <div class="pzc opp" title="${esc(v.p[os].name)} 님 남은 사이드"><b>${v.p[os].prizesN}</b></div>
     <div class="clock ${cur}" title="${v.deadline ? '이번 결정까지 남은 시간' : ''}">${mid}</div>
@@ -741,18 +736,18 @@ const FAB_ICON = {
 };
 const FAB_FX = '<i class="fx f1"></i><i class="fx f3"></i><i class="fx f4"></i>';
 const fabBtn = (t, ic, l, k, extra = '') => `<div class="fabw"><button class="fab ${k}" data-t="${t}" aria-label="${l}">${FAB_FX}<span class="core">${FAB_ICON[ic]}</span>${extra}</button><span class="fl">${l}</span></div>`;
-function fabHtml() { // 왼쪽: 코인·효과 / 오른쪽: 더 보기(위)·기록(아래), 가운데 줄 옆에 차례 끝내기
+function fabHtml() { // 왼쪽: 상대 턴·코인·효과 / 오른쪽: 더 보기·남은 사이드 막대·차례 끝내기 / 오른쪽 아래: 기록
   const v = G.view, me = meSeat();
   const pend = me == null ? 0 : v.groups.filter(g => g.who !== me && g.status !== 'ok').length;
   const log = fabBtn('log', 'log', '기록', 'k-log', pend ? `<i class="badge">${pend}</i>` : '');
-  if (me == null || v.phase === 'over') return `<div class="rbtns lo">${log}</div>`;
+  if (me == null || v.phase === 'over') return { log: `<div class="rbtns">${log}</div>` };
   const myTurn = v.phase === 'play' && v.current === me;
   const open = v.openGroup[me];
   const rwt = lastOppTurn(), rwNew = rwt && !rwSeen(rwt);
   const rw = rwt ? `<div class="rwbtn">${fabBtn('rewatch', 'rewatch', '상대 턴', 'k-rw' + (rwNew ? ' on nudge' : ''), rwNew ? '<i class="badge">새</i>' : '')}</div>` : '';
-  return `${rw}<div class="lbtns">${fabBtn('coin', 'coin', '코인', 'k-coin')}${open ? fabBtn('effectEnd', 'check', '효과 끝', 'k-fx on') : fabBtn('effect', 'hand', '효과 쓰기', 'k-fx')}</div>
-    <div class="rbtns hi">${fabBtn('more', 'more', '더 보기', 'k-more')}</div><div class="rbtns lo">${log}</div>
-    ${myTurn ? `<button class="fab wide endturn" data-t="endTurn">${FAB_FX}${FAB_ICON.flag}<span>차례<br>끝내기</span></button>` : ''}`;
+  return { left: `<div class="lbtns">${rw}${fabBtn('coin', 'coin', '코인', 'k-coin')}${open ? fabBtn('effectEnd', 'check', '효과 끝', 'k-fx on') : fabBtn('effect', 'hand', '효과 쓰기', 'k-fx')}</div>`,
+    more: fabBtn('more', 'more', '더 보기', 'k-more'), log: `<div class="rbtns">${log}</div>`,
+    end: myTurn ? `<button class="fab wide endturn" data-t="endTurn">${FAB_FX}${FAB_ICON.flag}<span>차례<br>끝내기</span></button>` : '' };
 }
 // 누르면 버튼마다 '누를 때' 움직임을 한 번
 // 누르면 통 튀는 효과 + 소리 (버튼·탭·카드)
@@ -764,9 +759,10 @@ document.addEventListener('pointerdown', e => {
 });
 function matHtml(readOnly = false) {
   const bs = bottomSeat(), os = 1 - bs, v = G.view;
+  const f = readOnly ? {} : fabHtml();
   const over = v.phase === 'over' ? `<div class="overpill">🏆 ${esc(v.p[v.winner]?.name || '')} 승리</div>` : '';
   return `${oppHandHtml(os)}<div class="matwrap"><div class="matbox"><div class="mat ${readOnly ? 'ro' : ''}">${areaHtml(os, false)}${midHtml(readOnly)}${areaHtml(bs, true)}</div>
-    ${over}${rbarHtml(readOnly)}${readOnly ? '' : fabHtml()}</div></div>${handHtml(bs)}`;
+    ${over}${f.left || ''}<div class="rcol">${f.more || ''}${rbarHtml(readOnly)}${f.end || ''}</div></div></div>${f.log || ''}${handHtml(bs)}`;
 }
 
 // ----- 그리기 + 애니메이션 -----

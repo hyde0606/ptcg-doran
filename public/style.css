@@ -342,51 +342,66 @@ body.mat-custom.mat-light, .mt-img.mt-light { --m-veil: rgba(255, 255, 255, .2);
 .arena-loading { min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font-family: var(--fh); color: var(--head); }
 .spin-ball { width: 58px; height: 58px; border-radius: 50%; border: 3px solid #33404d; background: radial-gradient(circle at 50% 50%, #fff 0 18%, #33404d 19% 27%, transparent 28%), linear-gradient(#ff5a4d 0 45%, #33404d 45% 55%, #fff 55%); animation: wob 1s infinite ease-in-out; }
 @keyframes wob { 0%, 100% { transform: rotate(-22deg); } 50% { transform: rotate(22deg); } }
-/* 판 크기: --cw = 벤치 카드 너비. 가로 화면은 PTCGL처럼
-   [상대 벤치] / [상대 사이드 · 배틀 · 덱·트래시] / 가운데 줄 / [내 사이드 · 배틀 · 덱·트래시] / [내 벤치], 매트 양옆은 버튼·상태 막대 자리 */
-.arena { --tagh: 30px; --rw: 58px; --fz: 56px; --vh: 100vh; --tilt: 27deg; --tf: .73; --mhk: 9.07; --vx: 0px; --cwW: calc((100vw - 300px) / 9.6); --mh: calc(var(--cw) * var(--mhk) + var(--tagh) * 2); --cw: clamp(30px, min(var(--cwW), calc((var(--vh) - var(--hh) - 8px - var(--vx) - var(--tagh) * 2 * var(--tf)) / (1.52 + var(--mhk) * var(--tf)))), 150px); --matw: calc(var(--cw) * 10.5); --side: calc((100% - var(--matw)) / 2); --edgeL: max(14px, env(safe-area-inset-left, 0px), calc(var(--side) - 104px)); --edgeR: max(14px, env(safe-area-inset-right, 0px), calc(var(--side) - 214px)); position: relative; min-height: calc(var(--vh) - var(--hh)); }
+/* 판 크기: --cw = 내 벤치 카드 너비. PTCGL 배치 그대로:
+   [상대 사이드 | 상대 벤치 | 상대 덱·트래시] / 가운데 넓은 칸에 상대 배틀 · 스타디움 · 내 배틀 / [내 사이드 | 내 벤치 | 내 덱·트래시].
+   가로 화면은 판이 화면 폭을 거의 다 쓰고(양옆에 버튼 자리만), 세로 화면은 벤치가 3칸 × 2줄.
+   판 높이(눕히기 전) = --mk × cw, 눕힌 뒤 보이는 높이 = × --tf (각도·원근에서 계산한 값) */
+.arena { --tagh: 0px; --fz: clamp(36px, 7.4vh, 56px); --rw: clamp(36px, 7.6vh, 58px); --vh: 100vh; --tilt: 18deg; --tf: .8443; --mk: 8.18; --ak: 1.36; --peek: .42; --handv: 1.05; --vx: 0px;
+  --gut: calc(var(--fz) + 28px);
+  --cwW: calc((100vw - var(--gut) * 2) / 11.2);
+  --cw: clamp(28px, min(var(--cwW), calc((var(--vh) - var(--hh) - 8px - var(--vx)) / (var(--mk) * var(--tf) + var(--peek) + var(--handv)))), 150px);
+  --matw: min(calc(100vw - var(--gut) * 2), calc(var(--cw) * 13.6));
+  --side: calc((100% - var(--matw)) / 2);
+  --edgeL: max(14px, env(safe-area-inset-left, 0px), calc((var(--side) - var(--fz)) / 2)); --edgeR: max(14px, env(safe-area-inset-right, 0px), calc((var(--side) - var(--rw)) / 2));
+  position: relative; min-height: calc(var(--vh) - var(--hh)); }
 @supports (height: 100dvh) { .arena { --vh: 100dvh; } }
-.arena.replay { --pw: 320px; --vx: 72px; --cwW: calc((100vw - var(--pw) - 160px) / 10.2); }
-.arena.rwmode { --cwW: calc((100vw - 520px) / 10.5); } /* 상대 턴 다시 보기: 왼쪽에 설명 판 자리 */
-@media (max-width: 1100px) { .arena.replay { --pw: 280px; } .replaybar > .pill { display: none; } }
+.arena.replay { --vx: 64px; }
+.arena.rwmode { --vx: 64px; }
 .table { position: relative; height: calc(var(--vh) - var(--hh)); overflow: hidden; display: flex; flex-direction: column; align-items: center; }
-.matwrap { flex: 1; width: 100%; display: flex; justify-content: center; align-items: safe center; padding-top: calc(var(--cw) * .5 + 8px); padding-bottom: calc(var(--cw) * 1.02); }
-.arena.replay .matwrap { padding-bottom: calc(var(--cw) * 1.02 + 64px); }
-/* 판은 PTCGL처럼 뒤로 눕혀서(원근) 상대 쪽은 작고 멀게, 내 쪽은 크고 가깝게. 상자 높이 = 눕힌 뒤 보이는 높이 */
-.matbox { position: relative; width: 100%; height: calc(var(--mh) * var(--tf)); flex: none; }
-/* 플레이매트: 세 칸 [사이드 | 가운데 | 덱·트래시] */
-.mat { --sidew: calc(var(--cw) * 2); --benchw: calc(var(--cw) * 5.9); position: absolute; left: 0; right: 0; bottom: 0; width: max-content; margin-inline: auto; transform-origin: 50% 100%; transform: perspective(calc(var(--cw) * 20)) rotateX(var(--tilt)); display: flex; flex-direction: column; gap: calc(var(--cw) * .05); padding: calc(var(--cw) * .1) calc(var(--cw) * .14); border-radius: 28px;
+.matwrap { flex: 1; width: 100%; display: flex; justify-content: center; align-items: safe center; padding-top: calc(var(--cw) * var(--peek) + 4px); padding-bottom: calc(var(--cw) * var(--handv) + var(--vx)); }
+/* 판은 PTCGL처럼 살짝 뒤로 눕혀서(원근) 상대 쪽이 조금 작게. 상자 높이 = 눕힌 뒤 보이는 높이 */
+.matbox { position: relative; width: 100%; height: calc(var(--cw) * var(--mk) * var(--tf)); flex: none; }
+.mat { position: absolute; left: 0; right: 0; bottom: 0; width: var(--matw); height: calc(var(--cw) * var(--mk)); box-sizing: border-box; margin-inline: auto; transform-origin: 50% 100%; transform: perspective(calc(var(--cw) * 20)) rotateX(var(--tilt));
+  display: grid; grid-template-rows: auto calc(var(--cw) * var(--flk, .42)) auto; padding: calc(var(--cw) * .1) calc(var(--cw) * .14); border-radius: 28px;
   background: var(--m-bg);
   box-shadow: 0 0 0 6px #fff, 0 0 0 8px var(--m-edge), 0 24px 50px var(--m-glow); transition: background .4s; }
 .mat::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .16) 50%, transparent 62%); background-size: 260% 100%; animation: matsheen 11s ease-in-out infinite; }
 @keyframes matsheen { 0%, 100% { background-position: 110% 0; } 50% { background-position: -10% 0; } }
-.area { position: relative; display: grid; grid-template-columns: var(--sidew) var(--benchw) var(--sidew); align-items: center; gap: calc(var(--cw) * .08) calc(var(--cw) * .12); border-radius: 22px; padding: calc(var(--cw) * .04); transition: background .3s; }
-.area.top { grid-template-areas: ". bench ." "pz act pile"; }
-.area.bottom { grid-template-areas: "pz act pile" ". bench ."; }
-.area.now { background: rgba(255, 255, 255, .16); }
-.g-pz { grid-area: pz; justify-self: center; } .g-act { grid-area: act; justify-self: center; position: relative; }
-.g-act { padding-bottom: calc(var(--cw) * .2); } .g-pile { grid-area: pile; justify-self: center; position: relative; } .g-bench { grid-area: bench; position: relative; }
-.g-act::before { content: ''; position: absolute; left: 50%; top: 50%; width: calc(var(--cw) * 2.4); height: calc(var(--cw) * 2.4); transform: translate(-50%, -50%); border-radius: 50%; border: 3px solid var(--m-line); pointer-events: none; }
-/* 벤치: 큰 칸 하나 (상대 빨강, 나 파랑). 카드는 가운데로 모여 줄을 섬 */
-.g-bench { container-type: inline-size; --brows: 1; --zc: rgba(52, 132, 230, .6); --zbg: rgba(52, 132, 230, .1); display: flex; align-items: center; justify-content: center; min-height: calc(var(--cw) * (1.4 * var(--brows) + .12 * (var(--brows) - 1) + .26) + var(--tagh)); padding: calc(var(--cw) * .13); padding-top: calc(var(--cw) * .13 + var(--tagh)); border-radius: 16px; background: linear-gradient(var(--zbg), var(--zbg)), var(--m-zone); box-shadow: inset 0 0 0 2.5px var(--zc); }
-.area.top .g-bench { padding-top: calc(var(--cw) * .13); padding-bottom: calc(var(--cw) * .13 + var(--tagh)); --zc: rgba(232, 86, 72, .6); --zbg: rgba(232, 86, 72, .1); }
-.benchrow { display: flex; flex-wrap: wrap; justify-content: center; align-content: center; gap: calc(var(--cw) * .12); max-width: calc(var(--cw) * 5.5); }
-.bempty { font-family: var(--fh); font-size: .8rem; color: var(--m-label); opacity: .6; }
-/* 이름표: 벤치 칸 모서리에 (상대는 아래쪽, 나는 위쪽) */
-.ztag { --pc: #3484e6; position: absolute; left: 8px; top: 5px; z-index: 4; display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px 2px 2px; border-radius: 999px; background: #fff; font-family: var(--fh); font-size: .82rem; color: var(--text); box-shadow: 0 2px 6px rgba(0,0,0,.16); white-space: nowrap; }
+/* 한 사람 자리: 바깥 줄 [사이드 | 벤치 | 덱·트래시] + 안쪽 줄 [배틀] */
+.area { --zc: rgba(52, 132, 230, .55); --zbg: rgba(52, 132, 230, .1); position: relative; display: grid; grid-template-columns: 1fr auto 1fr; column-gap: calc(var(--cw) * .2); transition: background .3s; }
+.area.top { --zc: rgba(232, 86, 72, .55); --zbg: rgba(232, 86, 72, .1); grid-template-areas: "pz bench pile" ". act ."; grid-template-rows: calc(var(--cw) * var(--ork, 1.66)) calc(var(--cw) * var(--ark, 2.12)); }
+.area.bottom { grid-template-areas: ". act ." "pz bench pile"; grid-template-rows: calc(var(--cw) * var(--ark, 2.12)) calc(var(--cw) * var(--ork, 1.66)); }
+.g-pz { grid-area: pz; justify-self: start; align-self: center; } .g-pile { grid-area: pile; justify-self: end; align-self: center; position: relative; }
+.g-act { grid-area: act; justify-self: center; position: relative; }
+.area.top .g-act { align-self: end; } .area.bottom .g-act { align-self: start; }
+.g-act::before { content: ''; position: absolute; left: 50%; top: 50%; width: calc(var(--cw) * var(--ak) * 1.62); height: calc(var(--cw) * var(--ak) * 1.62); transform: translate(-50%, -50%); border-radius: 50%; border: 3px solid var(--m-line); pointer-events: none; }
+/* 칸 테두리 (PTCGL처럼 사이드·벤치·덱 자리마다): 상대 빨강, 나 파랑 */
+.zone { border-radius: 14px; background: linear-gradient(var(--zbg), var(--zbg)), var(--m-zone); box-shadow: inset 0 0 0 2.5px var(--zc); padding: calc(var(--cw) * .06); }
+.area.now .zone { --zbg: rgba(255, 196, 92, .16); }
+/* 벤치: 5칸 한 줄(가로) / 3칸 × 2줄(세로). 카드는 왼쪽부터 */
+.g-bench { grid-area: bench; position: relative; container-type: inline-size; align-self: center; width: calc(var(--cw) * var(--bwk, 5.8)); height: calc(var(--cw) * var(--bhk, 1.6)); box-sizing: border-box; display: flex; align-items: center; justify-content: flex-start; padding: calc(var(--cw) * .1) calc(var(--cw) * .13); }
+.benchrow { display: flex; flex-wrap: wrap; justify-content: flex-start; align-content: center; gap: calc(var(--cw) * .12); width: 100%; height: 100%; align-items: center; }
+.area.top .benchrow { flex-wrap: wrap-reverse; }
+.bempty { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-family: var(--fh); font-size: .8rem; color: var(--m-label); opacity: .6; pointer-events: none; }
+/* 이름표: 벤치 칸 테두리에 걸쳐서 (나는 위쪽 테두리, 상대는 아래쪽 테두리) */
+.ztags { position: absolute; left: calc(var(--cw) * .06); right: calc(var(--cw) * .06); top: 0; transform: translateY(calc(-100% - 3px)); z-index: 4; display: flex; justify-content: space-between; align-items: center; gap: 6px; pointer-events: none; }
+.area.top .ztags { top: auto; bottom: 0; transform: translateY(calc(100% + 3px)); }
+.cuses { display: none; }
+.ztags > * { pointer-events: auto; }
+.ztag { --pc: #3484e6; display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 2px; border-radius: 999px; background: #fff; font-family: var(--fh); font-size: .8rem; color: var(--text); box-shadow: 0 2px 6px rgba(0,0,0,.16); white-space: nowrap; }
 .ztag.opp { --pc: #e8574a; }
-.area.top .ztag { top: auto; bottom: 5px; }
-.ztag .av { font-style: normal; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: .74rem; background: var(--pc); box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--pc); }
+.ztag .av { font-style: normal; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: .74rem; background: var(--pc); box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--pc); flex: none; }
 .zst { font-weight: normal; font-size: .72rem; padding: 0 8px; border-radius: 999px; background: var(--panel2); }
 .zst.turn { background: linear-gradient(90deg, #ffb35c, #ff7a2f); color: #fff; animation: breathe 1.6s infinite; } .zst.ok { background: var(--good); color: #fff; }
-.fieldline { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; min-height: calc(var(--cw) * .36); }
-.fieldline::before { content: ''; position: absolute; left: 4%; right: 4%; top: 50%; height: 3px; background: var(--m-line); border-radius: 2px; }
-.centerball { position: relative; width: calc(var(--cw) * .5); height: calc(var(--cw) * .5); border-radius: 50%; border: 3px solid var(--m-line); background: radial-gradient(circle, var(--m-line) 0 22%, transparent 24%); }
-.stadium { position: absolute; left: 3%; top: 50%; transform: translateY(-50%) rotate(-90deg); cursor: pointer; z-index: 2; }
-.stadium .pc { width: calc(var(--cw) * .62); }
-.stadium.none { width: calc(var(--cw) * .9); height: calc(var(--cw) * .62); transform: translateY(-50%); border: 2px dashed var(--m-empty); border-radius: 10px; display: grid; place-items: center; cursor: default; background: var(--m-zone); }
-.stadium.none span { font-family: var(--fh); font-size: min(.7rem, calc(var(--cw) * .2)); color: var(--m-label); white-space: nowrap; }
-.ticker { position: absolute; right: 3%; max-width: 38%; font-size: .8rem; color: #24584a; background: rgba(255,255,255,.88); padding: 3px 12px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: var(--shadow2); }
+/* 가운데 줄 + 스타디움 (배틀 포켓몬 왼쪽, PTCGL처럼 세워서) */
+.fieldline { position: relative; display: flex; align-items: center; justify-content: center; }
+.fieldline::before { content: ''; position: absolute; left: 3%; right: 3%; top: 50%; height: 3px; background: var(--m-line); border-radius: 2px; }
+.centerball { display: none; }
+.stadium { position: absolute; right: calc(50% + var(--cw) * var(--ak) / 2 + var(--cw) * var(--sgk, .7)); top: 50%; transform: translateY(-50%); cursor: pointer; z-index: 2; }
+.stadium .pc { width: calc(var(--cw) * var(--stk, .95)); }
+.stadium.none { width: calc(var(--cw) * var(--stk, .95)); aspect-ratio: 63 / 88; border: 2px dashed var(--m-empty); border-radius: 10px; display: grid; place-items: center; cursor: default; background: var(--m-zone); opacity: .7; }
+.stadium.none span { font-family: var(--fh); font-size: min(.7rem, calc(var(--cw) * .17)); color: var(--m-label); white-space: nowrap; }
+.ticker { display: none; }
 
 /* 카드 */
 .pc { position: relative; width: var(--cw); aspect-ratio: 63 / 88; border-radius: calc(var(--cw) * .055); background: linear-gradient(135deg, #fff6d9, #ffd98a); box-shadow: 0 3px 8px rgba(20, 50, 40, .35); overflow: hidden; flex: none; will-change: transform; }
@@ -404,66 +419,35 @@ body.mat-custom.mat-light, .mt-img.mt-light { --m-veil: rgba(255, 255, 255, .2);
 .pc.under { position: absolute; left: 0; top: 0; transform: translate(calc(var(--u) * -4px), calc(var(--u) * -5px)); background: linear-gradient(135deg, #ffe9b0, #e7c06a); z-index: 0; }
 .spot { position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
 .spot.empty { width: var(--cw); aspect-ratio: 63 / 88; border: 2.5px dashed var(--m-empty); border-radius: calc(var(--cw) * .07); justify-content: center; color: var(--m-label); font-family: var(--fh); font-size: .78rem; cursor: default; background: var(--m-zone); }
-.spot.act.empty, .spot.act .pc { width: calc(var(--cw) * 1.5); }
+.spot.act.empty, .spot.act .pc { width: var(--pcw); }
 .spot.filled .pc.onfield { transition: transform .15s, box-shadow .15s; z-index: 1; }
 .spot.filled:hover .pc.onfield { transform: translateY(-4px); box-shadow: 0 10px 18px rgba(20, 50, 40, .4); }
 .rotwrap { position: relative; transition: transform .45s cubic-bezier(.3,.8,.3,1.2); }
 .rotwrap.r-sleep { transform: rotate(-90deg) scale(.8); } .rotwrap.r-para { transform: rotate(90deg) scale(.8); } .rotwrap.r-conf { transform: rotate(180deg); }
 input.wide { width: 100%; box-sizing: border-box; }
 /* 판 위 포켓몬 크기 기준 (--pcw = 그 카드 너비) */
-.spot { --pcw: var(--cw); } .spot.act { --pcw: calc(var(--cw) * 1.5); }
+.spot { --pcw: var(--cw); } .spot.act { --pcw: calc(var(--cw) * var(--ak)); }
 /* 타입 아이콘 (자체 그림): 색 동그라미 + 흰 기호, 얇은 테두리 */
 .ty { --tc: #b58cff; flex: none; display: inline-grid; place-items: center; width: 1em; height: 1em; border-radius: 50%; color: #fff; font-style: normal; vertical-align: -.15em;
   background: radial-gradient(circle at 34% 28%, color-mix(in srgb, var(--tc) 55%, #fff), var(--tc) 62%, color-mix(in srgb, var(--tc) 78%, #000)); box-shadow: inset 0 0 0 .06em rgba(0, 0, 0, .28); }
 .ty.dk { color: #2b2f36; }
 .ty svg { width: 68%; height: 68%; display: block; fill: currentColor; filter: drop-shadow(0 .03em .03em rgba(0, 0, 0, .25)); }
 .ty.dk svg { filter: none; }
-/* 붙은 에너지: 카드 왼쪽 아래 모서리에 걸쳐 나란히 (흰 테두리), 많으면 겹침 */
-.enrow { position: absolute; left: calc(var(--pcw) * .05); bottom: calc(var(--pcw) * -.09); z-index: 3; display: flex; align-items: center; pointer-events: none; }
-.enrow .ty { font-size: calc(var(--pcw) * .2); pointer-events: auto; margin-left: min(calc(var(--pcw) * .015), calc((var(--pcw) * .9 - var(--n) * 1em) / max(var(--n) - 1, 1))); box-shadow: inset 0 0 0 .05em rgba(0, 0, 0, .25), 0 0 0 max(1.5px, .08em) #fff, 0 .08em .2em rgba(0, 0, 0, .4); }
+/* 붙은 에너지 (PTCGL처럼): 카드 왼쪽 아래 모서리에 걸쳐 나란히, 많으면 겹침 */
+.enrow { position: absolute; left: calc(var(--pcw) * .04); bottom: calc(var(--pcw) * -.1); z-index: 3; display: flex; align-items: center; pointer-events: none; }
+.enrow .ty { font-size: calc(var(--pcw) * .2); pointer-events: auto; margin-left: min(calc(var(--pcw) * .01), calc((var(--pcw) * .92 - var(--n) * 1em) / max(var(--n) - 1, 1))); box-shadow: inset 0 .08em .12em rgba(255, 255, 255, .45), inset 0 -.08em .14em rgba(0, 0, 0, .3), 0 0 0 max(1px, .05em) rgba(255, 255, 255, .95), 0 0 0 max(1.6px, .085em) rgba(20, 28, 36, .55), 0 .1em .22em rgba(0, 0, 0, .45); }
 .enrow .ty:first-child { margin-left: 0; }
-.dmg { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); z-index: 3; min-width: calc(var(--cw) * .44); height: calc(var(--cw) * .44); padding: 0 5px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #ff9a8f, #f0453a 55%, #b8231b); color: #fff; font-family: var(--fh); font-size: calc(var(--cw) * .22); display: grid; place-items: center; border: 2.5px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.4); }
-.rotwrap.r-conf .dmg { transform: translate(-50%, -50%) rotate(180deg); } .rotwrap.r-conf .ctop { transform: rotate(180deg); }
-/* 카드 위쪽: 이름 알약(왼쪽)·HP 알약(오른쪽, 숫자 + 타입 아이콘). 흰 바탕에 얇은 진한 테두리 */
-.pc .ctop { position: absolute; left: 3%; right: 3%; top: 2.6%; z-index: 2; display: flex; justify-content: space-between; align-items: flex-start; gap: 3%; pointer-events: none; }
-.nmb, .hpb { background: #fff; color: #1f2830; font-family: var(--fh); border-radius: .55em; box-shadow: inset 0 0 0 max(1px, .09em) #33404d, 0 .1em .25em rgba(0, 0, 0, .28); }
-.nmb { flex: none; white-space: nowrap; font-size: min(10.5cqw, calc(52cqw / var(--lw, 5))); line-height: 1.22; padding: .1em .42em .06em; }
-.nmb small { font-size: .78em; }
-.hpb { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: .16em; font-size: max(9px, 11.8cqw); line-height: 1.12; padding: .06em .1em .06em .36em; }
-.hpb b { font-weight: normal; letter-spacing: -.02em; }
-.hpb .ty { font-size: 1.04em; }
-.hpb.mid { color: #b86a00; box-shadow: inset 0 0 0 max(1.2px, .1em) #f0a020, 0 .1em .25em rgba(0, 0, 0, .28); }
-.hpb.low { color: #d22f26; box-shadow: inset 0 0 0 max(1.2px, .1em) #e8473c, 0 .1em .25em rgba(0, 0, 0, .28); animation: hplow 1.4s ease-in-out infinite; }
-@keyframes hplow { 50% { background: #ffe9e6; } }
-.pc .ctop.mg { top: 1.2%; } .ctop.mg .hpb { font-size: max(8px, 10cqw); line-height: 1.1; padding-block: .04em; }
-@container (max-width: 51.9px) { .hpb { font-size: max(8px, 15cqw); } }
-/* 이름 알약은 글씨가 7px보다 작아질 카드에서는 숨김: tNN = 보이는 가장 작은 카드 폭(px) */
-@container (max-width: 53.9px) { .nmb.t54 { display: none; } }
-@container (max-width: 59.9px) { .nmb.t60 { display: none; } }
-@container (max-width: 65.9px) { .nmb.t66 { display: none; } }
-@container (max-width: 71.9px) { .nmb.t72 { display: none; } }
-@container (max-width: 77.9px) { .nmb.t78 { display: none; } }
-@container (max-width: 83.9px) { .nmb.t84 { display: none; } }
-@container (max-width: 89.9px) { .nmb.t90 { display: none; } }
-@container (max-width: 95.9px) { .nmb.t96 { display: none; } }
-@container (max-width: 101.9px) { .nmb.t102 { display: none; } }
-@container (max-width: 107.9px) { .nmb.t108 { display: none; } }
-@container (max-width: 113.9px) { .nmb.t114 { display: none; } }
-@container (max-width: 119.9px) { .nmb.t120 { display: none; } }
-@container (max-width: 125.9px) { .nmb.t126 { display: none; } }
-@container (max-width: 131.9px) { .nmb.t132 { display: none; } }
-@container (max-width: 137.9px) { .nmb.t138 { display: none; } }
-@container (max-width: 143.9px) { .nmb.t144 { display: none; } }
-@container (max-width: 149.9px) { .nmb.t150 { display: none; } }
-@container (max-width: 155.9px) { .nmb.t156 { display: none; } }
-@container (max-width: 161.9px) { .nmb.t162 { display: none; } }
-@container (max-width: 167.9px) { .nmb.t168 { display: none; } }
-@container (max-width: 173.9px) { .nmb.t174 { display: none; } }
-@container (max-width: 179.9px) { .nmb.t180 { display: none; } }
-@container (max-width: 185.9px) { .nmb.t186 { display: none; } }
-@container (max-width: 191.9px) { .nmb.t192 { display: none; } }
-@container (max-width: 197.9px) { .nmb.t198 { display: none; } }
-.nmb.t0 { display: none; }
+/* 데미지 숫자는 HP 상자(남은 HP)로 보여서 따로 그리지 않음. HP를 모르는 카드만 작은 주황 배지 */
+.dmg { position: absolute; right: calc(var(--pcw) * -.06); top: calc(var(--pcw) * .2); z-index: 3; min-width: calc(var(--pcw) * .26); height: calc(var(--pcw) * .26); padding: 0 .25em; box-sizing: border-box; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #ffc56b, #f39a1e 60%, #d07400); color: #fff; font: 700 calc(var(--pcw) * .14)/1 'Rubik', var(--fh); display: grid; place-items: center; box-shadow: 0 0 0 1.5px #fff, 0 2px 4px rgba(0,0,0,.4); }
+.rotwrap.r-conf .hpb { transform: rotate(180deg); }
+/* HP 상자 (PTCGL처럼): 카드 오른쪽 위 모서리에 걸친 흰 상자, 굵은 숫자(남은 HP) + 타입 기호 */
+.hpb { position: absolute; z-index: 4; right: calc(var(--pcw) * -.03); top: calc(var(--pcw) * -.075); display: inline-flex; align-items: center; gap: calc(var(--pcw) * .03); height: calc(var(--pcw) * .185); padding: 0 calc(var(--pcw) * .028) 0 calc(var(--pcw) * .06); box-sizing: border-box; pointer-events: none;
+  background: linear-gradient(180deg, #ffffff 0 55%, #eef1f4); border-radius: calc(var(--pcw) * .05); box-shadow: 0 0 0 max(1px, calc(var(--pcw) * .008)) rgba(30, 40, 52, .38), 0 calc(var(--pcw) * .015) calc(var(--pcw) * .04) rgba(0, 0, 0, .38); }
+.hpb b { font: 700 max(9px, calc(var(--pcw) * .135))/1 'Rubik', 'Jua', sans-serif; color: #1c232b; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.hpb .ty { font-size: max(9px, calc(var(--pcw) * .14)); }
+.hpb.mid b { color: #c46a00; }
+.hpb.low b { color: #dc2f25; } .hpb.low { animation: hplow 1.4s ease-in-out infinite; }
+@keyframes hplow { 50% { background: linear-gradient(180deg, #fff1ef 0 55%, #ffd9d4); } }
 .marks { position: absolute; top: calc(var(--pcw) * .24); left: calc(var(--pcw) * -.1); display: flex; flex-direction: column; gap: 3px; z-index: 4; }
 .mk { font-size: .68rem; padding: 0 7px; border-radius: 999px; color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); border: 1.5px solid #fff; }
 .mk.poison { background: #9b4fd6; } .mk.burn { background: #f05a3f; } .mk.sleep { background: #5b7cf0; } .mk.para { background: #e5b300; } .mk.conf { background: #e05aa6; }
@@ -477,16 +461,17 @@ input.wide { width: 100%; box-sizing: border-box; }
 .dmgpop.heal { -webkit-text-stroke-color: #19995a; text-shadow: 0 3px 0 #19995a; }
 @keyframes popup { 0% { transform: translate(-50%, 10px) scale(.4); opacity: 0; } 20% { transform: translate(-50%, -8px) scale(1.3); opacity: 1; } 100% { transform: translate(-50%, -44px) scale(1); opacity: 0; } }
 
-/* 더미와 사이드: 사이드는 겹쳐 쌓은 더미, 숫자는 모서리 배지 */
+/* 덱·트래시·사이드 (PTCGL처럼 벤치 줄 양끝, 칸 테두리 안). 숫자는 아래쪽 진한 탭 */
 .piles { position: relative; display: flex; gap: calc(var(--cw) * .14); align-items: center; }
 .pile { position: relative; cursor: pointer; }
-.pile .pc, .zone-mark { width: calc(var(--cw) * .9); }
-.zone-mark { aspect-ratio: 63/88; border: 2.5px dashed var(--m-empty); border-radius: 8px; display: grid; place-items: center; font-family: var(--fh); font-size: min(.72rem, calc(var(--cw) * .2)); color: var(--m-label); background: var(--m-zone); white-space: nowrap; }
-.pile .cnt, .prizes .cnt { position: absolute; right: -7px; bottom: -8px; z-index: 6; min-width: 26px; text-align: center; font-family: var(--fh); font-size: .78rem; line-height: 1.55; color: var(--m-ink); background: var(--m-cnt); padding: 0 7px; border-radius: 999px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,.22); }
-.piles .lostc { position: absolute; left: 50%; top: 100%; margin-top: 10px; transform: translateX(-50%); z-index: 6; font-family: var(--fh); font-size: .72rem; color: var(--m-ink); background: var(--m-cnt); padding: 0 9px; border-radius: 999px; white-space: nowrap; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
-.stack .pc { width: calc(var(--cw) * .9); box-shadow: 1px 1px 0 #e9e9e4, 2px 2px 0 #cfcfc8, 3px 3px 0 #e9e9e4, 4px 4px 0 #c4c4bc, calc(var(--t) * 1px + 2px) calc(var(--t) * 1px + 3px) 8px rgba(0,0,0,.3); }
+.pile .pc, .zone-mark { width: calc(var(--cw) * var(--pk, 1.04)); }
+.zone-mark { aspect-ratio: 63/88; border: 2.5px dashed var(--m-empty); border-radius: 8px; display: grid; place-items: center; font-family: var(--fh); font-size: min(.72rem, calc(var(--cw) * .2)); color: var(--m-label); background: var(--m-zone); white-space: nowrap; box-sizing: border-box; }
+.pile .cnt, .prizes .cnt { position: absolute; left: 50%; bottom: calc(var(--cw) * -.12); transform: translateX(-50%); z-index: 6; min-width: 28px; text-align: center; font: 600 .8rem/1.5 'Rubik', var(--fh); color: #fff; background: #2b3442; padding: 0 8px; border-radius: 7px; white-space: nowrap; box-shadow: 0 0 0 1.5px rgba(255,255,255,.9), 0 2px 4px rgba(0,0,0,.3); }
+.piles .lostc { position: absolute; left: 50%; top: 100%; margin-top: calc(var(--cw) * .14); transform: translateX(-50%); z-index: 6; font-family: var(--fh); font-size: .72rem; color: var(--m-ink); background: var(--m-cnt); padding: 0 9px; border-radius: 999px; white-space: nowrap; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+.area.top .piles .lostc { top: auto; bottom: 100%; margin: 0 0 calc(var(--cw) * .1); }
+.stack .pc { width: calc(var(--cw) * var(--pk, 1.04)); box-shadow: 1px 1px 0 #e9e9e4, 2px 2px 0 #cfcfc8, 3px 3px 0 #e9e9e4, 4px 4px 0 #c4c4bc, calc(var(--t) * 1px + 2px) calc(var(--t) * 1px + 3px) 8px rgba(0,0,0,.3); }
 .prizes { position: relative; display: inline-block; cursor: pointer; }
-.pzstack { --pw: calc(var(--cw) * .9); --pox: calc(var(--cw) * .12); --poy: 0px; position: relative; width: calc(var(--pw) + (var(--n) - 1) * var(--pox)); height: calc(var(--pw) * 88 / 63 + (var(--n) - 1) * var(--poy)); }
+.pzstack { --pw: calc(var(--cw) * var(--pk, 1.04)); --pox: calc(var(--cw) * .21); --poy: 0px; position: relative; width: calc(var(--pw) + 5 * var(--pox)); height: calc(var(--pw) * 88 / 63 + 5 * var(--poy)); }
 .pzstack .pc.pz { position: absolute; left: calc(var(--k) * var(--pox)); top: calc(var(--k) * var(--poy)); width: var(--pw); border-radius: 5px; box-shadow: -2px 1px 4px rgba(0,0,0,.3); }
 .pzstack .pc.pz.back { padding: calc(var(--pw) * .045); }
 .pzstack .zone-mark { width: var(--pw); }
@@ -496,7 +481,7 @@ input.wide { width: 100%; box-sizing: border-box; }
 .pill.main { background: linear-gradient(90deg, var(--r1), var(--r2)); border-color: transparent; color: #fff; box-shadow: inset 0 0 0 2px rgba(255,255,255,.38), var(--shadow2); }
 .pill.warn { color: #b26a00; } .pill.ghost { color: var(--muted); }
 /* 오른쪽 세로 막대 (PTCGL처럼 화면 오른쪽 끝): 위 사람 남은 사이드(빨강) · 몇 번째 차례·남은 시간 · 아래 사람 남은 사이드(파랑) */
-.rbar { position: absolute; right: var(--edgeR); top: 50%; transform: translateY(-50%); z-index: 22; width: var(--rw); display: flex; flex-direction: column; border-radius: 18px; background: #33404d; box-shadow: 0 0 0 3px #fff, 0 6px 16px rgba(20, 50, 40, .28); }
+.rbar { position: relative; z-index: 22; width: var(--rw); display: flex; flex-direction: column; border-radius: 18px; background: #33404d; box-shadow: 0 0 0 3px #fff, 0 6px 16px rgba(20, 50, 40, .28); }
 .pzc { height: calc(var(--rw) * .86); display: grid; place-items: center; color: #fff; font-family: var(--fh); font-size: calc(var(--rw) * .48); line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,.2); }
 .pzc.opp { background: linear-gradient(180deg, #ff8576, #e8574a); border-radius: 18px 18px 0 0; }
 .pzc.me { background: linear-gradient(180deg, #5aa6f5, #2f7bd9); border-radius: 0 0 18px 18px; }
@@ -510,22 +495,23 @@ input.wide { width: 100%; box-sizing: border-box; }
 .specs { position: absolute; top: calc(100% + 9px); left: 50%; transform: translateX(-50%); font-size: .72rem; white-space: nowrap; color: var(--m-ink); background: var(--m-cnt); padding: 0 8px; border-radius: 999px; }
 .specs:empty { display: none; }
 /* 이번 차례에 한 번씩: 지금 차례인 사람 이름표 안에 (넓은 칸은 글자도) */
-.uses { display: inline-flex; gap: 3px; margin-left: 2px; }
+.uses { display: inline-flex; gap: 3px; padding: 2px; border-radius: 999px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.16); }
 .use { font-family: var(--fh); font-size: .72rem; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 999px; background: var(--panel2); color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 3px; }
-.use i { font-style: normal; }
+.use i { font-style: normal; display: grid; } .use .ic { width: 14px; height: 14px; }
 .use .ul { display: none; }
-@container (min-width: 360px) { .use .ul { display: inline; } .use { padding: 0 8px; } }
+@container (min-width: 560px) { .use .ul { display: inline; } .use { padding: 0 8px 0 6px; } }
 .use.done { background: #dff6ea; color: #1e9e5a; } .use.done .ul { text-decoration: line-through; } .use.done i { opacity: .55; }
 .ztag .av { position: relative; }
 .ztag.turn .av::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--pc); animation: fping 1.8s ease-out infinite; --sx: 1.35; --sy: 1.35; }
 .overpill { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 23; font-family: var(--fh); font-size: 1.2rem; padding: 8px 22px; border-radius: 999px; background: linear-gradient(90deg, #ffb35c, #ff7a2f); color: #fff; box-shadow: 0 0 0 4px #fff, var(--shadow); white-space: nowrap; pointer-events: none; }
 
-/* 둥근 버튼 (오른쪽): 볼 줄무늬 링, 약하게 (시안 6-약) */
-/* 버튼 자리: 왼쪽 가운데(코인·효과), 오른쪽 위(더 보기)·아래(기록), 오른쪽 막대 옆(차례 끝내기) */
-.lbtns, .rbtns { position: absolute; z-index: 22; display: flex; flex-direction: column; gap: 12px; align-items: center; }
-.lbtns { left: var(--edgeL); top: 50%; transform: translateY(-50%); }
-.rbtns { right: var(--edgeR); }
-.rbtns.hi { top: 0; } .rbtns.lo { bottom: 0; }
+/* 둥근 버튼 자리 (가로 = 판 양옆, 세로 = 가운데 넓은 칸 양옆): 왼쪽 [상대 턴 · 코인 · 효과], 오른쪽 [더 보기 · 남은 사이드 막대 · 차례 끝내기],
+   왼쪽 아래 = 확인할 것, 오른쪽 아래 = 기록 */
+.lbtns, .rcol { position: absolute; z-index: 22; top: var(--bmid, 47%); transform: translateY(-50%); display: flex; flex-direction: column; gap: var(--bgap, 12px); align-items: center; }
+.lbtns { left: var(--edgeL); }
+.rcol { right: var(--edgeR); }
+.rbtns { position: absolute; z-index: 22; right: var(--edgeR); bottom: var(--bbot, 10px); display: flex; flex-direction: column; align-items: center; }
+.rwbtn { display: contents; }
 .fabw { display: flex; flex-direction: column; align-items: center; gap: 5px; }
 .fabw .fl { font-family: var(--fh); font-size: .74rem; line-height: 1.45; color: #24543d; background: rgba(255,255,255,.9); padding: 0 9px; border-radius: 999px; white-space: nowrap; pointer-events: none; box-shadow: 0 1px 3px rgba(20,60,40,.12); }
 .fab { border: 0; --c: #2fa5d8; --c2: #9fe3c2; --band: color-mix(in srgb, var(--c) 70%, #333); --sx: 1.2; --sy: 1.2; --bx: 1.4; --by: 1.4; --d: 0s; --face: #fff;
@@ -562,14 +548,13 @@ input.wide { width: 100%; box-sizing: border-box; }
   grid-auto-flow: row; gap: 1px; color: #fff; font-size: .92rem; line-height: 1.15; text-align: center; background: linear-gradient(160deg, var(--c2), var(--c)); box-shadow: 0 0 0 3px #fff, 0 5px 12px rgba(20,60,40,.22); }
 .fab.wide svg { width: 18px; height: 18px; position: relative; z-index: 2; margin: 0 auto; }
 .fab.wide span { position: relative; z-index: 2; white-space: nowrap; }
-.endturn { position: absolute; z-index: 22; right: calc(var(--edgeR) + var(--rw) + 14px); top: calc(50% - 31px); animation: breathe 2.4s ease-in-out infinite; }
+.endturn { position: relative; animation: breathe 2.4s ease-in-out infinite; }
 @media (hover: hover) { .fab.wide:hover { filter: brightness(1.06); box-shadow: 0 0 0 3px #fff, 0 8px 14px rgba(20,60,40,.26); } }
 .fab.wide.pop .f4 { background: rgba(255,255,255,.25); }
 @keyframes breathe { 50% { filter: brightness(1.12); outline: 6px solid rgba(255, 160, 80, .35); } }
 .fab .badge { position: absolute; top: -5px; right: -5px; z-index: 3; background: var(--bad); color: #fff; font-style: normal; border-radius: 999px; padding: 0 6px; font-size: .74rem; border: 2px solid #fff; }
 
 /* 상대 턴 다시 보기: 버튼(왼쪽 위), 위에 한 줄 설명, 아래 조작 막대, 움직인 카드에 강조 틀 */
-.rwbtn { position: absolute; z-index: 22; left: var(--edgeL); top: 0; display: flex; flex-direction: column; align-items: center; }
 .fab.k-rw { --c: #ff7a59; --c2: #ffc6ae; }
 .fab.nudge { animation: rwnudge 2.6s ease-in-out infinite; }
 @keyframes rwnudge { 0%, 72%, 100% { rotate: 0deg; } 78% { rotate: -12deg; } 86% { rotate: 9deg; } 93% { rotate: -4deg; } }
@@ -611,24 +596,21 @@ body.mat-night .hlf.soft svg, body.mat-dark .hlf.soft svg { filter: drop-shadow(
 @keyframes hldraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 .arena.rwmode .pc.inhand.rwlift { transform: translateY(calc(var(--cw) * .42)); z-index: 10; }
 
-/* 손패 (아래에 겹쳐서) */
-/* 손패: 아래 일자 줄 (위쪽만 보이고, 올리면 다 보임). 많으면 겹쳐서 화면 안에 */
-.handbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 21; pointer-events: none; display: flex; justify-content: center; }
-.fan { --hw: calc(var(--cw) * 1.25); --avail: min(calc(100vw - 300px), calc(var(--cw) * 9.5)); display: flex; align-items: flex-end; height: calc(var(--cw) * 1.0); pointer-events: none; }
-.pc.inhand { pointer-events: auto; width: var(--hw); margin-left: min(calc(var(--cw) * .08), calc((var(--avail) - var(--n) * var(--hw)) / max(var(--n) - 1, 1))); transform: translateY(calc(var(--cw) * .76)); transform-origin: 50% 100%; cursor: pointer; transition: transform .2s cubic-bezier(.2,.8,.2,1.2); box-shadow: 0 6px 14px rgba(20, 50, 40, .4); border: 2px solid #fff; }
+/* 손패: 아래 일자 줄 (위쪽만 보이고, 올리면 다 보임). 많으면 겹쳐서 화면 안에. 아래 양옆 모서리는 버튼 자리 */
+.handbar { position: absolute; left: 0; right: 0; bottom: var(--vx); z-index: 21; pointer-events: none; display: flex; justify-content: center; }
+.fan { --hw: calc(var(--cw) * 1.3); --avail: min(calc(100vw - var(--gut) * 2 - 16px), calc(var(--cw) * 10)); display: flex; align-items: flex-end; height: calc(var(--cw) * var(--handv)); pointer-events: none; }
+.pc.inhand { pointer-events: auto; width: var(--hw); margin-left: min(calc(var(--cw) * .08), calc((var(--avail) - var(--n) * var(--hw)) / max(var(--n) - 1, 1))); transform: translateY(calc(var(--hw) * 1.397 - var(--cw) * var(--handv))); transform-origin: 50% 100%; cursor: pointer; transition: transform .2s cubic-bezier(.2,.8,.2,1.2); box-shadow: 0 6px 14px rgba(20, 50, 40, .4); border: 2px solid #fff; }
 .pc.inhand:first-child { margin-left: 0; }
 .pc.inhand:hover, .pc.inhand:focus { transform: translateY(calc(var(--cw) * -.08)) scale(1.08); z-index: 10; }
 .handbar.peek .pc.inhand { cursor: default; }
-.handbar.backs .pc.inhand:hover { transform: translateY(calc(var(--cw) * .6)); }
-.hcnt { position: absolute; z-index: 12; font-family: var(--fh); font-size: .8rem; color: #fff; min-width: 28px; height: 24px; display: grid; place-items: center; padding: 0 7px; background: #33404d; clip-path: polygon(22% 0, 78% 0, 100% 50%, 78% 100%, 22% 100%, 0 50%); pointer-events: none; }
-.handbar .hcnt { position: relative; flex: none; align-self: flex-end; margin: 0 0 calc(var(--cw) * .38) 10px; }
+.handbar.backs .pc.inhand:hover { transform: translateY(calc(var(--hw) * 1.397 - var(--cw) * var(--handv) - var(--cw) * .15)); }
+.hcnt { display: none; }
 /* 상대 손패: 맨 위에 뒷면이 살짝 */
-.ohand { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; align-items: flex-start; height: calc(var(--cw) * .5); cursor: pointer; }
+.ohand { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; align-items: flex-start; height: calc(var(--cw) * var(--peek)); cursor: pointer; }
 .ofan { display: flex; }
-.pc.oh { width: calc(var(--cw) * .8); margin-left: calc(var(--cw) * -.46); transform: translateY(calc(var(--cw) * -.62)); box-shadow: 0 3px 6px rgba(0,0,0,.25); }
+.pc.oh { width: calc(var(--cw) * .8); margin-left: calc(var(--cw) * -.42); transform: translateY(calc(var(--cw) * (var(--peek) - 1.118))); box-shadow: 0 3px 6px rgba(0,0,0,.25); }
 .pc.oh.back { padding: calc(var(--cw) * .036); }
 .pc.oh:first-child { margin-left: 0; }
-.ohand .hcnt { position: relative; margin-left: 8px; top: 4px; }
 .nohand { pointer-events: auto; color: #24584a; font-family: var(--fh); padding: 10px 18px; background: rgba(255,255,255,.85); border-radius: 999px; margin-bottom: 8px; }
 
 /* 확인 창: 내가 지금 답할 것만 판 위 가운데에 크게. 나머지는 접힌 알약 (누르면 펼침) */
@@ -673,14 +655,14 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 :is(button, .btn).xs:is(.primary, .blue, .good, .bad, .judge) { padding: 4px 13px; }
 :is(button, .btn).xs.primary::before { display: none; }
 /* 접힌 상태: 둥근 버튼 (가로 = 왼쪽 아래, 세로 = 왼쪽 가운데) + 기다리는 중 알약 */
-.dockfab { position: absolute; z-index: 22; left: var(--edgeL); bottom: calc(var(--cw) * 1.1 + 8px); display: flex; flex-direction: column; align-items: center; }
+.dockfab { position: absolute; z-index: 22; left: var(--edgeL); bottom: var(--bbot, 10px); display: flex; flex-direction: column; align-items: center; }
 .dockfab.enter { animation: dockpop .35s cubic-bezier(.2,.9,.3,1.3); }
 @keyframes dockpop { from { transform: translateY(8px) scale(.9); opacity: 0; } }
 .fab.k-dock { --c: #ff7a2f; --c2: #ffc27a; }
 .fab.k-dock.j { --c: #8f6bff; --c2: #c9b6ff; }
 .fab.k-dock.bump { animation: pillbump .6s cubic-bezier(.3,.7,.4,1.6); }
 @keyframes pillbump { 0% { scale: .8; } 50% { scale: 1.1; } 100% { scale: 1; } }
-.dinfos { position: absolute; z-index: 22; left: 50%; transform: translateX(-50%); bottom: calc(var(--cw) * 1.1 + 10px); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: max-content; max-width: calc(100% - 24px); pointer-events: none; }
+.dinfos { position: absolute; z-index: 22; left: 50%; transform: translateX(-50%); bottom: calc(var(--cw) * var(--handv) + var(--vx) + 10px); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: max-content; max-width: calc(100% - 24px); pointer-events: none; }
 .dinfos .dinfo { background: rgba(255,255,255,.94); box-shadow: var(--shadow2); padding: 5px 14px 5px 10px; font-size: .9rem; }
 
 /* 기록 패널 */
@@ -744,58 +726,44 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 
 /* 화면 폭 */
 @media (max-width: 700px) { html, body { font-size: 14px; } main { padding: 10px; } }
-/* 휴대폰·세로 태블릿 (PTCGL 세로 화면처럼): 위 사람 [사이드 | 벤치 | 덱·트래시] → 배틀 → 가운데 줄 → 배틀 → 아래 사람 [사이드 | 벤치 | 덱·트래시].
-   사이드·덱은 세로로 쌓고, 버튼과 막대는 배틀 포켓몬 양옆 빈자리에. 카드 크기는 화면 폭과 높이 중 작은 쪽에 맞춤 */
+/* 휴대폰·세로 태블릿 (PTCGL 세로 화면 그대로): 판이 화면 폭을 다 쓰고, 바깥 줄 [사이드 | 벤치 3칸×2줄 | 덱·트래시], 가운데 넓은 칸에 배틀 포켓몬.
+   거의 눕히지 않음(상대도 거의 같은 크기). 버튼은 가운데 넓은 칸 양옆과 손패 양옆 모서리 */
 @media (max-aspect-ratio: 5/4), (max-width: 560px) {
-  /* 세로: 판은 좁게 [사이드 | 배틀 | 덱·트래시] + 벤치(3+2줄)를 한 칸 전체로, 버튼은 판 양옆 빈자리. 조금 덜 눕힘 */
-  .arena { --tagh: 26px; --tilt: 20deg; --tf: .77; --mhk: 12.1; --fz: 46px; --rw: 46px; --gut: calc(var(--fz) + 12px); --cwW: calc((100vw - var(--gut) * 2) / 3.8); --matw: calc(var(--cw) * 3.8); --edgeL: max(4px, env(safe-area-inset-left, 0px), calc((var(--side) - var(--fz)) / 2)); --edgeR: max(4px, env(safe-area-inset-right, 0px), calc((var(--side) - var(--fz)) / 2)); }
-  .arena.replay { --vx: 100px; --cwW: calc((100vw - var(--gut) * 2) / 3.8); grid-template-columns: minmax(0, 1fr); }
-  .arena.replay .handbar { bottom: 104px; } .arena.replay .matwrap { padding-bottom: calc(var(--cw) * 1.02 + 96px); }
-  .arena.replay .panel { display: none; }
-  .mat { --sidew: calc(var(--cw) * .9); --benchw: calc(var(--cw) * 1.62); padding: calc(var(--cw) * .08) calc(var(--cw) * .06); border-radius: 22px; box-shadow: 0 0 0 4px #fff, 0 0 0 6px var(--m-edge), 0 14px 30px var(--m-glow); }
-  .area { gap: calc(var(--cw) * .08) calc(var(--cw) * .06); }
-  .area.top { grid-template-areas: "bench bench bench" "pz act pile"; }
-  .area.bottom { grid-template-areas: "pz act pile" "bench bench bench"; }
-  .g-bench { --brows: 2; }
-  .benchrow { max-width: calc(var(--cw) * 3.3); min-width: calc(var(--cw) * 3.26); }
-  .pzstack { --pw: calc(var(--cw) * .8); --pox: 0px; --poy: calc(var(--cw) * .14); }
-  .pile .pc, .zone-mark, .stack .pc { width: calc(var(--cw) * .8); }
+  .arena { --tilt: 5deg; --tf: .9499; --mk: 11.2; --ak: 1.3; --peek: .42; --handv: 1.02; --fz: 42px; --rw: 42px; --gut: calc(var(--fz) + 14px);
+    --cwW: calc((100vw - 10px) / 5.62); --matw: calc(var(--cw) * 5.62);
+    --edgeL: max(4px, env(safe-area-inset-left, 0px), calc((var(--side) - var(--fz)) / 2)); --edgeR: max(4px, env(safe-area-inset-right, 0px), calc((var(--side) - var(--rw)) / 2));
+    --ork: 3.18; --ark: 2.16; --flk: .36; --bwk: 3.5; --bhk: 3.18; --pk: .8; --stk: .74; --sgk: .14; --bmid: 49%; --bgap: 8px; --bbot: 4px; }
+  .mat { padding: calc(var(--cw) * .08); border-radius: 22px; box-shadow: 0 0 0 4px #fff, 0 0 0 6px var(--m-edge), 0 14px 30px var(--m-glow); }
+  .area { column-gap: calc(var(--cw) * .08); }
+  .g-bench { padding: calc(var(--cw) * .13); }
+  .benchrow { align-content: flex-start; }
+  .area.top .benchrow { align-content: flex-end; }
+  .zone { border-radius: 10px; padding: calc(var(--cw) * .05); }
+  .pzstack { --pox: 0px; --poy: calc(var(--cw) * .16); }
   .piles { flex-direction: column; gap: calc(var(--cw) * .1); }
   .area.top .piles { flex-direction: column-reverse; }
-  .area.top .piles .lostc { top: auto; bottom: 100%; margin: 0 0 9px; }
-  .pile .cnt, .prizes .cnt { right: -5px; min-width: 22px; font-size: .72rem; padding: 0 5px; }
-  .ztag { font-size: .76rem; left: 5px; top: 4px; padding-right: 7px; gap: 4px; } .area.top .ztag { bottom: 4px; } .ztag .av { width: 20px; height: 20px; font-size: .68rem; }
-  .uses { gap: 2px; } .use { min-width: 18px; height: 18px; font-size: .62rem; padding: 0 2px; }
-  .fabw .fl { font-size: .66rem; padding: 0 7px; }
-  /* 버튼: 왼쪽 = 위 상대 턴, 아래 코인·효과 / 오른쪽 = 위 더 보기·기록, 가운데 막대, 그 밑 차례 끝내기 */
-  .lbtns { left: var(--edgeL); top: auto; bottom: calc(var(--cw) * .25); transform: none; gap: 8px; }
-  .dockfab { bottom: auto; top: 50%; translate: 0 -50%; }
-  .dinfos { bottom: calc(var(--cw) * 1.03 + 6px); } .dinfos .dinfo { font-size: .8rem; padding: 3px 11px 3px 8px; }
-  @media (max-width: 340px) { .arena { --fz: 38px; --rw: 38px; } .fabw .fl { font-size: .6rem; padding: 0 5px; } }
-  .rbtns { right: var(--edgeR); }
-  .rbtns.hi { top: 0; } .rbtns.lo { top: calc(var(--fz) + 26px); bottom: auto; }
-  .rwbtn { left: var(--edgeL); top: 0; }
-  .arena.rwmode { --vx: var(--rwph, 116px); --cwW: calc((100vw - var(--gut) * 2) / 3.8); }
-  .arena.rwmode .handbar { bottom: var(--rwph, 116px); } .arena.rwmode .matwrap { padding-bottom: calc(var(--cw) * 1.02 + var(--rwph, 116px)); }
+  .pile .cnt, .prizes .cnt { min-width: 22px; font-size: .7rem; padding: 0 5px; bottom: calc(var(--cw) * -.09); }
+  .ztags { justify-content: flex-start; gap: 4px; } .ztags .uses { display: none; }
+  .cuses { display: grid; grid-template-columns: repeat(2, 15px); gap: 3px; margin-top: 4px; } .cuses i { width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.16); color: #fff; font-style: normal; } .cuses i .ic { width: 10px; height: 10px; } .cuses i.done { background: #3ccf86; }
+  .ztag { font-size: .74rem; gap: 4px; padding-right: 7px; } .ztag .av { width: 20px; height: 20px; font-size: .66rem; }
+  .uses { gap: 2px; } .use { min-width: 18px; height: 18px; padding: 0 2px; }
+  .fabw { gap: 3px; } .fabw .fl { font-size: .64rem; padding: 0 6px; }
+  .dockfab { bottom: var(--bbot); }
+  .dinfos { bottom: calc(var(--cw) * var(--handv) + 6px); } .dinfos .dinfo { font-size: .8rem; padding: 3px 11px 3px 8px; }
+  .rbar { border-radius: 14px; }
+  .pzc { height: calc(var(--rw) * .78); } .pzc.opp { border-radius: 14px 14px 0 0; } .pzc.me { border-radius: 0 0 14px 14px; }
+  .clock { padding: 6px 1px; } .clock small { font-size: .56rem; } .clock b { font-size: .72rem; }
+  .fab.wide { width: calc(var(--fz) + 10px); height: auto; padding: 6px 2px 5px; border-radius: 15px; font-size: .68rem; line-height: 1.18; } .fab.wide svg { width: 14px; height: 14px; }
+  .fan { --hw: calc(var(--cw) * 1.45); --avail: calc(100vw - var(--gut) * 2 - 8px); }
+  .arena.rwmode .pc.inhand.rwlift { transform: translateY(calc(var(--cw) * .7)); }
+  .overpill { font-size: 1rem; padding: 6px 16px; }
+  @media (max-width: 340px) { .arena { --fz: 36px; --rw: 36px; --bgap: 5px; } .fabw .fl { font-size: .58rem; padding: 0 5px; } }
   .rwpanel { left: max(6px, env(safe-area-inset-left, 0px)); right: max(6px, env(safe-area-inset-right, 0px)); width: auto; top: auto; bottom: 6px; gap: 6px; padding: 8px 10px; border-radius: 18px; }
   .rwpanel .rwcap { display: block; min-height: calc(1.45em * 3); font-size: .8rem; line-height: 1.45; } .rwpanel .rwcap.long { font-size: .74rem; }
   .rwpanel .rwh { display: inline; font-size: .72rem; line-height: 1.45; padding: 0 9px; margin-right: 6px; } .rwpanel .rwt { font-size: inherit; line-height: inherit; }
   .rwbar { justify-content: center; gap: 4px; } .rwbar > button:first-child { flex-basis: auto; }
   .rwbar button { min-height: 36px; padding: 2px 10px; } .rwbar .rwgo { flex: 0 1 auto; } .rwbar .pill { padding: 0 8px; }
   @media (max-width: 340px) { .rwbar button { padding: 2px 7px; } .rwpanel { padding: 8px 6px; } }
-  .specs { left: auto; right: 0; transform: none; }
-  .rbar { right: var(--edgeR); border-radius: 14px; }
-  .pzc.opp { border-radius: 14px 14px 0 0; } .pzc.me { border-radius: 0 0 14px 14px; }
-  .clock { padding: 8px 1px; } .clock small { font-size: .58rem; } .clock b { font-size: .74rem; }
-  .fab.wide { width: calc(var(--fz) + 8px); height: auto; padding: 7px 2px 6px; border-radius: 16px; font-size: .7rem; line-height: 1.2; } .fab.wide svg { width: 14px; height: 14px; }
-  .endturn { right: max(2px, calc(var(--edgeR) - 4px)); top: calc(50% + var(--rw) * .86 + 34px); }
-  .fan { --hw: calc(var(--cw) * 1.45); --avail: calc(100vw - 64px); }
-  .pc.inhand { transform: translateY(calc(var(--cw) * 1.03)); }
-  .handbar.backs .pc.inhand:hover { transform: translateY(calc(var(--cw) * .9)); }
-  .arena.rwmode .pc.inhand.rwlift { transform: translateY(calc(var(--cw) * .7)); }
-  .stadium { left: 2px; }
-  .ticker { display: none; }
-  .overpill { font-size: 1rem; padding: 6px 16px; }
   .replaybar { padding: 6px 8px; gap: 4px; bottom: 6px; } .replaybar > .pill { display: none; } .replaybar .rb { min-height: 34px; padding: 2px 10px; } .replaybar .rk { flex-basis: 100%; }
 }
 /* 휴대폰: 머리 한 줄 (메뉴는 고른 것만 글자, 대전 중엔 제목 글자 숨김) */
