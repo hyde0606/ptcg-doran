@@ -65,8 +65,8 @@ const OUT = __dirname + '/out/';
     await p.click('[data-t=setupDone]'); await p.waitForTimeout(300);
     const warn = await p.$('.sheet [data-ok]'); if (warn) { await warn.click(); await p.waitForTimeout(300); }
   }
-  await A.waitForSelector('.topbar .pill.main'); await A.waitForTimeout(300);
-  console.log('차례:', await A.textContent('.topbar .pill.main'));
+  await A.waitForSelector('.ztag.turn'); await A.waitForTimeout(300);
+  console.log('차례:', await A.textContent('.ztag.turn .zn'));
   if ((await S.$$('[data-hand]')).length) errs.push('관전자에게 손패가 보임');
   await S.screenshot({ path: OUT + 'spec.png' });
   const cur = (await A.$('.area.bottom.now')) ? A : B, oth = cur === A ? B : A;
@@ -87,7 +87,7 @@ const OUT = __dirname + '/out/';
   await cur.waitForTimeout(1500); await cur.screenshot({ path: OUT + 'game-cur.png', fullPage: true });
   await oth.screenshot({ path: OUT + 'game-oth.png', fullPage: true });
   await cur.click('[data-t=endTurn]'); await cur.waitForTimeout(500);
-  console.log('다음:', await oth.textContent('.topbar .pill.main'));
+  console.log('다음:', await oth.textContent('.ztag.turn .zn'));
   await A.goto(gameUrl.replace('#game', '#replay')); await A.waitForSelector('#rk');
   await A.click('[data-j=prev]'); await A.waitForTimeout(300); await A.click('[data-j=turnPrev]'); await A.waitForTimeout(400);
   await A.screenshot({ path: OUT + 'replay.png', fullPage: true });

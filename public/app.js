@@ -506,42 +506,43 @@ function slotHtml(sl, opt = {}) {
     </div>
     ${marks ? `<div class="marks">${marks}</div>` : ''}</div>`;
 }
+// ----- 판 배치 (PTCGL처럼): 두 사람 모두 사이드 왼쪽·덱/트래시 오른쪽, 벤치는 큰 칸 하나 -----
 function pilesHtml(p) {
   const P = G.view.p[p];
   const topD = P.discard[P.discard.length - 1];
-  const deck = `<div class="pile deck" data-zone="deck" data-p="${p}" data-deck="${p}">${P.deck.n ? `<div class="stack" style="--t:${Math.min(8, Math.ceil(P.deck.n / 7))}">${cardBack()}</div>` : '<div class="zone-mark">덱</div>'}<span class="cnt">${P.deck.n}</span></div>`;
-  const disc = `<div class="pile disc" data-zone="discard" data-p="${p}">${topD ? cardFace(topD, 'tilt') : '<div class="zone-mark">트래시</div>'}<span class="cnt">${P.discard.length}</span></div>`;
-  const lost = P.lost.length ? `<div class="pile lost" data-zone="lost" data-p="${p}">${cardFace(P.lost[P.lost.length - 1], 'tilt')}<span class="cnt">로스트 ${P.lost.length}</span></div>` : '';
+  const deck = `<div class="pile deck" data-zone="deck" data-p="${p}" data-deck="${p}">${P.deck.n ? `<div class="stack" style="--t:${Math.min(8, Math.ceil(P.deck.n / 7))}">${cardBack()}</div>` : '<div class="zone-mark">덱</div>'}<span class="cnt" title="덱">${P.deck.n}</span></div>`;
+  const disc = `<div class="pile disc" data-zone="discard" data-p="${p}">${topD ? cardFace(topD) : '<div class="zone-mark">트래시</div>'}<span class="cnt" title="트래시">${P.discard.length}</span></div>`;
+  const lost = P.lost.length ? `<span class="cnt lostc" data-zone="lost" data-p="${p}">로스트 ${P.lost.length}</span>` : '';
   return `<div class="piles">${deck}${disc}${lost}</div>`;
 }
-function prizesHtml(p) {
+function prizesHtml(p) { // 겹쳐 쌓은 사이드 더미 + 남은 수
   const P = G.view.p[p]; const n = P.prizesN;
-  const cells = Array.from({ length: 6 }, (_, k) => k < n ? (P.prizes ? cardFace(P.prizes[k], 'pz', `style="--k:${k}"`) : cardBack('pz', `style="--k:${k}"`)) : `<div class="pc pz gone" style="--k:${k}"></div>`).join('');
-  return `<div class="prizes" data-zone="prizes" data-p="${p}"><div class="pzgrid">${cells}</div><span class="cnt">사이드 ${n}</span></div>`;
+  const cards = Array.from({ length: n }, (_, k) => P.prizes ? cardFace(P.prizes[k], 'pz', `style="--k:${k}"`) : cardBack('pz', `style="--k:${k}"`)).join('');
+  return `<div class="prizes" data-zone="prizes" data-p="${p}" style="--n:${Math.max(1, n)}"><div class="pzstack">${cards || '<div class="zone-mark">사이드</div>'}</div><span class="cnt" title="남은 사이드">${n}</span></div>`;
 }
-function hudHtml(p, isBottom) {
+const USES = [['energy', '⚡', '에너지'], ['supporter', '👤', '서포트'], ['retreat', '↩', '후퇴'], ['attack', '⚔', '기술']];
+function areaHtml(p, isBottom) {
   const v = G.view, P = v.p[p];
   const now = v.phase === 'play' && v.current === p;
-  const used = isBottom && now && v.me === p ? [['energy', '⚡', '에너지'], ['supporter', '👤', '서포트'], ['retreat', '↩', '후퇴'], ['attack', '⚔', '기술']].map(([k, ic, l]) => `<span class="use ${P.used[k] ? 'done' : ''}" title="${l}${P.used[k] ? ' (썼어요)' : ''}"><i>${ic}</i><span class="ul">${l}</span></span>`).join('') : '';
-  const handN = (!isBottom || v.me == null) ? `<span class="hchip" data-zone="hand" data-p="${p}">손패 ${P.handN}</span>` : '';
-  const state = v.phase === 'setup' ? `<span class="hchip ${P.ready ? 'ok' : ''}">${P.ready ? '준비 완료' : '준비 중'}</span>` : now ? '<span class="hchip turn">차례</span>' : '';
-  return `<div class="hud ${isBottom ? 'me' : 'opp'} ${now ? 'now' : ''}"><span class="av">${esc(P.name.slice(0, 1))}</span><span class="nm">${esc(P.name)}</span>${state}${P.mull ? `<span class="hchip">멀리건 ${P.mull}</span>` : ''}${handN}${used ? `<span class="uses">${used}</span>` : ''}</div>`;
-}
-function areaHtml(p, isBottom) {
-  const P = G.view.p[p];
-  const bench = `<div class="benchrow">${P.bench.map(b => slotHtml(b)).join('')}${Array.from({ length: Math.max(0, 5 - P.bench.length) }, () => slotHtml(null)).join('')}</div>`;
-  return `<section class="area ${isBottom ? 'bottom' : 'top'} ${G.view.phase === 'play' && G.view.current === p ? 'now' : ''}" data-area="${p}">
-    <div class="grid">
+  const uses = now ? `<span class="uses">${USES.map(([k, ic, l]) => `<span class="use ${P.used[k] ? 'done' : ''}" title="${l} ${P.used[k] ? '(이번 차례에 썼어요)' : '(아직 안 썼어요)'}"><i>${ic}</i><span class="ul">${l}</span></span>`).join('')}</span>` : '';
+  const state = v.phase === 'setup' ? `<b class="zst ${P.ready ? 'ok' : ''}">${P.ready ? '준비 완료' : '준비 중'}</b>` : '';
+  const tag = `<span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><i class="av">${esc(P.name.slice(0, 1))}</i><span class="zn">${esc(P.name)}</span>${state}${P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}${uses}</span>`;
+  return `<section class="area ${isBottom ? 'bottom' : 'top'} ${now ? 'now' : ''}" data-area="${p}">
       <div class="g-pz">${prizesHtml(p)}</div>
       <div class="g-act">${slotHtml(P.active, { active: true })}</div>
       <div class="g-pile">${pilesHtml(p)}</div>
-      <div class="g-bench"><span class="zlabel">벤치</span>${bench}</div>
-    </div></section>`;
+      <div class="g-bench">${tag}<div class="benchrow">${P.bench.map(b => slotHtml(b)).join('')}</div>${P.bench.length ? '' : '<span class="bempty">벤치</span>'}</div>
+    </section>`;
 }
-function handHtml(p) {
-  const P = G.view.p[p]; if (!P.hand) return '';
-  const n = P.hand.length, mine = G.view.me === p;
-  return `<div class="handbar ${mine ? '' : 'peek'}"><div class="fan" style="--n:${n}">${P.hand.map((x, i) => cardFace(x, 'inhand', `${mine ? `data-hand="${x.i}"` : ''} style="--i:${i};--m:${(n - 1) / 2}"`)).join('') || '<span class="nohand">손패 없음</span>'}</div></div>`;
+function handHtml(p) { // 내 손패: 아래쪽 일자 줄 (위쪽만 보이고, 누르면 올라옴). 볼 수 없는 손패는 뒷면
+  const P = G.view.p[p], n = P.hand ? P.hand.length : P.handN, mine = G.view.me === p;
+  if (!P.hand) return `<div class="handbar peek backs"><div class="fan" style="--n:${n}">${Array.from({ length: Math.min(n, 12) }, (_, i) => cardBack('inhand', `style="--i:${i}"`)).join('')}</div><span class="hcnt">${n}</span></div>`;
+  return `<div class="handbar ${mine ? '' : 'peek'}"><div class="fan" style="--n:${n}">${P.hand.map((x, i) => cardFace(x, 'inhand', `${mine ? `data-hand="${x.i}"` : ''} style="--i:${i}"`)).join('') || '<span class="nohand">손패 없음</span>'}</div>${n ? `<span class="hcnt" title="손패">${n}</span>` : ''}</div>`;
+}
+function oppHandHtml(p) { // 상대 손패: 맨 위에 뒷면이 살짝 보임
+  const P = G.view.p[p], n = P.hand ? P.hand.length : P.handN;
+  const cards = P.hand ? P.hand.map((x, i) => cardFace(x, 'oh', `style="--i:${i}"`)).join('') : Array.from({ length: Math.min(n, 12) }, (_, i) => cardBack('oh', `style="--i:${i}"`)).join('');
+  return `<div class="ohand" data-zone="hand" data-p="${p}" style="--n:${Math.min(n, 12)}"><div class="ofan">${cards}</div><span class="hcnt" title="상대 손패">${n}</span></div>`;
 }
 function midHtml(readOnly) {
   const v = G.view;
@@ -549,11 +550,16 @@ function midHtml(readOnly) {
   const last = [...G.lines].reverse().find(l => !l.chat && l.txt);
   return `<div class="fieldline">${stadium}<div class="centerball"></div>${last && !readOnly ? `<div class="ticker">${esc(last.txt)}</div>` : ''}</div>`;
 }
-function topBarHtml(readOnly) {
-  const v = G.view;
-  const turnInfo = v.phase === 'setup' ? '준비 단계' : v.phase === 'over' ? `🏆 ${esc(v.p[v.winner]?.name || '')} 승리` : `${v.turn}번째 차례`;
-  const dl = v.deadline ? `<span class="pill warn">⏳ ${fmtLeft(v.deadline - Date.now())}</span>` : '';
-  return `<div class="topbar"><span class="pill main">${turnInfo}</span>${dl}${readOnly ? '' : '<span class="pill ghost" id="specs"></span>'}</div>`;
+const fmtShort = ms => { if (ms <= 0) return '지남'; const m = Math.max(1, Math.round(ms / 60000)); return m >= 60 ? `${Math.floor(m / 60)}시간` : m >= 1 ? `${m}분` : '곧'; };
+function rbarHtml(readOnly) { // 오른쪽 세로 막대: 위 사람 남은 사이드(빨강) · 차례/남은 시간 · 아래 사람 남은 사이드(파랑)
+  const v = G.view, bs = bottomSeat(), os = 1 - bs;
+  const cur = v.phase === 'play' ? (v.current === bs ? 'me' : 'opp') : '';
+  const mid = v.phase === 'setup' ? '<b>준비</b>' : v.phase === 'over' ? '<b>끝</b>' : `<small>${v.turn}번째</small>${v.deadline ? `<b title="${fmtLeft(v.deadline - Date.now())}">${fmtShort(v.deadline - Date.now())}</b>` : '<b>차례</b>'}`;
+  return `<div class="rbar">
+    <div class="pzc opp" title="${esc(v.p[os].name)} 님 남은 사이드"><b>${v.p[os].prizesN}</b></div>
+    <div class="clock ${cur}" title="${v.deadline ? '이번 결정까지 남은 시간' : ''}">${mid}</div>
+    <div class="pzc me" title="${esc(v.p[bs].name)} 님 남은 사이드"><b>${v.p[bs].prizesN}</b></div>
+    ${readOnly ? '' : '<span class="specs" id="specs"></span>'}</div>`;
 }
 // 오른쪽 둥근 버튼: 볼 줄무늬 링 (시안 6-약). 가만히 있어도 옅은 파동, 마우스를 올리면 살짝 갸웃, 누르면 가운데 단추가 빛나요.
 const FAB_ICON = {
@@ -566,19 +572,16 @@ const FAB_ICON = {
 };
 const FAB_FX = '<i class="fx f1"></i><i class="fx f3"></i><i class="fx f4"></i>';
 const fabBtn = (t, ic, l, k, extra = '') => `<div class="fabw"><button class="fab ${k}" data-t="${t}" aria-label="${l}">${FAB_FX}<span class="core">${FAB_ICON[ic]}</span>${extra}</button><span class="fl">${l}</span></div>`;
-function fabHtml() {
+function fabHtml() { // 왼쪽: 코인·효과 / 오른쪽: 더 보기(위)·기록(아래), 가운데 줄 옆에 차례 끝내기
   const v = G.view, me = meSeat();
-  if (me == null || v.phase === 'over') return `<div class="fabs">${fabBtn('log', 'log', '기록', 'k-log')}</div>`;
+  const pend = me == null ? 0 : v.groups.filter(g => g.who !== me && g.status !== 'ok').length;
+  const log = fabBtn('log', 'log', '기록', 'k-log', pend ? `<i class="badge">${pend}</i>` : '');
+  if (me == null || v.phase === 'over') return `<div class="rbtns lo">${log}</div>`;
   const myTurn = v.phase === 'play' && v.current === me;
   const open = v.openGroup[me];
-  const pend = v.groups.filter(g => g.who !== me && g.status !== 'ok').length;
-  return `<div class="fabs">
-    ${fabBtn('log', 'log', '기록', 'k-log', pend ? `<i class="badge">${pend}</i>` : '')}
-    ${fabBtn('coin', 'coin', '코인', 'k-coin')}
-    ${open ? fabBtn('effectEnd', 'check', '효과 끝', 'k-fx on') : fabBtn('effect', 'hand', '효과 쓰기', 'k-fx')}
-    ${fabBtn('more', 'more', '더 보기', 'k-more')}
-    ${myTurn ? `<button class="fab wide" data-t="endTurn">${FAB_FX}${FAB_ICON.flag}<span>차례 끝내기</span></button>` : ''}
-  </div>`;
+  return `<div class="lbtns">${fabBtn('coin', 'coin', '코인', 'k-coin')}${open ? fabBtn('effectEnd', 'check', '효과 끝', 'k-fx on') : fabBtn('effect', 'hand', '효과 쓰기', 'k-fx')}</div>
+    <div class="rbtns hi">${fabBtn('more', 'more', '더 보기', 'k-more')}</div><div class="rbtns lo">${log}</div>
+    ${myTurn ? `<button class="fab wide endturn" data-t="endTurn">${FAB_FX}${FAB_ICON.flag}<span>차례<br>끝내기</span></button>` : ''}`;
 }
 // 누르면 버튼마다 '누를 때' 움직임을 한 번
 // 누르면 통 튀는 효과 + 소리 (버튼·탭·카드)
@@ -589,8 +592,10 @@ document.addEventListener('pointerdown', e => {
   Sound.sfx(t.classList.contains('fab') ? 'pop' : 'tap');
 });
 function matHtml(readOnly = false) {
-  const bs = bottomSeat(), os = 1 - bs;
-  return `${topBarHtml(readOnly)}${hudHtml(os, false)}<div class="matwrap"><div class="mat ${readOnly ? 'ro' : ''}">${areaHtml(os, false)}${midHtml(readOnly)}${areaHtml(bs, true)}</div></div>${hudHtml(bs, true)}${handHtml(bs)}`;
+  const bs = bottomSeat(), os = 1 - bs, v = G.view;
+  const over = v.phase === 'over' ? `<div class="overpill">🏆 ${esc(v.p[v.winner]?.name || '')} 승리</div>` : '';
+  return `${oppHandHtml(os)}<div class="matwrap"><div class="matbox"><div class="mat ${readOnly ? 'ro' : ''}">${areaHtml(os, false)}${midHtml(readOnly)}${areaHtml(bs, true)}</div>
+    ${over}${rbarHtml(readOnly)}${readOnly ? '' : fabHtml()}</div></div>${handHtml(bs)}`;
 }
 
 // ----- 그리기 + 애니메이션 -----
@@ -688,7 +693,7 @@ function draw(newLines) {
   const waitingMe = me != null && v.waiting.includes(me);
   document.title = (waitingMe ? '● 내 차례 · ' : '') + '도란 카드 대전';
   const dock = setupHtml() + promptsHtml() + lookHtml() + groupsHtml();
-  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${fabHtml()}
+  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}
       ${dock ? `<div class="dock ${G.ui.dockOpen ? '' : 'shut'}"><button class="dockt" data-dock>${G.ui.dockOpen ? '접기 ▾' : '확인할 것 ▴'}</button><div class="dockin">${dock}</div></div>` : ''}
     </div><aside class="panel" id="side"></aside></div>`;
   drawSpecs(); drawSide(); bindBoard();
@@ -696,7 +701,7 @@ function draw(newLines) {
   flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); }
   G.prev = JSON.parse(JSON.stringify(v));
 }
-function drawSpecs() { const el = $('#specs'); if (el) el.textContent = `👀 관전 ${G.specs.length}`; }
+function drawSpecs() { const el = $('#specs'); if (el) el.textContent = G.specs.length ? `👀 관전 ${G.specs.length}` : ''; }
 function setupHtml() {
   const v = G.view, me = meSeat(); if (v.phase !== 'setup' || me == null) return '';
   const P = v.p[me], O = v.p[1 - me]; const parts = [];
@@ -966,7 +971,7 @@ async function renderReplay(id, k0) {
     app.innerHTML = `<div class="arena replay"><div class="table">
         <div class="replaybar"><span class="pill">${info.over ? '끝난 판 · 모두 공개' : '진행 중 · 내가 볼 수 있는 것만'}</span>
           <button class="rb" data-j="turnPrev">⏮</button><button class="rb" data-j="prev">◀</button><button class="rb" data-j="play">${RG.timer ? '⏸' : '▶ 재생'}</button><button class="rb" data-j="next">▶</button><button class="rb" data-j="turnNext">⏭</button>
-          <input type="range" min="0" max="${RG.n}" value="${RG.k}" id="rk"><span class="pill">${RG.k} / ${RG.n}수</span>${info.over ? '' : `<a class="rb primary" href="#game/${id}">판으로</a>`}</div>
+          <span class="rk"><input type="range" min="0" max="${RG.n}" value="${RG.k}" id="rk" aria-label="몇 번째 수"><span class="pill">${RG.k} / ${RG.n}수</span>${info.over ? '' : `<a class="rb primary" href="#game/${id}">판으로</a>`}</span></div>
         ${matHtml(true)}</div>
       <aside class="panel"><div class="tabs"><span class="tab on">기보</span></div><div class="log" id="rlog">${lines}</div></aside></div>`;
     app.querySelectorAll('[data-j]').forEach(b => b.onclick = () => {
