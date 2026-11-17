@@ -117,7 +117,7 @@ function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidde
 async function loadCards() { if (!ALL) { ALL = await (await fetch('/cards.json')).json(); IDX = indexCards(ALL); } return ALL; }
 // 카드 그림: kr = 한글판, en = 영문판(워터마크 없음), mix = 합친 카드(한글판 위에 그림 칸만 같은 그림의 영문판)
 const hires = u => u ? u.replace(/\.png$/, '_hires.png') : null;
-const canMix = c => !!(c && c.kimg && c.img && c.ksa); // 영문판과 한글판 그림이 같은 카드만
+const canMix = c => !!(c && c.kimg && c.img && c.ksa && !(c.st === 'E' && (c.sub || []).includes('Basic'))); // 영문판과 한글판 그림이 같은 카드만 (기본 에너지는 글 칸이 없어 뺌)
 function picMode(c, want) { // 고른 그림 → 실제로 보일 그림 (없으면 있는 쪽)
   if (!c) return null;
   if (want === 'mix' && canMix(c)) return 'mix';
@@ -1133,7 +1133,7 @@ function rwLoc(v) { // 카드 번호 → 있는 곳
   if (v.stadium) m.set(v.stadium.i, 'stad');
   return m;
 }
-function rwTargets(a, b, lines = []) { // 두 장면 사이에 바뀐 곳: [{s: 화면 요소 선택자, kind: move(움직임) | target(기술 대상) | judge(사람 판정) | big(센 장면)}]
+function rwTargets(a, b, lines = [], judged = false) { // 두 장면 사이에 바뀐 곳: [{s: 화면 요소 선택자, kind: move(움직임) | target(기술 대상) | judge(사람 판정) | big(센 장면)}]
   const A = rwLoc(a), B = rwLoc(b), out = [], rank = { move: 0, target: 1, judge: 2, big: 3 };
   const add = (s, kind = 'move') => { const o = out.find(x => x.s === s); if (!o) out.push({ s, kind }); else if (rank[kind] > rank[o.kind]) o.kind = kind; };
   const ko = lines.some(l => /기절|프라이즈/.test(l.txt || ''));
@@ -1156,7 +1156,7 @@ function rwTargets(a, b, lines = []) { // 두 장면 사이에 바뀐 곳: [{s: 
     if (!b.p[p].hand && a.p[p].handN !== b.p[p].handN) add('.ohand');
     if (a.p[p].prizesN !== b.p[p].prizesN) add(`.prizes[data-p="${p}"]`, 'big');
   }
-  if (lines.some(l => l.gid)) out.forEach(o => { if (o.kind !== 'big' || o.s.startsWith('.mat')) o.kind = 'judge'; }); // 사람이 판정한 단계: 기절·프라이즈 말고는 모두 말풍선
+  if (judged) out.forEach(o => { if (o.kind !== 'big' || o.s.startsWith('.mat')) o.kind = 'judge'; }); // 사람이 판정한 단계: 기절·프라이즈 말고는 모두 말풍선
   return out.sort((x, y) => rank[y.kind] - rank[x.kind]).slice(0, 5);
 }
 // 강조 틀 (링크 님이 고른 것, '가는 테두리 도감' 기준): 움직임 = 14번 볼 띠, 기술 대상 = 6번 자 눈금, 센 장면 = 1번 색 어긋남, 사람 판정 = C-2 촘촘 구름 말풍선 + 에어브러시
@@ -1253,7 +1253,10 @@ function drawRw(forward) {
   flip(prevRects);
   if (before) {
     if (forward && rw.prev) { effects(rw.prev, stepLines); gameSounds(rw.prev, stepLines); }
-    const sels = rwTargets(before, cur, stepLines);
+    // 사람이 판정한 단계 = 경고를 넘기고 진행·자동 제안 대신 직접(⚑), 또는 카드 효과 묶음 안에서 손으로 한 처리. 트레이너스·기술을 쓴 그 단계 자체는 보통 틀
+    const gStart = Object.fromEntries((live.groups || []).map(g => [g.gid, g.start]));
+    const judged = stepLines.some(l => /^⚑/.test(l.txt || '') || (l.gid && l.gid in gStart && gStart[l.gid] !== l.k));
+    const sels = rwTargets(before, cur, stepLines, judged);
     sels.forEach(t => { if (t.s.startsWith('.handbar')) app.querySelector(t.s)?.classList.add('rwlift'); });
     rwHighlight(sels);
   }
