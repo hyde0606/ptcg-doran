@@ -53,6 +53,7 @@ const ICON = {
   expand: svg('<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>'),
   shrink: svg('<path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>'),
   share: svg('<path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M8.5 10.5H6v10h12v-10h-2.5"/>'),
+  flag: svg('<path d="M5.5 21V3.5M5.5 4h12.5l-2.6 4.6 2.6 4.6H5.5"/>'),
   homeAdd: svg('<rect x="6" y="2.8" width="12" height="18.4" rx="2.6"/><path d="M12 8.5v6M9 11.5h6"/>'),
 };
 const ringIcon = (ic, k = '', ping = false) => `<span class="ring ${k} ${ping ? 'ping' : ''}"><i>${ICON[ic]}</i></span>`;
@@ -177,8 +178,18 @@ function openSheet(html, onMount) {
   if (!sheetStack.length) history.pushState({ sheet: 1 }, '');
   sheetStack.push(1);
   sh.onclick = e => { if (e.target === sh || e.target.closest('[data-close]')) closeSheet(); };
-  onMount && onMount(sh.firstElementChild);
+  // 닫기 단추는 창 바깥 오른쪽 위로 (창 안 내용이 한쪽으로 밀리지 않고 가운데에 오게)
+  const inn = sh.firstElementChild, x = inn.querySelector(':scope > .x[data-close]');
+  if (x) { x.className = 'xo'; x.innerHTML = ICON.x; x.setAttribute('aria-label', '닫기'); sh.appendChild(x); inn.classList.add('hasxo'); }
+  onMount && onMount(inn);
+  if (x) { placeX(); inn.addEventListener('animationend', placeX, { once: true }); }
 }
+function placeX() { // 창 위 오른쪽 바깥 (위에 자리가 없으면 창 안 오른쪽 위)
+  const sh = $('#sheet'), x = sh.querySelector(':scope > .xo'), inn = sh.querySelector(':scope > .in'); if (!x || !inn || sh.hidden) return;
+  const r = inn.getBoundingClientRect(), out = r.top >= 60;
+  x.classList.toggle('inside', !out); x.style.top = Math.round(out ? r.top - 54 : r.top + 10) + 'px'; x.style.left = Math.round(r.right - (out ? 48 : 56)) + 'px';
+}
+window.addEventListener('resize', () => requestAnimationFrame(placeX));
 function closeSheet(fromPop) {
   const sh = $('#sheet'); if (sh.hidden) return;
   const sub = SUBVIEW ? 1 : 0; SUBVIEW = null;
@@ -186,7 +197,7 @@ function closeSheet(fromPop) {
   if (!fromPop) { popSkip++; history.go(-1 - sub); }
 }
 // ---------- 뒤로 가기 ----------
-// 순서: 크게 보기 → 창 안의 자세히 보기 → 선택 창 → 기보 보기 → 페이지. 대전·기보·덱 고치기는 두 번 눌러야 나감 (첫 번째엔 안내, 덱을 고쳤으면 저장할지 물음)
+// 순서: 크게 보기 → 창 안의 자세히 보기 → 선택 창 → 리플레이 → 페이지. 대전·리플레이·덱 고치기는 두 번 눌러야 나감 (첫 번째엔 안내, 덱을 고쳤으면 저장할지 물음)
 let GUARD = null, SUBVIEW = null, popSkip = 0, navCount = 0;
 function guardPage(msg, onLeave) { if (GUARD) clearTimeout(GUARD.t); GUARD = { hash: location.hash, msg, onLeave, t: 0, armed: 0 }; history.pushState({ guard: 1 }, ''); }
 function rearm() { if (GUARD && location.hash === GUARD.hash && !GUARD.leaving) { GUARD.armed = 0; history.pushState({ guard: 1 }, ''); } }
@@ -207,16 +218,38 @@ window.addEventListener('popstate', () => {
   GUARD.armed = 1; toast(GUARD.msg, 2200); clearTimeout(GUARD.t);
   GUARD.t = setTimeout(() => { if (GUARD && GUARD.armed) rearm(); }, 2200);
 });
+// 단추 묶음은 줄마다 개수가 고르게 (4개면 2+2, 5개면 3+2, 7개면 4+3), 글자가 줄바꿈되지 않을 만큼만 한 줄에
+function balCols(labels, W = Math.min(innerWidth, 640) - 40) {
+  const n = labels.length; if (!n) return 1;
+  const L = Math.max(...labels.map(l => String(l).replace(/<small[^>]*>.*?<\/small>/g, '  ').replace(/<[^>]+>/g, '').trim().length));
+  const per = Math.max(1, Math.min(4, Math.floor((W + 10) / (L * 15.5 + 58))));
+  return Math.ceil(n / Math.ceil(n / per));
+}
+const actsHtml = (opts, cls = '', W) => opts.length ? `<div class="acts bal ${cls}" style="--cols:${balCols(opts.map(o => o.label), W)}">${opts.map(o => `<button class="${o.cls || ''}" data-i="${o.i}">${o.label}</button>`).join('')}</div>` : '';
+const FX = '<small class="fx">효과</small>'; // 카드 효과로 하는 일 표시 (줄바꿈 없이 작은 꼬리표)
 function pick(title, options) { // options: [{label, value, cls}]
   return new Promise(res => {
-    openSheet(`<button class="x sm" data-close>닫기</button><h3>${esc(title)}</h3><div class="acts">${options.map((o, i) => `<button class="${o.cls || ''}" data-i="${i}">${o.label}</button>`).join('')}</div>`, el => {
+    openSheet(`<button class="x sm" data-close>닫기</button><h3>${esc(title)}</h3>${actsHtml(options.map((o, i) => ({ ...o, i })), '', Math.min(innerWidth, 520) - 40)}`, el => {
+      el.classList.add('picksheet');
       el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { const o = options[+b.dataset.i]; closeSheet(); setTimeout(() => res(o.value), 30); });
     });
   });
 }
+// 숫자 고르기는 키보드 대신 ▼▲ 단추: stepHtml(이름, 값, { min, max, by, unit })
+const stepHtml = (name, v, o = {}) => `<div class="stepper" data-step data-min="${o.min ?? -999}" data-max="${o.max ?? 999}" data-by="${o.by || 1}"><button type="button" class="stp" data-d="-1" aria-label="줄이기">${ICON.down}</button><output class="stv" aria-live="polite"><b>${v}</b>${o.unit || ''}</output><input type="hidden" name="${name}" value="${v}"><button type="button" class="stp" data-d="1" aria-label="늘리기">${ICON.up}</button></div>`;
+function bindSteps(root, onChange) {
+  root.querySelectorAll('[data-step]').forEach(s => {
+    const inp = s.querySelector('input'), out = s.querySelector('.stv b'), st = s.querySelectorAll('.stp'), lo = +s.dataset.min, hi = +s.dataset.max, by = +s.dataset.by;
+    const set = v => { v = Math.max(lo, Math.min(hi, v)); inp.value = v; out.textContent = v; st[0].disabled = v <= lo; st[1].disabled = v >= hi; onChange && onChange(v, s); };
+    st.forEach(b => b.onclick = () => { set(+inp.value + +b.dataset.d * by); Sound.sfx('tap'); });
+    s.tabIndex = 0; s.onkeydown = e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); set(+inp.value + (e.key === 'ArrowUp' ? by : -by)); } };
+    set(+inp.value);
+  });
+}
 function ask(title, html, okLabel = '확인', cls = 'primary') {
   return new Promise(res => {
-    openSheet(`<h3>${esc(title)}</h3>${html}<div class="row" style="margin-top:12px"><button class="${cls}" data-ok>${okLabel}</button><button data-close>취소</button></div>`, el => {
+    openSheet(`<h3>${esc(title)}</h3>${html}<div class="row askr" style="margin-top:12px"><button class="${cls}" data-ok>${okLabel}</button><button data-close>취소</button></div>`, el => {
+      bindSteps(el);
       el.querySelector('[data-ok]').onclick = () => { const f = {}; el.querySelectorAll('[name]').forEach(x => { if (x.type === 'checkbox' && !x.checked) return; f[x.name] = x.value; }); closeSheet(); setTimeout(() => res(f), 30); };
       el.querySelector('[data-close]').addEventListener('click', () => res(null));
     });
@@ -225,7 +258,7 @@ function ask(title, html, okLabel = '확인', cls = 'primary') {
 
 // ---------- 화면 이동 ----------
 const NAV = [['#lobby', 'battle', '대전'], ['#decks', 'deck', '덱'], ['#settings', 'gear', '설정']];
-function nav(cur) { $('#nav').innerHTML = ME ? NAV.map(([h, ic, l]) => `<a href="${h}" class="${cur === h ? 'on' : ''}" aria-label="${l}">${ICON[ic]}<span class="lb">${l}</span></a>`).join('') : ''; drawSnd(); }
+function nav(cur) { $('#nav').innerHTML = ME ? NAV.map(([h, ic, l]) => `<a href="${h}" class="${cur === h ? 'on' : ''}" aria-label="${l}">${ICON[ic]}<span class="lb">${l}</span></a>`).join('') : ''; drawSnd(); drawInst(); }
 function drawSnd() { // 머리의 소리 단추: 누르면 효과음·배경음악 모두 끄고 켬
   const b = $('#snd'); if (!b) return;
   const off = Sound.get('mute');
@@ -268,31 +301,33 @@ const fsOk = () => !!(document.fullscreenEnabled && document.documentElement.req
 const inFs = () => !!document.fullscreenElement;
 const fsAuto = () => pref('fsAuto', 'on') === 'on';
 let installEvt = null, fsArm = false;
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; document.querySelectorAll('[data-a2hs]').forEach(b => b.innerHTML = `${ICON.homeAdd}설치하기`); });
-window.addEventListener('appinstalled', () => { installEvt = null; setPref('a2hs', 'done'); document.querySelector('.a2hs')?.remove(); });
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; document.querySelectorAll('[data-a2hs]').forEach(b => b.innerHTML = `${ICON.homeAdd}설치하기`); drawInst(); });
+window.addEventListener('appinstalled', () => { installEvt = null; setPref('a2hs', 'done'); drawInst(); });
 const fsEnter = () => document.documentElement.requestFullscreen({ navigationUI: 'hide' });
 function toggleFs() { if (inFs()) document.exitFullscreen().catch(() => {}); else fsEnter().catch(() => toast('이 브라우저는 전체 화면을 허락하지 않아요. 홈 화면에 추가해 보세요.')); }
-// 대전판·기보에 들어온 뒤 처음 누를 때 전체 화면. 스스로 빠져나오면 다음에 판에 들어올 때까지 다시 바꾸지 않음
+// 대전판·리플레이에 들어온 뒤 처음 누를 때 전체 화면. 스스로 빠져나오면 다음에 판에 들어올 때까지 다시 바꾸지 않음
 function armFs(base) { fsArm = (base === '#game' || base === '#replay') && fsAuto() && fsOk() && isPhone() && !isApp() && !inFs(); }
 document.addEventListener('pointerup', () => { if (fsArm) { fsArm = false; if (!inFs()) fsEnter().catch(() => {}); } }, true);
-function a2hsBanner() {
-  if (!isPhone() || isApp() || pref('a2hs', '')) return '';
-  return `<div class="a2hs">${ringIcon('homeAdd', 'k-open')}<div class="a2t"><b>주소창 없이 크게 보기</b><span>홈 화면에 추가해 앱처럼 열기</span></div>
-    <button class="primary sm" data-a2hs>${ICON.homeAdd}${installEvt ? '설치하기' : '방법 보기'}</button><button class="sm ib" data-a2hs-x aria-label="안내 닫기">${ICON.x}</button></div>`;
+function drawInst() { // 머리 줄의 '앱 설치' 단추 (폰이거나 브라우저가 설치를 허락할 때, 앱으로 열었거나 숨기면 없음)
+  const b = $('#inst'); if (!b) return;
+  const show = !!ME && !isApp() && (installEvt || isPhone()) && !pref('a2hs', '');
+  b.hidden = !show; if (!show) return;
+  b.innerHTML = `${ICON.homeAdd}<span class="lb">앱 설치</span>`; b.onclick = openA2hs;
 }
 function bindA2hs(root) {
   root.querySelectorAll('[data-a2hs]').forEach(b => b.onclick = openA2hs);
-  root.querySelectorAll('[data-a2hs-x]').forEach(b => b.onclick = () => { setPref('a2hs', 'hide'); b.closest('.a2hs')?.remove(); toast('설정 → 폰 화면에서 언제든 다시 볼 수 있어요.'); });
+  root.querySelectorAll('[data-a2hs-x]').forEach(b => b.onclick = () => { setPref('a2hs', 'hide'); drawInst(); closeSheet(); toast('설정 → 폰 화면에서 언제든 다시 볼 수 있어요.'); });
+  root.querySelectorAll('[data-a2hs-on]').forEach(b => b.onclick = () => { setPref('a2hs', ''); drawInst(); closeSheet(); });
 }
 async function openA2hs() {
   if (installEvt) { // 안드로이드 크롬: 브라우저의 설치 창을 바로 띄움
     const e = installEvt; installEvt = null; e.prompt();
     const r = await e.userChoice.catch(() => null);
-    if (r && r.outcome === 'accepted') { setPref('a2hs', 'done'); document.querySelector('.a2hs')?.remove(); toast('홈 화면의 도란 대전 아이콘으로 열어 주세요.'); }
+    if (r && r.outcome === 'accepted') { setPref('a2hs', 'done'); drawInst(); toast('홈 화면의 닌포케카 아이콘으로 열어 주세요.'); }
     return;
   }
   const st = (ic, t) => `<li><i class="a2ic">${ic}</i><span>${t}</span></li>`, dots = '<b class="a2dots">⋮</b>';
-  const open3 = st(`<img src="/icons/icon-192.png" alt="">`, '홈 화면에 생긴 <b>도란 대전</b> 아이콘으로 열어요.');
+  const open3 = st(`<img src="/icons/icon-192.png" alt="">`, '홈 화면에 생긴 <b>닌포케카</b> 아이콘으로 열어요.');
   const steps = IS_KAKAO ? [st(IS_IOS ? ICON.share : dots, `카카오톡 화면 ${IS_IOS ? '오른쪽 아래 <b>공유</b>' : '오른쪽 위 <b>⋮</b>'} 단추를 누르고 <b>다른 브라우저로 열기</b>를 골라요.`), st(ICON.homeAdd, '열린 브라우저에서 이 안내(설정 → 폰 화면)를 다시 열어 주세요.')]
     : IS_IOS ? [st(ICON.share, '화면 아래쪽(아이패드는 위쪽) <b>공유</b> 단추를 눌러요.'), st(ICON.homeAdd, '목록을 내려 <b>홈 화면에 추가</b>를 누르고, 오른쪽 위 <b>추가</b>를 눌러요.'), open3]
     : IS_SAMSUNG ? [st('<b class="a2dots">≡</b>', '화면 아래쪽 <b>≡</b> 메뉴를 눌러요.'), st(ICON.homeAdd, '<b>현재 페이지 추가</b> → <b>홈 화면</b>을 눌러요.'), open3]
@@ -300,7 +335,8 @@ async function openA2hs() {
   openSheet(`<button class="x sm" data-close>닫기</button><h3>주소창 없이 크게 보기</h3>
     <p class="muted small" style="margin-top:0">홈 화면에 추가하면 주소창 없이 앱처럼 열려요. ${IS_IOS ? '아이폰은 맨 위 시계 줄만 남아요.' : '안드로이드는 맨 위 시계 줄까지 숨겨져요.'}</p>
     <ol class="a2steps">${steps.join('')}</ol>
-    <p class="small muted" style="margin:0">홈 화면에서 처음 열 때 입장 코드를 한 번 더 넣어야 할 수도 있어요.</p>`);
+    <p class="small muted" style="margin:0">홈 화면에서 처음 열 때 입장 코드를 한 번 더 넣어야 할 수도 있어요.</p>
+    ${isApp() ? '' : `<div class="row" style="justify-content:center;margin-top:12px">${$('#inst') && !$('#inst').hidden ? '<button class="sm" data-a2hs-x>위쪽 \'앱 설치\' 단추 숨기기</button>' : pref('a2hs', '') === 'hide' ? '<button class="sm" data-a2hs-on>위쪽 \'앱 설치\' 단추 다시 보이기</button>' : ''}</div>`}`, el => bindA2hs(el));
 }
 function screenHtml() { // 설정 → 폰 화면
   const rows = [];
@@ -313,7 +349,7 @@ document.addEventListener('fullscreenchange', () => document.querySelectorAll('[
 
 function renderLogin() {
   app.innerHTML = `<div class="card-box hero">
-    <div class="logo">${ringIcon('bolt', '', true)}<div><h2>도란 카드 대전</h2><div class="muted small">우리 모임 카드 대전</div></div></div>
+    <div class="logo">${ringIcon('bolt', '', true)}<div><h2>닌포케카</h2><div class="muted small">닌도란 포켓몬 카드 게임 · NPCG</div></div></div>
     <p class="muted">모임에서 받은 입장 코드와 대전에 쓸 이름을 넣어 주세요.</p>
     <label class="h">이름</label><input id="nm" maxlength="12" autocomplete="nickname" style="width:100%">
     <label class="h">입장 코드</label><input id="cd" type="password" style="width:100%">
@@ -479,7 +515,7 @@ async function renderLobby() {
   const rooms = data.rooms;
   const mine = rooms.filter(r => r.mine && r.status !== 'done'), open = rooms.filter(r => r.status === 'open' && !r.mine), watch = rooms.filter(r => !r.mine && r.status === 'playing'), done = rooms.filter(r => r.status === 'done' || r.status === 'between');
   const myTurnN = mine.filter(r => r.myTurn).length;
-  document.title = (myTurnN ? `(${myTurnN}) ` : '') + '도란 카드 대전';
+  document.title = (myTurnN ? `(${myTurnN}) ` : '') + '닌포케카';
   if (lobbyTab === 'new' || !['mine', 'open', 'watch', 'done'].includes(lobbyTab)) lobbyTab = 'mine';
   const tabs = [['mine', '내 대전', mine.length], ['open', '들어갈 방', open.length], ['watch', '관전', watch.length], ['done', '끝난 판', done.length]];
   // 방 하나 = 카드 한 장: 위 색 띠(상태) · 방 이름 · 두 사람 · 진행 방식 · 남은 시간 · 단추. 줄 위치는 모든 카드가 같음 (값이 없으면 —)
@@ -495,7 +531,7 @@ async function renderLobby() {
     else if (r.status === 'open' && r.host === data.me) main = `<button class="sm" data-close-room="${r.id}">${ICON.x}방 닫기</button>`;
     else if (r.status === 'between' && r.mine) main = `<button class="primary sm" data-next="${r.id}">${ICON.play}다음 판</button>`;
     else if (last && r.status === 'playing') main = `<a class="btn ${r.mine ? 'primary' : ''} sm" href="#game/${last}">${r.mine ? `${ICON.battle}판으로` : `${ICON.eye}관전`}</a>`;
-    const rec = last && r.status !== 'open' ? `<a class="btn sm" href="#replay/${last}">${ICON.rewind}기보</a>` : '';
+    const rec = last && r.status !== 'open' ? `<a class="btn sm" href="#replay/${last}">${ICON.rewind}리플레이</a>` : '';
     return `<article class="rcard s-${st[0]}"><div class="rtop">${ringIcon(st[1], 'k-' + st[0], r.myTurn)}<span class="rst">${st[2]}</span></div>
       <h4 class="rt">${esc(r.cfg.title || nm.filter(Boolean).join(' vs '))}</h4>
       <div class="rvsrow">${who(nm[0])}${score}${who(nm[1])}</div>
@@ -504,8 +540,8 @@ async function renderLobby() {
   };
   const lists = { mine, open, watch, done }, cur = lists[lobbyTab] || [];
   const emptyMsg = { mine: '진행 중인 대전이 없어요. 방을 만들거나 들어갈 방을 찾아보세요.', open: '들어갈 수 있는 방이 없어요. 직접 방을 만들어 보세요.', watch: '지금 관전할 대전이 없어요.', done: '끝난 판이 아직 없어요.' }[lobbyTab];
-  app.innerHTML = `<div class="lobh"><h2>대전</h2><button class="primary newroom" data-tab="new">${ICON.plus}방 만들기</button></div>${a2hsBanner()}
-    <div class="ltabs" role="tablist">${tabs.map(([k, l, n]) => `<button class="ltab ${lobbyTab === k ? 'on' : ''}" role="tab" aria-selected="${lobbyTab === k}" data-tab="${k}">${l}<b>${n}</b>${k === 'mine' && myTurnN ? `<i class="dot" title="내 차례 ${myTurnN}"></i>` : ''}</button>`).join('')}</div>
+  // 위쪽은 한 줄: 탭(내 대전·들어갈 방·관전·끝난 판) + 오른쪽 '방 만들기' (머리의 '대전'과 겹치는 제목은 뺌)
+  app.innerHTML = `<div class="lobh"><div class="ltabs" role="tablist">${tabs.map(([k, l, n]) => `<button class="ltab ${lobbyTab === k ? 'on' : ''}" role="tab" aria-selected="${lobbyTab === k}" data-tab="${k}">${l}<b>${n}</b>${k === 'mine' && myTurnN ? `<i class="dot" title="내 차례 ${myTurnN}"></i>` : ''}</button>`).join('')}</div><button class="primary newroom" data-tab="new">${ICON.plus}<span>방 만들기</span></button></div>
     ${cur.length ? `<div class="rlist">${cur.map(roomCard).join('')}</div>` : `<div class="empty-note">${ringIcon('wait', 'k-wait')}<p>${emptyMsg}</p></div>`}`;
   app.querySelectorAll('.ltab[data-tab]').forEach(b => b.onclick = () => { lobbyTab = b.dataset.tab; try { localStorage.setItem('lobbyTab', lobbyTab); } catch {} renderLobby(); });
   const rl = app.querySelector('.rlist'); // 가로 화면: 마우스 휠을 가로 스크롤로
@@ -520,7 +556,6 @@ async function renderLobby() {
   });
   app.querySelectorAll('[data-next]').forEach(b => b.onclick = async () => { try { const r = await api(`/api/rooms/${b.dataset.next}/next`, {}); location.hash = '#game/' + r.room.games[r.room.games.length - 1]; } catch (e) { toast(e.message); } });
   app.querySelectorAll('[data-close-room]').forEach(b => b.onclick = async () => { await api(`/api/rooms/${b.dataset.closeRoom}/close`, {}); renderLobby(); });
-  bindA2hs(app);
   app.querySelector('.newroom').onclick = () => openSheet(newRoomForm(decks.decks), el => {
     const f = el.querySelector('#newroom'); if (!f) return;
     const syncDl = () => { const a = f.querySelector('input[name=mode]:checked')?.value === 'async'; f.querySelector('.dlrow').hidden = !a; };
@@ -551,8 +586,7 @@ async function renderDecks(editId) {
   await loadCards();
   const { decks } = await api('/api/decks');
   if (editId) return deckEditor(decks.find(d => d.id === editId) || { name: '새 덱', list: [] });
-  app.innerHTML = `<div class="row" style="margin-bottom:10px"><h2 class="grow">내 덱</h2></div>
-    <div class="dtiles"><button class="dtile new" id="nd"><span class="fan">${ringIcon('plus', 'k-ok')}</span><span class="dtl"><span class="dtr"><b>새 덱 만들기</b></span><small>카드를 골라 60장을 채워요</small></span></button>${decks.map(d => { const ch = checkDeck(d.list, IDX);
+  app.innerHTML = `<div class="dtiles"><button class="dtile new" id="nd"><span class="fan">${ringIcon('plus', 'k-ok')}</span><span class="dtl"><span class="dtr"><b>새 덱 만들기</b></span><small>카드를 골라 60장을 채워요</small></span></button>${decks.map(d => { const ch = checkDeck(d.list, IDX);
       return `<a class="dtile" href="#decks/${d.id}">${coverFan(deckCover(d.list))}<span class="dtl"><span class="dtr"><b>${esc(d.name)}</b>${ch.ok ? '<span class="chip ok">사용 가능</span>' : '<span class="chip warn">확인 필요</span>'}</span><small>${ch.total}장 · ${ch.ok ? '규칙 통과' : esc(ch.problems[0])}</small></span></a>`; }).join('')}</div>`;
   $('#nd').onclick = () => go('#decks/new');
 }
@@ -622,7 +656,7 @@ function deckEditor(deck) {
   const addN = (id, d) => { let x = list.find(y => y.id === id); if (!x && d > 0) list.push(x = { id, n: 0 }); if (x) { x.n += d; if (x.n <= 0) list = list.filter(y => y !== x); } drawList(); };
   const cardSheet = id => {
     const c = IDX.byId[id], x = list.find(y => y.id === id), have = x?.n || 0, cv = !!x?.c;
-    openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}<div class="row" style="margin-top:10px"><button class="primary" data-a="1">+1장</button><button data-a="-1"${have ? '' : ' disabled'}>−1장</button><span class="chip">지금 ${have}장</span>${have ? `<button class="sm ${cv ? 'on' : ''}" data-cv aria-pressed="${cv}">${ICON.star}${cv ? '대표 카드' : '대표 카드로'}</button>` : ''}</div><p class="small muted" style="margin:6px 0 0">대표 카드는 내 덱 목록에서 덱 상자 위에 겹쳐 보여요 (최대 4장). 고르지 않으면 메가 ex, ex, HP가 높은 포켓몬 순으로 알아서 골라요.</p>`, el => {
+    openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c, { zoom: false })}<div class="row" style="margin-top:10px"><button class="primary" data-a="1">+1장</button><button data-a="-1"${have ? '' : ' disabled'}>−1장</button><span class="chip">지금 ${have}장</span>${have ? `<button class="sm ${cv ? 'on' : ''}" data-cv aria-pressed="${cv}">${ICON.star}${cv ? '대표 카드' : '대표 카드로'}</button>` : ''}</div><p class="small muted" style="margin:6px 0 0">대표 카드는 내 덱 목록에서 덱 상자 위에 겹쳐 보여요 (최대 4장). 고르지 않으면 메가 ex, ex, HP가 높은 포켓몬 순으로 알아서 골라요.</p>`, el => {
       el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { addN(id, +b.dataset.a); closeSheet(); });
       const cb = el.querySelector('[data-cv]'); if (cb) cb.onclick = () => { const y = list.find(z => z.id === id); if (!y) return; if (!y.c && list.filter(z => z.c).length >= 4) { toast('대표 카드는 4장까지예요.'); return; } y.c = y.c ? 0 : 1; if (!y.c) delete y.c; closeSheet(); drawList(); };
     });
@@ -660,9 +694,9 @@ function deckEditor(deck) {
       const info = el.querySelector('.addi');
       const showInfo = (c, open = true) => { // 자세히 보기: 창 안에서 겹쳐 보여 줌 (뒤로 가기·'목록으로'로 돌아감)
         const ps = printsOf(c), cur = repOf(c), n = nIn(c);
-        info.innerHTML = `<div class="addih"><button class="sm" data-back>${ICON.back}<span>목록으로</span></button><span class="chip">덱에 ${n}장</span></div><div class="addib">${cardInfoHtml(cur)}
+        info.innerHTML = `<div class="addib">${cardInfoHtml(cur, { zoom: false })}
           ${ps.length > 1 ? `<label class="h">그림 고르기 <small class="muted">넣을 그림을 골라요 (효과는 같아요)</small></label><div class="artrow">${ps.map(p => `<button type="button" class="artc ${p.id === cur.id ? 'on' : ''}" data-art="${p.id}" aria-pressed="${p.id === cur.id}" title="${esc(setNo(p))}"><span class="cpic">${picHtml(p, D.dimg)}</span><small>${esc(setNo(p))}</small></button>`).join('')}</div>` : ''}</div>
-          <div class="addia"><button class="primary" data-a="1">${ICON.plus}1장 넣기</button><button data-a="-1" ${n ? '' : 'disabled'}>${ICON.minus}1장 빼기</button></div>`;
+          <div class="addfab"><button class="sm" data-back aria-label="목록으로">${ICON.back}<span>목록</span></button><i class="addsep"></i><button class="sm ib" data-a="-1" ${n ? '' : 'disabled'} aria-label="1장 빼기">${ICON.minus}</button><b class="addn" title="덱에 들어 있는 장수">${n}<small>장</small></b><button class="primary ib" data-a="1" aria-label="1장 넣기">${ICON.plus}</button></div>`; // 넣기·빼기·목록은 오른쪽 아래 작은 묶음 (가로·세로 같은 자리)
         if (open) { info.hidden = false; info.scrollTop = 0; SUBVIEW = () => { info.hidden = true; SUBVIEW = null; draw(); }; history.pushState({ sub: 1 }, ''); }
         info.querySelector('[data-back]').onclick = () => history.back();
         info.querySelectorAll('[data-art]').forEach(b => b.onclick = () => { artPick[fkey(c)] = b.dataset.art; showInfo(c, false); });
@@ -698,10 +732,10 @@ function deckEditor(deck) {
   guardPage('한 번 더 누르면 덱 목록으로 가요', () => dirty() ? leave : null);
   drawList();
 }
-function cardInfoHtml(c) { // 카드를 눌렀을 때: 글자 + 작은 카드 / 카드만 크게 (표시 설정)
+function cardInfoHtml(c, opt = {}) { // 카드를 눌렀을 때: 글자 + 작은 카드 / 카드만 크게 (표시 설정). opt.zoom === false 면 '크게 보기' 없음 (덱 화면)
   if (!c) return '<p>카드 정보가 없어요.</p>';
   const en = D.dtext === 'en' && !c.kro, alt = s2 => D.dtext === 'both' && s2 ? `<small class="alt">${esc(s2)}</small>` : '';
-  const pic = picMode(c, D.dimg) ? `<div class="big"><span class="cpic">${picHtml(c, D.dimg, D.ddet === 'card')}</span><button class="sm zbtn" data-zoom="${esc(c.id)}">${ICON.zoom}크게 보기</button></div>` : '';
+  const pic = picMode(c, D.dimg) ? `<div class="big"><span class="cpic">${picHtml(c, D.dimg, D.ddet === 'card')}</span>${opt.zoom === false ? '' : `<button class="sm zbtn" data-zoom="${esc(c.id)}">${ICON.zoom}크게 보기</button>`}</div>` : '';
   if (D.ddet === 'card' && pic) return `<div class="cardinfo only">${pic}</div>`;
   const cost = cs => (cs || []).map(t => typeIcon(t, 'ecost', `title="${TYPE_KO[t] || t}"`)).join('');
   const L = en ? { ab: 'Ability', w: 'Weakness', r: 'Resistance', rt: 'Retreat', reg: 'Regulation' } : { ab: '특성', w: '약점', r: '저항력', rt: '후퇴', reg: '레귤레이션' };
@@ -830,8 +864,8 @@ function slotHtml(sl, opt = {}) {
   const pct = c.hp ? hpLeft / c.hp * 100 : 100;
   const marks = [cd.poisoned ? '<b class="mk poison">독</b>' : '', cd.burned ? '<b class="mk burn">화상</b>' : '', cd.asleep ? '<b class="mk sleep">잠듦</b>' : '', cd.paralyzed ? '<b class="mk para">마비</b>' : '', cd.confused ? '<b class="mk conf">혼란</b>' : ''].join('');
   const under = sl.cards.length > 1 ? sl.cards.slice(0, -1).map((x, i) => `<div class="pc under" data-k="${x.i}" style="--u:${sl.cards.length - 1 - i}"></div>`).join('') : '';
-  // PTCGL처럼 이름 상자 없이: 오른쪽 위 HP 상자(남은 HP + 타입 기호) + 왼쪽 아래 에너지. 데미지는 남은 HP로 보여요 (HP를 모르는 카드만 데미지 배지)
-  const hp = c.hp ? `<span class="hpb ${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}" title="남은 HP ${hpLeft} / ${c.hp}"><b>${hpLeft}</b>${(c.ty || [])[0] ? typeIcon(c.ty[0]) : ''}</span>` : '';
+  // 이름 상자 없이: 오른쪽 위 남은 체력 판(이름 줄 높이, 시안 A) + 왼쪽 아래 안쪽 에너지 받침. 데미지는 남은 HP로 보여요 (HP를 모르는 카드만 데미지 배지)
+  const hp = c.hp ? `<span class="hpb ${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}" title="남은 체력 ${hpLeft} / ${c.hp}"><small>HP</small><b>${hpLeft}</b>${(c.ty || [])[0] ? typeIcon(c.ty[0]) : ''}</span>` : '';
   return `<div class="spot ${size} filled" data-sid="${sl.sid}">
     <div class="rotwrap ${rot}">${under}${cardFace(t, 'onfield', '', '')}${hp}${energyTabs(sl)}
       ${sl.dmg && !c.hp ? `<span class="dmg" data-dmg="${sl.sid}">${sl.dmg}</span>` : ''}
@@ -854,12 +888,19 @@ function prizesHtml(p) { // 겹쳐 쌓은 사이드 더미 + 남은 수
   return `<div class="prizes" data-zone="prizes" data-p="${p}" style="--n:${Math.max(1, n)}"><div class="pzstack">${cards || '<div class="zone-mark">사이드</div>'}</div><span class="cnt" title="남은 사이드">${n}</span></div>`;
 }
 const USES = [['energy', 'bolt', '에너지'], ['supporter', 'user', '서포트'], ['retreat', 'retreat', '후퇴'], ['attack', 'battle', '기술']];
+const USE_LONG = { energy: '손패의 에너지 붙이기', supporter: '서포트 카드 쓰기', retreat: '후퇴하기', attack: '기술 쓰기' };
+function openUses() { // 막대 가운데 작은 그림 4개 = 한 차례에 한 번만 할 수 있는 것. 한 것은 초록
+  const v = G.view; if (v.phase !== 'play') return; const P = v.p[v.current], U = P.used || {};
+  openSheet(`<button class="x sm" data-close>닫기</button><h3>이번 차례에 한 것</h3>
+    <p class="small muted" style="margin-top:0">${esc(P.name)} 님 차례예요. 한 차례에 한 번만 할 수 있는 것들이고, 한 것은 초록으로 칠해져요. 기술을 쓰면 차례가 끝나요.</p>
+    <ul class="uselist">${USES.map(([k, ic]) => `<li class="${U[k] ? 'done' : ''}"><i>${ICON[ic]}</i><b>${USE_LONG[k]}</b><span>${U[k] ? `${ICON.check}했어요` : '아직'}</span></li>`).join('')}</ul>`);
+}
 function areaHtml(p, isBottom) {
   const v = G.view, P = v.p[p];
   const now = v.phase === 'play' && v.current === p;
   const state = v.phase === 'setup' ? `<b class="zst ${P.ready ? 'ok' : ''}">${P.ready ? '준비 완료' : '준비 중'}</b>` : '';
   // 이름표와 '이번 차례에 쓴 것'은 벤치 칸 테두리에 걸쳐서 (가로 화면은 이름표 왼쪽·쓴 것 오른쪽, 세로 화면은 나란히)
-  const tag = `<div class="ztags"><span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><i class="av">${esc(P.name.slice(0, 1))}</i><span class="zn">${esc(P.name)}</span>${state}${v.phase === 'setup' && P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}</span></div>`;
+  const tag = `<div class="ztags"><span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><span class="zn">${esc(P.name)}</span></span>${state}${v.phase === 'setup' && P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}</div>`; // 이름만 꾸민 상자에, 준비 상태는 옆에 따로
   return `<section class="area ${isBottom ? 'bottom' : 'top'} ${now ? 'now' : ''}" data-area="${p}">
       <div class="g-pz zone">${prizesHtml(p)}</div>
       <div class="g-act">${slotHtml(P.active, { active: true })}</div>
@@ -887,7 +928,7 @@ function rbarHtml(readOnly) { // 오른쪽 세로 막대: 위 사람 남은 사�
   const v = G.view, bs = bottomSeat(), os = 1 - bs;
   const cur = v.phase === 'play' ? (v.current === bs ? 'me' : 'opp') : '';
   const U = v.phase === 'play' ? v.p[v.current].used : null; // 세로 화면: 이번 차례에 쓴 것(에너지·서포트·후퇴·기술)을 막대 가운데에 작게
-  const cu = U ? `<span class="cuses" title="${esc(v.p[v.current].name)} 님이 이번 차례에 쓴 것">${USES.map(([k, ic, l]) => `<i class="${U[k] ? 'done' : ''}" title="${l} ${U[k] ? '(썼어요)' : '(아직)'}">${ICON[ic]}</i>`).join('')}</span>` : '';
+  const cu = U ? `<span class="cuses" data-uses role="button" tabindex="0" aria-label="이번 차례에 한 것 보기" title="이번 차례에 한 것 (누르면 설명)">${USES.map(([k, ic, l]) => `<i class="${U[k] ? 'done' : ''}" title="${l} ${U[k] ? '(썼어요)' : '(아직)'}">${ICON[ic]}</i>`).join('')}</span>` : '';
   const mid = v.phase === 'setup' ? '<b>준비</b>' : v.phase === 'over' ? '<b>끝</b>' : `<small>${v.turn}번째</small>${v.deadline ? `<b title="${fmtLeft(v.deadline - Date.now())}">${fmtShort(v.deadline - Date.now())}</b>` : '<b>차례</b>'}${cu}`;
   return `<div class="rbar">
     <div class="pzc opp" title="${esc(v.p[os].name)} 님 남은 사이드"><b>${v.p[os].prizesN}</b></div>
@@ -904,16 +945,26 @@ const FAB_ICON = {
   more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="2.3" fill="currentColor"/><circle cx="12" cy="12" r="2.3" fill="currentColor"/><circle cx="18.5" cy="12" r="2.3" fill="currentColor"/></svg>',
   flag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 2.5h1.8v19H5v-19Zm2.8 1h11.4l-2.6 4.4 2.6 4.4H7.8V3.5Z"/></svg>',
   bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.4c-4 0-7 2.9-7 7v4.2l-1.8 3.1v1.4h17.6v-1.4L19 13.6V9.4c0-4.1-3-7-7-7Zm-2.7 17.2a2.8 2.8 0 0 0 5.4 0Z"/></svg>',
+  rwprev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.5 5.2v13.6L6.3 12z"/></svg>',
+  rwnext: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.5 5.2v13.6L17.7 12z"/></svg>',
+  rwfirst: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5.2 5.2h2.4v13.6H5.2zM19 5.2v13.6L9 12z"/></svg>',
+  rwlast: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 5.2h2.4v13.6h-2.4zM5 5.2v13.6L15 12z"/></svg>',
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 4.6v14.8L19.6 12z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.3 5h4v14h-4zM13.7 5h4v14h-4z"/></svg>',
+  x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>',
+  home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.9 1.9 11.6l1.4 1.6 1.9-1.6V20a1.2 1.2 0 0 0 1.2 1.2h4.1v-6.1h3v6.1h4.1a1.2 1.2 0 0 0 1.2-1.2v-8.4l1.9 1.6 1.4-1.6Z"/></svg>',
   rewatch: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M4.6 12a7.4 7.4 0 1 0 2.3-5.4"/><path fill="currentColor" d="M3.4 3.4v6h6z"/><path fill="currentColor" d="M10.2 8.4v7.2l5.8-3.6z"/></svg>',
 };
 const FAB_FX = '<i class="fx f1"></i><i class="fx f3"></i><i class="fx f4"></i>';
+// 판·리플레이 왼쪽 위에 늘 있는 '로비' 단추 (한 번에 나감)
+const lobbyBtn = () => `<a class="fabw golobby" href="#lobby" aria-label="로비로 나가기"><span class="fab k-home">${FAB_FX}<span class="core">${FAB_ICON.home}</span></span><span class="fl">로비</span></a>`;
 const fabBtn = (t, ic, l, k, extra = '') => `<div class="fabw"><button class="fab ${k}" data-t="${t}" aria-label="${l}">${FAB_FX}<span class="core">${FAB_ICON[ic]}</span>${extra}</button><span class="fl">${l}</span></div>`;
 function fabHtml() { // 왼쪽: 상대 턴·코인·효과 / 오른쪽: 더 보기·남은 사이드 막대·차례 끝내기 / 오른쪽 아래: 기록
   const v = G.view, me = meSeat();
   const pend = me == null ? 0 : v.groups.filter(g => g.who !== me && g.status !== 'ok').length;
   const log = fabBtn('log', 'log', '기록', 'k-log', pend ? `<i class="badge">${pend}</i>` : '');
-  const rwt = me == null ? null : lastOppTurn(), rwNew = rwt && !rwSeen(rwt); // 기보 보기: 수가 하나라도 있으면 늘 보임, 안 본 상대 차례가 있으면 '새'
-  const rw = (v.n || 0) > 0 ? `<div class="rwbtn">${fabBtn('rewatch', 'rewatch', '기보 보기', 'k-rw' + (rwNew ? ' on nudge' : ''), rwNew ? '<i class="badge">새</i>' : '')}</div>` : '';
+  const rwt = me == null ? null : lastOppTurn(), rwNew = rwt && !rwSeen(rwt); // 리플레이: 수가 하나라도 있으면 늘 보임, 안 본 상대 차례가 있으면 '새'
+  const rw = (v.n || 0) > 0 ? `<div class="rwbtn">${fabBtn('rewatch', 'rewatch', '리플레이', 'k-rw' + (rwNew ? ' on nudge' : ''), rwNew ? '<i class="badge">새</i>' : '')}</div>` : '';
   if (me == null || v.phase === 'over') return { left: rw ? `<div class="lbtns">${rw}</div>` : '', log: `<div class="rbtns">${log}</div>` };
   const myTurn = v.phase === 'play' && v.current === me;
   const open = v.openGroup[me];
@@ -929,12 +980,12 @@ document.addEventListener('pointerdown', e => {
   if (t.matches('.fab, button, .btn')) { t.classList.remove('pop'); void t.offsetWidth; t.classList.add('pop'); clearTimeout(t._pop); t._pop = setTimeout(() => t.classList.remove('pop'), 650); }
   Sound.sfx(t.classList.contains('fab') ? 'pop' : 'tap');
 });
-function matHtml(readOnly = false) {
+function matHtml(readOnly = false, inBox = '') { // inBox: 판 상자 안 양옆에 놓을 것 (리플레이 조작)
   const bs = bottomSeat(), os = 1 - bs, v = G.view;
   const f = readOnly ? {} : fabHtml();
   const over = v.phase === 'over' ? `<div class="overpill">${ICON.trophy}${esc(v.p[v.winner]?.name || '')} 승리</div>` : '';
   return `${oppHandHtml(os)}<div class="matwrap"><div class="matbox"><div class="mat ${readOnly ? 'ro' : ''}">${areaHtml(os, false)}${midHtml(readOnly)}${areaHtml(bs, true)}</div>
-    ${over}${f.left || ''}<div class="rcol">${f.more || ''}${rbarHtml(readOnly)}${f.end || ''}</div></div></div>${f.log || ''}${handHtml(bs)}`;
+    ${over}${f.left || ''}${inBox}${readOnly ? '' : `<div class="rcol">${f.more || ''}${rbarHtml()}${f.end || ''}</div>`}</div></div>${f.log || ''}${handHtml(bs)}`;
 }
 
 // ----- 그리기 + 애니메이션 -----
@@ -1027,7 +1078,7 @@ function coinAnim(txt) {
 }
 function draw(newLines) {
   const v = G.view; if (!v) return;
-  if (G.rw) { // 기보 보는 중: 판은 그대로 두고, 새로 생긴 수까지 갈 수 있게만
+  if (G.rw) { // 리플레이 보는 중: 판은 그대로 두고, 새로 생긴 수까지 갈 수 있게만
     const rw = G.rw; if (rw.mode !== 'game') return;
     const wasEnd = rw.k >= rw.n; rw.n = v.n ?? rw.n; rw.lines = G.lines;
     if (wasEnd && rw.k < rw.n) drawRw(false); else { const kk = app.querySelector('.vwk'); if (kk) kk.textContent = `${rw.k} / ${rw.n}수`; }
@@ -1037,8 +1088,8 @@ function draw(newLines) {
   const prevView = G.prev;
   const me = meSeat();
   const waitingMe = me != null && v.waiting.includes(me);
-  document.title = (waitingMe ? '● 내 차례 · ' : '') + '도란 카드 대전';
-  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${dockHtml()}</div></div>`;
+  document.title = (waitingMe ? '● 내 차례 · ' : '') + '닌포케카';
+  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${dockHtml()}</div>${lobbyBtn()}</div>`;
   drawSpecs(); drawSide(); bindBoard();
   app.querySelectorAll('[data-dock]').forEach(b => b.onclick = () => { G.ui.dockMode = b.dataset.dock; draw([]); });
   flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); }
@@ -1103,15 +1154,15 @@ function dockHtml() {
   const bump = rows.length > (G.ui.dockRows || 0) ? ' bump' : ''; G.ui.dockRows = rows.length;
   const enter = G.ui.dockWas !== (open ? 'open' : 'shut') ? ' enter' : ''; G.ui.dockWas = open ? 'open' : 'shut'; // 처음 나타날 때만 움직임
   if (!open) { // 접힌 상태: 다른 둥근 버튼과 같은 모양 (급함 = 주황 종, 판정 확인 = 보라 손) + 기다리는 중 알약
-    const n = urg.length + rows.length, l = urg.length ? '답할 것' : '확인할 것';
+    const n = urg.length + rows.length, l = urg.length ? '대답하기' : '판정 확인';
     const fab = n ? `<div class="dockfab${enter}"><div class="fabw"><button class="fab k-dock ${urg.length ? 'on nudge' : 'j' + bump}" data-dock="open" aria-label="${l} ${n}개 펼치기">${FAB_FX}<span class="core">${FAB_ICON[urg.length ? 'bell' : 'hand']}</span><i class="badge">${n}</i></button><span class="fl">${l}</span></div></div>` : '';
     return fab + (infos ? `<div class="dinfos">${infos}</div>` : '');
   }
   const ag = rows.filter(x => x.agree).map(x => x.agree);
   return `<div class="dock${enter}"><div class="dockin">
-    <div class="dockh"><b class="dtt">${urg.length ? '지금 답할 것' : '확인할 것'}</b>${infos}<button class="dockx sm" data-dock="shut">${ICON.down}접기</button></div>
+    <div class="dockh"><b class="dtt">${urg.length ? '상대가 대답을 기다려요' : '상대 판정 살펴보기'}</b>${infos}<button class="dockx sm" data-dock="shut">${ICON.down}접기</button></div>
     ${urg.map(x => x.h).join('')}
-    ${rows.length ? `<div class="drows">${urg.length || ag.length >= 2 ? `<div class="drh"><span>${urg.length ? '그 밖에 확인할 것' : '상대 판정'} ${rows.length}</span>${ag.length >= 2 ? `<button class="good xs" data-agreeall="${ag.join(',')}">${ICON.check}모두 동의</button>` : ''}</div>` : ''}${rows.map(x => x.row).join('')}</div>` : ''}
+    ${rows.length ? `<div class="drows">${urg.length || ag.length >= 2 ? `<div class="drh"><span>${urg.length ? '그 밖의 판정' : '상대 판정'} ${rows.length}</span>${ag.length >= 2 ? `<button class="good xs" data-agreeall="${ag.join(',')}">${ICON.check}모두 동의</button>` : ''}</div>` : ''}${rows.map(x => x.row).join('')}</div>` : ''}
   </div></div>`;
 }
 // 기록을 차례마다 덩어리로: 머리(몇 번째 차례 · 누구 · 뽑은 카드) + 그 차례의 줄들. 줄마다 이름 대신 색 띠(나 파랑, 상대 빨강)
@@ -1137,7 +1188,7 @@ function logHtml() {
   const gs = Object.fromEntries(G.view.groups.map(g => [g.gid, g]));
   let lastG = null; // 같은 판정 묶음은 첫 줄에만 칩, 나머지는 보라 줄로만 (줄을 더 많이 보이게)
   return logBlocks(G.lines, (l, o, headAttr) => {
-    if (headAttr) return l.k >= 0 && !G.rw ? `data-vk="${l.k}" role="button" tabindex="0" title="이 차례부터 기보 보기"` : '';
+    if (headAttr) return l.k >= 0 && !G.rw ? `data-vk="${l.k}" role="button" tabindex="0" title="이 차례부터 리플레이"` : '';
     const g = l.gid && gs[l.gid];
     const first = l.gid !== lastG; lastG = l.gid || null;
     const st = g ? (g.status === 'ok' ? ['ok', 'check', '동의함'] : g.status === 'disputed' ? ['warn', 'warn', '이의 있음'] : ['judge', 'judge', '사람 판정 · 동의 전']) : ['judge', 'judge', '사람 판정'];
@@ -1147,34 +1198,51 @@ function logHtml() {
   });
 }
 // 코인 던지기: 횟수는 ▼▲ 단추로(키보드 없이), '무엇 때문에?'는 카드를 눌러서 고름 (내 포켓몬·상대 포켓몬·내 손패의 트레이너스·특수 상태)
-function openCoin() {
-  const v = G.view, me = meSeat(); if (me == null) return;
+// 카드 고르기 (코인 '무엇 때문에?'·효과 쓰기): 내 포켓몬 · 상대 포켓몬 · 손패 · 스타디움. 다시 누르면 고르기 취소
+function whyPicker(opt = {}) {
+  const v = G.view, me = meSeat();
   const tile = (x, sub) => { const nm = nmOf(x); return `<button type="button" class="cwc" data-why="${esc(nm)}" aria-pressed="false" title="${esc(nm)}">${cardFace(x, 'cwpc')}<span class="cwn">${esc(nm)}</span>${sub ? `<small>${sub}</small>` : ''}</button>`; };
   const slots = p => allSlots(p).map(sl => tile(topOf(sl), v.p[p].active?.sid === sl.sid ? '배틀' : '벤치')).join('');
-  const hand = v.p[me].hand.filter(h => h.c && cinfo(h.c).st === 'T').map(h => tile(h, '')).join('');
+  const hand = v.p[me].hand.filter(h => h.c && (opt.handAll || cinfo(h.c).st === 'T')).map(h => tile(h, '')).join('');
   const grp = (t, body) => body ? `<div class="cwg"><span class="cwl">${t}</span><div class="cwrow">${body}</div></div>` : '';
+  return `<div class="cwhy">${grp('내 포켓몬', slots(me))}${grp('상대 포켓몬', slots(1 - me))}${grp(opt.handAll ? '내 손패' : '내 손패의 트레이너스', hand)}${grp('스타디움', v.stadium ? tile(v.stadium, '') : '')}${opt.extra || ''}</div>`;
+}
+function bindWhy(el, onPick) {
+  el.querySelectorAll('[data-why]').forEach(b => b.onclick = () => {
+    const on = b.getAttribute('aria-pressed') !== 'true';
+    el.querySelectorAll('[data-why]').forEach(o => o.setAttribute('aria-pressed', 'false'));
+    if (on) b.setAttribute('aria-pressed', 'true'); onPick(on ? b.dataset.why : ''); Sound.sfx('tap');
+  });
+}
+function openCoin() {
+  const me = meSeat(); if (me == null) return;
   let n = 1, why = '';
   openSheet(`<button class="x sm" data-close>닫기</button><h3>코인 던지기</h3>
     <label class="h">몇 번 던질까요?</label>
-    <div class="stepper"><button type="button" class="stp" data-d="-1" aria-label="한 번 줄이기">${ICON.down}</button><output class="stv" aria-live="polite"><b>1</b>번</output><button type="button" class="stp" data-d="1" aria-label="한 번 늘리기">${ICON.up}</button></div>
+    ${stepHtml('n', 1, { min: 1, max: 20, unit: '번' })}
     <label class="h">무엇 때문에? <small class="muted">고르지 않아도 돼요</small></label>
-    <div class="cwhy">${grp('내 포켓몬', slots(me))}${grp('상대 포켓몬', slots(1 - me))}${grp('내 손패의 트레이너스', hand)}
-      ${grp('특수 상태', ['잠듦', '혼란', '마비'].map(s => `<button type="button" class="cws" data-why="${s} 확인" aria-pressed="false">${s} 확인</button>`).join(''))}</div>
+    ${whyPicker({ extra: `<div class="cwg"><span class="cwl">특수 상태</span><div class="cwrow">${['잠듦', '혼란', '마비'].map(s => `<button type="button" class="cws" data-why="${s} 확인" aria-pressed="false">${s} 확인</button>`).join('')}</div></div>` })}
     <div class="acts1"><button class="primary" data-go>${ICON.coin}<span class="gol"></span></button></div>`, el => {
-    const stv = el.querySelector('.stv b'), gol = el.querySelector('.gol'), stp = [...el.querySelectorAll('.stp')];
-    const upd = () => { stv.textContent = n; stp[0].disabled = n <= 1; stp[1].disabled = n >= 20; gol.textContent = `${n}번 던지기${why ? ` · ${why}` : ''}`; };
-    stp.forEach(b => b.onclick = () => { n = Math.max(1, Math.min(20, n + +b.dataset.d)); upd(); });
-    el.querySelectorAll('[data-why]').forEach(b => b.onclick = () => {
-      const on = b.getAttribute('aria-pressed') !== 'true'; // 다시 누르면 고르기 취소
-      el.querySelectorAll('[data-why]').forEach(o => o.setAttribute('aria-pressed', 'false'));
-      if (on) b.setAttribute('aria-pressed', 'true'); why = on ? b.dataset.why : ''; upd();
-    });
-    el.onkeydown = e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); n = Math.max(1, Math.min(20, n + (e.key === 'ArrowUp' ? 1 : -1))); upd(); } };
+    const gol = el.querySelector('.gol'), upd = () => { gol.textContent = `${n}번 던지기${why ? ` · ${why}` : ''}`; };
+    bindSteps(el, v => { n = v; upd(); });
+    bindWhy(el, w => { why = w; upd(); });
     el.querySelector('[data-go]').onclick = () => { closeSheet(); send({ type: 'coin', n, why }); };
     upd();
   });
 }
-// 기록·채팅 창: 탭·기보 보기·입력칸은 옆 줄에, 기록은 창 높이 전부를 씀
+function openEffect() { // 효과 쓰기: 글자 대신 어떤 카드의 효과인지 눌러서 고름
+  if (meSeat() == null) return;
+  let why = '';
+  openSheet(`<button class="x sm" data-close>닫기</button><h3>효과 쓰기</h3>
+    <p class="small muted" style="margin-top:0">어떤 카드의 효과인가요? 지금부터 하는 카드 이동·체력 변화가 이 효과로 묶여 기록되고, 다 하면 '효과 끝'을 눌러요.</p>
+    ${whyPicker({ handAll: true })}
+    <div class="acts1"><button class="judge" data-go>${FAB_ICON.hand}<span class="gol">효과 시작</span></button></div>`, el => {
+    const gol = el.querySelector('.gol');
+    bindWhy(el, w => { why = w; gol.textContent = w ? `${w} 효과 시작` : '효과 시작'; });
+    el.querySelector('[data-go]').onclick = () => { closeSheet(); send({ type: 'effect', title: why || '카드 효과' }); };
+  });
+}
+// 기록·채팅 창: 탭·리플레이·입력칸은 옆 줄에, 기록은 창 높이 전부를 씀
 function openLog() {
   openSheet('<div class="lgs"></div>', box => { box.classList.add('wide', 'logsheet'); drawSide(box.querySelector('.lgs')); });
 }
@@ -1194,7 +1262,7 @@ function drawSide(target) {
       <button type="button" class="lgt x" data-close aria-label="닫기">${ICON.x}<span>닫기</span></button>
       <button type="button" class="lgt ${tab === 'log' ? 'on' : ''}" data-st="log">${ICON.chat}<span>기록·채팅</span></button>
       <button type="button" class="lgt ${tab === 'spec' ? 'on' : ''}" data-st="spec">${ICON.eye}<span>관전자${nSpec ? ` ${nSpec}` : ''}</span></button>
-      ${(G.view.n || 0) > 0 ? `<button type="button" class="lgt vwgo" data-vwgo>${ICON.rewind}<span>기보 보기</span></button>` : ''}
+      ${(G.view.n || 0) > 0 ? `<button type="button" class="lgt vwgo" data-vwgo>${ICON.rewind}<span>리플레이</span></button>` : ''}
     </nav>
     <div class="log">${logInner()}</div>
     ${canType ? `<form class="lgin"><textarea name="t" rows="2" maxlength="${tab === 'log' ? 300 : 200}" placeholder="${tab === 'log' ? '채팅 (기록에 남아요)' : '응원 한마디'}" enterkeyhint="send">${esc(G.ui.draft || '')}</textarea><button class="blue sm" aria-label="보내기">${ICON.next}<span>보내기</span></button></form>` : ''}`;
@@ -1211,7 +1279,7 @@ function drawSide(target) {
   ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendIt(); } }; // Enter 보내기, Shift+Enter 줄바꿈
   f.onsubmit = e => { e.preventDefault(); sendIt(); ta.focus(); };
 }
-function bindLog(lg) { // 차례 머리를 누르면 그 차례부터 기보 보기
+function bindLog(lg) { // 차례 머리를 누르면 그 차례부터 리플레이
   lg.querySelectorAll('[data-vk]').forEach(h => h.onclick = () => { const k = +h.dataset.vk; closeSheet(); setTimeout(() => startRewatch({ k }), 0); });
 }
 
@@ -1249,9 +1317,9 @@ async function onHandCard(iid) {
     if (c.st === 'E') opts.push({ label: '에너지 붙이기', value: 'attach', cls: 'primary' });
     if ((c.sub || []).includes('Pokémon Tool')) opts.push({ label: '도구 붙이기', value: 'attach', cls: 'primary' });
     else if (c.st === 'T') opts.push({ label: '사용하기', value: 'play', cls: 'primary' });
-    opts.push({ label: '다른 곳으로 옮기기 (효과)', value: 'move', cls: 'judge' });
+    opts.push({ label: '다른 곳으로 옮기기' + FX, value: 'move', cls: 'judge' });
   }
-  openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}<div class="acts">${opts.map((o, i) => `<button class="${o.cls || ''}" data-i="${i}">${o.label}</button>`).join('')}</div>`, el => {
+  openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}${actsHtml(opts.map((o, i) => ({ ...o, i })))}`, el => {
     el.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => {
       const k = opts[+b.dataset.i].value; closeSheet(); await new Promise(r => setTimeout(r, 30));
       if (k === 'sa' || k === 'sb') return send({ type: 'setupPlace', iid, to: k === 'sa' ? 'active' : 'bench' });
@@ -1269,24 +1337,28 @@ async function onSlot(sid) {
   const opts = [];
   if (me != null && v.phase === 'setup' && mine) opts.push({ label: '손패로 되돌리기', value: ['setupReturn'] });
   if (me != null && v.phase === 'play') {
-    if (mine && f.where === 'active') {
-      (c.at || []).forEach((a, k) => opts.push({ label: `${ICON.battle}${esc((c.kat || [])[k]?.n || a.n)} ${esc(a.d || '')}`, value: ['attack', k], cls: 'primary' }));
-      if (v.p[me].bench.length) opts.push({ label: '후퇴', value: ['retreat'], cls: 'blue' });
-    }
-    if (mine) (c.ab || []).forEach((a, k) => opts.push({ label: `${ICON.spark}특성 ${esc((c.kab || [])[k]?.n || a.n)}`, value: ['ability', k], cls: 'blue' }));
-    if (f.where === 'bench') opts.push({ label: '배틀 포켓몬과 바꾸기 (효과)', value: ['switch'], cls: 'judge' });
-    opts.push({ label: '데미지 +10', value: ['dmg', 10], cls: 'judge' }, { label: '데미지 −10', value: ['dmg', -10], cls: 'judge' }, { label: '데미지 직접 넣기', value: ['dmgN'], cls: 'judge' });
+    // 맨 윗줄: 기술과 특성 (내 포켓몬) / 둘째 줄: 체력 ▼▲ 적용 / 셋째 줄: 나머지
+    if (mine && f.where === 'active') (c.at || []).forEach((a, k) => opts.push({ label: `${ICON.battle}${esc((c.kat || [])[k]?.n || a.n)} ${esc(a.d || '')}`, value: ['attack', k], cls: 'primary', row: 1 }));
+    if (mine) (c.ab || []).forEach((a, k) => opts.push({ label: `${ICON.spark}특성 ${esc((c.kab || [])[k]?.n || a.n)}`, value: ['ability', k], cls: 'blue', row: 1 }));
+    if (mine && f.where === 'active' && v.p[me].bench.length) opts.push({ label: '후퇴', value: ['retreat'], cls: 'blue' });
+    if (f.where === 'bench') opts.push({ label: '배틀 포켓몬과 바꾸기' + FX, value: ['switch'], cls: 'judge' });
     if (f.where === 'active') opts.push({ label: '특수상태', value: ['cond'], cls: 'judge' });
     opts.push({ label: '붙은 카드 옮기기', value: ['parts'], cls: 'judge' }, { label: '포켓몬 통째로 옮기기', value: ['whole'], cls: 'judge' });
   }
   const attached = [...f.sl.cards.slice(0, -1).map(x => '진화 전: ' + nmOf(x)), ...f.sl.en.map(x => '에너지: ' + nmOf(x)), ...f.sl.tl.map(x => '도구: ' + nmOf(x))];
-  openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}<div class="small">데미지 ${f.sl.dmg} · ${attached.map(esc).join(' · ') || '붙은 카드 없음'}</div><div class="acts">${opts.map((o, i) => `<button class="${o.cls || ''}" data-i="${i}">${o.label}</button>`).join('')}</div>`, el => {
+  const hpMax = c.hp || 0, left = hpMax ? Math.max(0, hpMax - f.sl.dmg) : 0, hv0 = hpMax ? left : f.sl.dmg;
+  const hpRow = me != null && v.phase === 'play' ? `<div class="hprow"><span class="hpl">${hpMax ? '체력' : '데미지'}</span>${stepHtml('hp', hv0, hpMax ? { min: 0, max: hpMax, by: 10 } : { min: 0, max: 990, by: 10 })}${hpMax ? `<span class="hpm">/ ${hpMax}</span>` : ''}<button class="judge" data-hpgo disabled>적용</button></div>` : '';
+  const ix = opts.map((o, i) => ({ ...o, i }));
+  openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}<div class="small slinfo">${hpMax ? `남은 체력 ${left} / ${hpMax}` : `데미지 ${f.sl.dmg}`} · ${attached.map(esc).join(' · ') || '붙은 카드 없음'}</div>${actsHtml(ix.filter(o => o.row === 1), 'r1')}${hpRow}${actsHtml(ix.filter(o => o.row !== 1), 'r3')}`, el => {
+    const hgo = el.querySelector('[data-hpgo]');
+    if (hgo) { bindSteps(el, nv => { hgo.disabled = nv === hv0; hgo.textContent = nv === hv0 ? '적용' : `적용 (${hpMax ? (nv > hv0 ? '+' : '−') + Math.abs(nv - hv0) : (nv > hv0 ? '+' : '−') + Math.abs(nv - hv0)})`; });
+      hgo.onclick = () => { const nv = +el.querySelector('[name=hp]').value; closeSheet(); send({ type: 'damage', sid, n: hpMax ? (hpMax - nv) - f.sl.dmg : nv - f.sl.dmg }); }; }
     el.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => {
       const [k, arg] = opts[+b.dataset.i].value; closeSheet(); await new Promise(r => setTimeout(r, 30));
       if (k === 'setupReturn') return send({ type: 'setupReturn', sid });
       if (k === 'attack') {
         const a = c.at[arg]; const sug = suggest(arg);
-        const ka = (c.kat || [])[arg] || a; const fm = await ask(`기술 ${ka.n}`, `<p>${esc(ka.t || '추가 효과 없음')}</p><p>사이트 계산: <b>${sug.dmg}</b>${sug.parts.length ? ' (' + esc(sug.parts.join(', ')) + ')' : ''}</p><label class="h">상대 배틀 포켓몬에게 줄 데미지</label><input name="dmg" type="number" step="10" min="0" value="${sug.dmg}"><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">${a.t ? '<p class="small muted">추가 효과(벤치 데미지, 상태 이상 등)는 기술을 쓴 뒤 도구로 처리하고 「효과 끝」을 눌러요.</p>' : ''}`, '기술 쓰기');
+        const ka = (c.kat || [])[arg] || a; const fm = await ask(`기술 ${ka.n}`, `<p>${esc(ka.t || '추가 효과 없음')}</p><p>사이트 계산: <b>${sug.dmg}</b>${sug.parts.length ? ' (' + esc(sug.parts.join(', ')) + ')' : ''}</p><label class="h">상대 배틀 포켓몬에게 줄 데미지</label>${stepHtml('dmg', sug.dmg, { min: 0, max: 990, by: 10 })}<label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">${a.t ? '<p class="small muted">추가 효과(벤치 데미지, 상태 이상 등)는 기술을 쓴 뒤 도구로 처리하고 「효과 끝」을 눌러요.</p>' : ''}`, '기술 쓰기');
         if (!fm) return; const d = +fm.dmg; return send({ type: 'attack', k: arg, dmg: d === sug.dmg ? undefined : d, note: fm.note || undefined });
       }
       if (k === 'retreat') {
@@ -1301,8 +1373,6 @@ async function onSlot(sid) {
       }
       if (k === 'ability') return send({ type: 'ability', sid, k: arg });
       if (k === 'switch') return send({ type: 'switch', sid });
-      if (k === 'dmg') return send({ type: 'damage', sid, n: arg });
-      if (k === 'dmgN') { const fm = await ask('데미지 직접 넣기', '<label class="h">더할 데미지 (빼려면 −)</label><input name="n" type="number" step="10" value="10">'); if (fm) send({ type: 'damage', sid, n: +fm.n }); return; }
       if (k === 'cond') {
         const opt = Object.entries(COND_KO).map(([ck, l]) => ({ label: (f.sl.cond[ck] ? ICON.check : '') + l + (f.sl.cond[ck] ? ' 회복' : ''), value: ck }));
         const ck = await pick('특수상태', opt); if (ck) send({ type: 'cond', sid, c: ck, on: !f.sl.cond[ck] }); return;
@@ -1350,13 +1420,13 @@ async function onZone(z, p) {
       : [{ label: '상대 덱 위에서 몇 장 보기', value: ['lookN'] }, { label: '상대 덱 섞기', value: ['shuffle'] }];
     const k = await pick(mine ? '내 덱' : '상대 덱', opts); if (!k) return;
     if (k[0] === 'draw') return send({ type: 'draw', n: 1 });
-    if (k[0] === 'drawN') { const f = await ask('몇 장 뽑을까요?', '<input name="n" type="number" min="1" max="60" value="2">'); if (f) send({ type: 'draw', n: +f.n }); return; }
+    if (k[0] === 'drawN') { const f = await ask('몇 장 뽑을까요?', stepHtml('n', 2, { min: 1, max: 60, unit: '장' }), '뽑기'); if (f) send({ type: 'draw', n: +f.n }); return; }
     if (k[0] === 'look') return send({ type: 'look', p, z: 'deck' });
-    if (k[0] === 'lookN') { const f = await ask('위에서 몇 장 볼까요?', '<input name="n" type="number" min="1" max="60" value="3">'); if (f) send({ type: 'look', p, z: 'deck', n: +f.n }); return; }
+    if (k[0] === 'lookN') { const f = await ask('위에서 몇 장 볼까요?', stepHtml('n', 3, { min: 1, max: 60, unit: '장' }), '보기'); if (f) send({ type: 'look', p, z: 'deck', n: +f.n }); return; }
     if (k[0] === 'shuffle') return send({ type: 'shuffle', p });
   }
-  if (z === 'prizes') { const ok = await pick(mine ? '내 프라이즈' : '상대 프라이즈', [{ label: '앞면 확인하기 (효과)', value: 1 }]); if (ok) send({ type: 'look', p, z: 'prizes' }); return; }
-  if (z === 'hand' && !mine) { const ok = await pick('상대 손패', [{ label: '상대 손패 보기 (효과)', value: 1 }]); if (ok) send({ type: 'look', p, z: 'hand' }); }
+  if (z === 'prizes') { const ok = await pick(mine ? '내 프라이즈' : '상대 프라이즈', [{ label: '앞면 확인하기' + FX, value: 1, cls: 'judge' }]); if (ok) send({ type: 'look', p, z: 'prizes' }); return; }
+  if (z === 'hand' && !mine) { const ok = await pick('상대 손패', [{ label: '상대 손패 보기' + FX, value: 1, cls: 'judge' }]); if (ok) send({ type: 'look', p, z: 'hand' }); }
 }
 async function onPile(iid) {
   const v = G.view, me = meSeat(), lk = v.p[me].look; const P = v.p[lk.p];
@@ -1383,7 +1453,8 @@ function bindBoard() {
   app.querySelectorAll('[data-rwask]').forEach(el => el.onclick = () => send({ type: 'rewindAsk', gid: el.dataset.rwask }));
   app.querySelectorAll('[data-rwno]').forEach(el => el.onclick = () => send({ type: 'rewindNo', gid: el.dataset.rwno }));
   app.querySelectorAll('[data-rwok]').forEach(el => el.onclick = async () => { if (await ask('이 판정 바로 전으로 되돌릴까요?', '<p>그 뒤에 한 행동이 모두 취소되고, 기록에는 줄을 그어 남겨요.</p><p class="small"><span class="chip warn">이미 본 카드가 있어요</span> 덱이나 손패에서 본 카드는 잊을 수 없어요. 덱은 다시 섞여요.</p>', '되돌리기', 'bad')) send({ type: 'rewindOk', to: +el.dataset.rwok }); });
-  app.querySelectorAll('[data-stadium]').forEach(el => el.onclick = () => { const c = cinfo(v.stadium.c); openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}${me != null ? '<div class="acts"><button class="judge" data-sd>트래시로 (효과)</button></div>' : ''}`, e2 => { const b = e2.querySelector('[data-sd]'); if (b) b.onclick = () => { closeSheet(); send({ type: 'move', iids: [v.stadium.i], to: { z: 'discard', p: v.stadium.by } }); }; }); });
+  app.querySelectorAll('[data-uses]').forEach(el => { el.onclick = openUses; el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUses(); } }; });
+  app.querySelectorAll('[data-stadium]').forEach(el => el.onclick = () => { const c = cinfo(v.stadium.c); openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}${me != null ? '<div class="acts"><button class="judge" data-sd>트래시로${FX}</button></div>' : ''}`, e2 => { const b = e2.querySelector('[data-sd]'); if (b) b.onclick = () => { closeSheet(); send({ type: 'move', iids: [v.stadium.i], to: { z: 'discard', p: v.stadium.by } }); }; }); });
   app.querySelectorAll('[data-t]').forEach(el => el.onclick = async () => {
     const t = el.dataset.t;
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
@@ -1391,11 +1462,11 @@ function bindBoard() {
     if (t === 'shuffleMine') return send({ type: 'shuffle', p: me });
     if (t === 'log') return openLog();
     if (t === 'coin') return openCoin();
-    if (t === 'effect') { const f = await ask('효과 쓰기', '<p>지금부터 하는 카드 이동, 데미지 등이 이 효과 아래에 묶여 기록돼요.</p><label class="h">어떤 카드의 효과인가요?</label><input name="title" maxlength="40" style="width:100%" placeholder="예: 보스의 지령"><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '시작', 'judge'); if (f) send({ type: 'effect', title: f.title || '카드 효과', note: f.note }); return; }
-    if (t === 'effectEnd') { const f = await ask('효과 끝', '<p>상대에게 "이렇게 처리했어요"로 보여요.</p><label class="h">한 줄 설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '끝내기', 'judge'); if (f) send({ type: 'effectEnd', note: f.note }); return; }
+    if (t === 'effect') return openEffect();
+    if (t === 'effectEnd') { send({ type: 'effectEnd' }); toast('효과를 끝냈어요. 상대가 확인할 수 있어요.'); return; }
     if (t === 'more') { const k = await pick('더 보기', [{ label: `${ICON.gear}설정`, value: 'set' },
         ...(fsOk() ? [{ label: inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}전체 화면`, value: 'fs' }] : isApp() ? [] : [{ label: `${ICON.homeAdd}주소창 없이 보기`, value: 'a2hs' }]),
-        { label: '항복하기', value: 'concede', cls: 'bad' }, { label: '로비로', value: 'lobby' }]); if (k === 'lobby') location.hash = '#lobby';
+        { label: `${ICON.flag}항복하기`, value: 'concede', cls: 'bad' }]); // 로비로 나가기는 왼쪽 위 단추
       if (k === 'fs') toggleFs(); if (k === 'a2hs') openA2hs();
       if (k === 'set') openSettings(() => draw([])); if (k === 'concede' && await ask('항복할까요?', '<p>이 판은 상대 승리로 끝나요.</p>', '항복', 'bad')) send({ type: 'concede' }); }
   });
@@ -1413,7 +1484,7 @@ function lastOppTurn() {
 }
 const rwKey = t => `rw:${G.id}:${t.k0}:${t.k1}`;
 function rwSeen(t) { try { return localStorage.getItem(rwKey(t)) === '1'; } catch { return false; } }
-// ---------- 기보 보기 (판 위에서 그대로, 판 크기는 그대로) ----------
+// ---------- 리플레이 (판 위에서 그대로, 판 크기는 그대로) ----------
 // 차례 단위로 이동(이전 차례 · 다음 차례), 그 안에서 한 수씩(‹ ›), 재생·멈춤. 위에는 지금 수의 설명, 아래에는 조작 막대
 const turnStartsOf = lines => [...new Set(lines.filter(l => l.turn && l.k >= 0).map(l => l.k))].sort((a, b) => a - b);
 async function startRewatch(opt = {}) { // 대전 중: 기본은 상대의 마지막 차례 처음부터
@@ -1482,7 +1553,7 @@ function rwTargets(a, b, lines = [], judged = false) { // 두 장면 사이에 �
   const sel = (loc, i) => { const [z, p] = loc.split(':');
     if (z === 'slot') return `.mat [data-sid="${p}"]`; if (z === 'disc') return `.pile.disc[data-p="${p}"]`; if (z === 'lost') return `.lostc[data-p="${p}"]`;
     if (z === 'prz') return `.prizes[data-p="${p}"]`; if (z === 'stad') return '.stadium';
-    if (z === 'hand') return +p === bottomSeat() ? `.handbar [data-k="${i}"]` : '.ohand'; return null; };
+    if (z === 'hand') return +p === bottomSeat() ? `.handbar [data-k="${i}"]` : '.vwoh'; return null; };
   const st = v => { const o = {}; for (const p of [0, 1]) [v.p[p].active, ...v.p[p].bench].forEach((sl, j) => { if (sl && !sl.hidden) o[sl.sid] = { dmg: sl.dmg || 0, cond: JSON.stringify(sl.cond || {}), pos: `${p}:${j ? 'b' : 'a'}`, p }; }); return o; };
   const sa = st(a), sb = st(b);
   for (const sid in sb) { // 데미지·상태 이상이 바뀐 포켓몬 = 기술 대상, 100 넘게 받으면 센 장면
@@ -1495,7 +1566,7 @@ function rwTargets(a, b, lines = [], judged = false) { // 두 장면 사이에 �
   for (const [i, loc] of B) if (A.get(i) !== loc) { const s2 = sel(loc, i); if (s2) add(s2, ko && /^\.(pile\.disc|prizes)/.test(s2) ? 'big' : 'move'); }
   for (const p of [0, 1]) {
     if (a.p[p].deck.n !== b.p[p].deck.n) add(`.pile.deck[data-p="${p}"]`);
-    if (!b.p[p].hand && a.p[p].handN !== b.p[p].handN) add('.ohand');
+    if (!b.p[p].hand && a.p[p].handN !== b.p[p].handN) add(+p === bottomSeat() ? '.handbar' : '.vwoh');
     if (a.p[p].prizesN !== b.p[p].prizesN) add(`.prizes[data-p="${p}"]`, 'big');
   }
   if (judged) out.forEach(o => { if (o.kind !== 'big' || o.s.startsWith('.mat')) o.kind = 'judge'; }); // 사람이 판정한 단계: 기절·프라이즈 말고는 모두 말풍선
@@ -1583,19 +1654,16 @@ function drawRw(forward) {
   const cap = rw.k === 0 ? '대전 준비부터 한 수씩 볼 수 있어요.' : turnL ? `차례를 시작했어요${drew ? ` (${esc(drew)})` : ''}.` : caps.length ? caps.join(' · ') : '차례를 넘겼어요.';
   const end = rw.k >= rw.n;
   G.view = cur; G.lines = rw.lines.filter(l => l.k < rw.k);
-  const lb = (t, sh) => `<span class="vl">${t}</span>${sh ? `<span class="vs">${sh}</span>` : ''}`;
-  const play = end ? (rw.mode === 'game' ? `<button class="vb main primary" data-rw="close" aria-label="판으로 돌아가기">${ICON.check}${lb('판으로')}</button>` : `<button class="vb main" disabled aria-label="마지막 수">${ICON.play}</button>`)
-    : `<button class="vb main primary ${rw.playing ? 'on' : ''}" data-rw="play" aria-label="${rw.playing ? '멈춤' : '재생'}">${rw.playing ? ICON.pause : ICON.play}${lb(rw.playing ? '멈춤' : '재생')}</button>`;
-  app.innerHTML = `<div class="arena rwmode"><div class="table">${matHtml(true)}<div class="hl-layer"></div>
-    <div class="vw ${side}"><div class="vwcap${cap.length > 70 ? ' long' : ''}" aria-live="polite"><b class="vwh">${esc(head0)}</b><span class="vwk">${rw.k} / ${rw.n}수</span> <span class="vwt">${cap}</span></div>
-    <div class="vwctl">
-      <button class="vb x" data-rw="close" aria-label="기보 닫기">${ICON.x}</button>
-      <button class="vb t" data-rw="tprev" ${rw.k > 0 ? '' : 'disabled'} aria-label="이전 차례로">${ICON.first}<span class="vtl">이전<br> 차례</span></button>
-      <button class="vb s" data-rw="prev" ${rw.k > 0 ? '' : 'disabled'} aria-label="한 수 뒤로">${ICON.prev}</button>
-      ${play}
-      <button class="vb s" data-rw="next" ${end ? 'disabled' : ''} aria-label="한 수 앞으로">${ICON.next}</button>
-      <button class="vb t" data-rw="tnext" ${end ? 'disabled' : ''} aria-label="다음 차례로"><span class="vtl">다음<br> 차례</span>${ICON.last}</button>
-    </div></div></div></div>`;
+  // 판·손패 자리는 대전 때와 똑같이. 설명은 맨 위(상대 손패 자리) 한 줄, 조작은 판 양옆: 왼쪽 = 뒤로, 오른쪽 = 앞으로
+  const os = 1 - bottomSeat(), ohN = cur.p[os].hand ? cur.p[os].hand.length : cur.p[os].handN;
+  const rf = (k, ic, l, dis, cls = '') => `<div class="fabw"><button class="fab k-rw2 ${cls}" data-rw="${k}" aria-label="${l}" ${dis ? 'disabled' : ''}>${FAB_FX}<span class="core">${FAB_ICON[ic]}</span></button><span class="fl">${l}</span></div>`;
+  const playB = end ? (rw.mode === 'game' ? rf('close', 'check', '판으로', false, 'k-go on') : rf('play', 'play', '재생', true, 'k-play'))
+    : rf('play', rw.playing ? 'pause' : 'play', rw.playing ? '멈춤' : '재생', false, 'k-play' + (rw.playing ? ' on' : ''));
+  const ctl = `<div class="rwl">${rf('close', 'x', '닫기', false, 'k-close')}${rf('tprev', 'rwfirst', '이전 차례', rw.k <= 0)}${rf('prev', 'rwprev', '한 수 뒤로', rw.k <= 0)}</div>
+    <div class="rwr">${playB}${rf('tnext', 'rwlast', '다음 차례', end)}${rf('next', 'rwnext', '한 수 앞으로', end)}</div>`;
+  app.innerHTML = `<div class="arena rwmode"><div class="table">${matHtml(true, ctl)}<div class="hl-layer"></div>
+    <div class="vwcap ${side}${cap.length > 60 ? ' long' : ''}" aria-live="polite"><b class="vwh">${esc(head0)}</b><span class="vwk">${rw.k} / ${rw.n}수</span><span class="vwt">${cap}</span><span class="vwoh" title="${esc(names[os])} 님 손패 ${ohN}장" aria-label="${esc(names[os])} 님 손패 ${ohN}장"><i class="vwbk"></i>${ohN}</span></div>
+    </div>${lobbyBtn()}</div>`;
   app.querySelectorAll('[data-rw]').forEach(b => b.onclick = () => {
     const k = b.dataset.rw;
     if (k === 'close') return endRewatch();
@@ -1603,6 +1671,7 @@ function drawRw(forward) {
     if (k === 'prev' || k === 'next') return rwGo(rw.k + (k === 'next' ? 1 : -1));
     rwTurnJump(k === 'tnext' ? 1 : -1);
   });
+  app.querySelectorAll('.handbar [data-hand]').forEach(el => el.onclick = () => { const x = (cur.p[bottomSeat()].hand || []).find(h => String(h.i) === el.dataset.hand); if (x) openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(x.c))}`); });
   app.querySelectorAll('.mat [data-sid]').forEach(el => el.onclick = () => { const f = findSlot(el.dataset.sid); if (f) openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(topOf(f.sl).c))}`); });
   flip(prevRects);
   if (before && forward) {
@@ -1616,9 +1685,9 @@ function drawRw(forward) {
   if (rw.mode === 'game') { G.view = live; G.lines = liveLines; }
 }
 
-// 끝난 판·지난 판의 기보 (로비의 '기보' 버튼): 대전 화면과 같은 판, 같은 조작
+// 끝난 판·지난 판의 리플레이 (로비의 '리플레이' 버튼): 대전 화면과 같은 판, 같은 조작
 async function renderReplay(id, k0) {
-  app.innerHTML = '<div class="arena-loading"><div class="spin-ball"></div><p>기보를 불러오는 중…</p></div>';
+  app.innerHTML = '<div class="arena-loading"><div class="spin-ball"></div><p>리플레이를 불러오는 중…</p></div>';
   document.body.classList.add('in-game');
   loadCards().catch(() => {});
   let info; try { info = await api(`/api/games/${id}/info`); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
@@ -1630,7 +1699,7 @@ async function renderReplay(id, k0) {
   try { await vwLoad(rw, k); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
   G.view = rw.views[k];
   drawRw(false); vwPrefetch(rw);
-  guardPage('한 번 더 누르면 기보를 닫아요');
+  guardPage('한 번 더 누르면 리플레이를 닫아요');
 }
 
 document.addEventListener('error', e => { const im = e.target; if (im.tagName === 'IMG' && !im.dataset.f) { im.dataset.f = 1; const d = document.createElement('div'); d.className = 'ph'; d.textContent = im.alt || '카드'; d.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.72rem;padding:2px;word-break:keep-all;aspect-ratio:63/88'; im.replaceWith(d); } }, true);
