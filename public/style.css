@@ -1011,14 +1011,20 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .sheet > .in.picksheet .acts { margin-top: 10px; }
 .sheet > .in.picksheet .acts button { min-height: 46px; }
 /* 체력 한 줄: 체력 ▼ 값 ▲ / 최대 적용 */
-.hprow { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding: 8px 12px; border-radius: 20px; background: #f3f0ff; border: 2px solid #e2dafc; }
-.hprow .hpl { font-family: var(--fh); color: #6a4fd0; font-size: 1.02rem; }
-.hprow .stepper { margin: 0; gap: 8px; }
+.hprow { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: nowrap; margin-top: 12px; padding: 8px 12px; border-radius: 20px; background: #f3f0ff; border: 2px solid #e2dafc; }
+.hprow .hpl { flex: none; font-family: var(--fh); color: #6a4fd0; font-size: 1.02rem; white-space: nowrap; }
+.hprow .stepper { margin: 0; gap: 8px; flex: none; }
 .hprow .stp { width: 44px; height: 44px; min-height: 44px; }
-.hprow .stv { min-width: 64px; } .hprow .stv b { font-size: 1.8rem; }
-.hprow .hpm { font-family: 'Rubik', var(--fh); font-weight: 700; color: var(--muted); }
-.hprow [data-hpgo] { min-width: 96px; }
-.slinfo { margin-top: 8px; text-align: center; }
+.hprow .stv { min-width: 64px; white-space: nowrap; } .hprow .stv b { font-size: 1.8rem; margin-right: 1px; }
+.hprow .hpm { font-family: 'Rubik', var(--fh); font-weight: 700; font-size: .9rem; color: var(--muted); }
+.hprow [data-hpgo] { position: relative; flex: none; min-width: 76px; overflow: visible; }
+.hpd { position: absolute; top: -9px; right: -6px; font-style: normal; font-family: 'Rubik', var(--fh); font-weight: 700; font-size: .72rem; line-height: 1.5; padding: 0 6px; border-radius: 999px; background: #ff7a59; color: #fff; box-shadow: 0 0 0 2px #fff; }
+.hpd[hidden] { display: none; }
+@media (max-width: 400px) { .hprow { gap: 7px; padding: 8px; } .hprow .stepper { gap: 5px; } .hprow .stp { width: 40px; height: 40px; min-height: 40px; } .hprow .stv { min-width: 56px; } .hprow .stv b { font-size: 1.5rem; } .hprow [data-hpgo] { min-width: 62px; padding: 0 12px; } }
+@media (max-width: 330px) { .hprow { gap: 5px; padding: 6px; } .hprow .stp { width: 36px; height: 36px; min-height: 36px; } .hprow .stv b { font-size: 1.3rem; } .hprow .hpl { font-size: .9rem; } }
+.slinfo { margin-top: 8px; text-align: center; text-wrap: balance; }
+/* 창 안 글은 낱말 중간에서 줄이 바뀌지 않게 (긴 영어·숫자만 필요할 때 끊음) */
+.sheet .in { word-break: keep-all; overflow-wrap: anywhere; }
 /* 이번 차례에 한 것 */
 .cuses[data-uses] { cursor: pointer; }
 .uselist { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
@@ -1040,3 +1046,4 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .addfab .addsep { width: 2px; height: 26px; background: #e3edf5; border-radius: 2px; }
 .addfab .addn { min-width: 46px; text-align: center; font: 700 1.3rem/1 'Rubik', var(--fh); color: var(--text); }
 .addfab .addn small { font-family: var(--fh); font-weight: 400; font-size: .72rem; color: var(--muted); margin-left: 1px; }
+@media (max-width: 290px) { .hprow { gap: 4px; padding: 6px 4px; } .hprow .stepper { gap: 3px; } .hprow .stp { width: 32px; height: 32px; min-height: 32px; } .hprow .stv { min-width: 0; } .hprow .stv b { font-size: 1.15rem; } .hprow .hpm { font-size: .75rem; } .hprow .hpl { font-size: .8rem; } .hprow [data-hpgo] { min-width: 0; padding: 0 9px; } }

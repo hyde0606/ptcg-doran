@@ -1345,13 +1345,14 @@ async function onSlot(sid) {
     if (f.where === 'active') opts.push({ label: '특수상태', value: ['cond'], cls: 'judge' });
     opts.push({ label: '붙은 카드 옮기기', value: ['parts'], cls: 'judge' }, { label: '포켓몬 통째로 옮기기', value: ['whole'], cls: 'judge' });
   }
-  const attached = [...f.sl.cards.slice(0, -1).map(x => '진화 전: ' + nmOf(x)), ...f.sl.en.map(x => '에너지: ' + nmOf(x)), ...f.sl.tl.map(x => '도구: ' + nmOf(x))];
+  const grp = (label, xs) => { if (!xs.length) return []; const m = new Map(); xs.forEach(x => { const n = nmOf(x); m.set(n, (m.get(n) || 0) + 1); }); return [`${label}: ${[...m].map(([n, k]) => k > 1 ? `${n} ×${k}` : n).join(', ')}`]; };
+  const attached = [...grp('진화 전', f.sl.cards.slice(0, -1)), ...grp('에너지', f.sl.en), ...grp('도구', f.sl.tl)]; // 종류별로 한 번만 이름표
   const hpMax = c.hp || 0, left = hpMax ? Math.max(0, hpMax - f.sl.dmg) : 0, hv0 = hpMax ? left : f.sl.dmg;
-  const hpRow = me != null && v.phase === 'play' ? `<div class="hprow"><span class="hpl">${hpMax ? '체력' : '데미지'}</span>${stepHtml('hp', hv0, hpMax ? { min: 0, max: hpMax, by: 10 } : { min: 0, max: 990, by: 10 })}${hpMax ? `<span class="hpm">/ ${hpMax}</span>` : ''}<button class="judge" data-hpgo disabled>적용</button></div>` : '';
+  const hpRow = me != null && v.phase === 'play' ? `<div class="hprow"><span class="hpl">${hpMax ? '체력' : '데미지'}</span>${stepHtml('hp', hv0, hpMax ? { min: 0, max: hpMax, by: 10, unit: `<small class="hpm">/${hpMax}</small>` } : { min: 0, max: 990, by: 10 })}<button class="judge" data-hpgo disabled>적용<i class="hpd" hidden></i></button></div>` : ''; // 한 줄: 이름표 · ▼ 값/최대 ▲ · 적용(바뀐 만큼은 작은 배지, 단추 크기 그대로)
   const ix = opts.map((o, i) => ({ ...o, i }));
   openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}<div class="small slinfo">${hpMax ? `남은 체력 ${left} / ${hpMax}` : `데미지 ${f.sl.dmg}`} · ${attached.map(esc).join(' · ') || '붙은 카드 없음'}</div>${actsHtml(ix.filter(o => o.row === 1), 'r1')}${hpRow}${actsHtml(ix.filter(o => o.row !== 1), 'r3')}`, el => {
     const hgo = el.querySelector('[data-hpgo]');
-    if (hgo) { bindSteps(el, nv => { hgo.disabled = nv === hv0; hgo.textContent = nv === hv0 ? '적용' : `적용 (${hpMax ? (nv > hv0 ? '+' : '−') + Math.abs(nv - hv0) : (nv > hv0 ? '+' : '−') + Math.abs(nv - hv0)})`; });
+    if (hgo) { const hd = hgo.querySelector('.hpd'); bindSteps(el, nv => { hgo.disabled = nv === hv0; hd.hidden = nv === hv0; hd.textContent = (nv > hv0 ? '+' : '−') + Math.abs(nv - hv0); });
       hgo.onclick = () => { const nv = +el.querySelector('[name=hp]').value; closeSheet(); send({ type: 'damage', sid, n: hpMax ? (hpMax - nv) - f.sl.dmg : nv - f.sl.dmg }); }; }
     el.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => {
       const [k, arg] = opts[+b.dataset.i].value; closeSheet(); await new Promise(r => setTimeout(r, 30));
