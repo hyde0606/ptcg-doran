@@ -212,7 +212,7 @@ async function renderLobby() {
   };
   const lists = { mine, open, watch, done };
   const body = lobbyTab === 'new' ? newRoomForm(decks.decks) : `<div class="list">${(lists[lobbyTab] || []).map(roomItem).join('') || `<div class="empty-note">${ringIcon('wait', 'k-wait')}아직 없어요.</div>`}</div>`;
-  app.innerHTML = `<div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${lobbyTab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>${body}`;
+  app.innerHTML = `<div class="tabs g2">${tabs.map(([k, l]) => `<button class="tab ${lobbyTab === k ? 'on' : ''} ${k === 'new' ? 'span' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>${body}`;
   app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { lobbyTab = b.dataset.tab; try { localStorage.setItem('lobbyTab', lobbyTab); } catch {} renderLobby(); });
   const chooseDeck = async () => {
     const ok = decks.decks; if (!ok.length) { toast('먼저 덱을 만들어 주세요.'); location.hash = '#decks'; return null; }
@@ -261,7 +261,7 @@ function deckEditor(deck) {
     <div id="chk" class="small" style="margin-top:6px"></div></div>
     <div class="game"><div class="card-box"><h3>카드 찾기</h3>
       <div class="row"><input id="q" class="grow" placeholder="이름 검색 (예: 피카츄, ㅍㅋㅊ, vzc)"></div>
-      <div class="tabs" style="margin-top:8px">${[['all', '전체'], ['P', '포켓몬'], ['T', '트레이너스'], ['E', '에너지']].map(([k, l]) => `<button class="tab ${k === 'all' ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
+      <div class="tabs g2" style="margin-top:8px">${[['all', '전체'], ['P', '포켓몬'], ['T', '트레이너스'], ['E', '에너지']].map(([k, l]) => `<button class="tab ${k === 'all' ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
       <div id="res" class="cardgrid"></div></div>
     <div class="side"><div class="card-box"><h3>덱 리스트 <span id="cnt" class="chip"></span></h3><div id="lst" class="cardgrid"></div></div>
       <div class="card-box"><h3>리스트 붙여 넣기</h3><p class="small muted">PTCGL에서 내보낸 덱 리스트를 붙여 넣으면 지금 리스트를 바꿔요.</p><textarea id="paste" placeholder="4 Pikachu ex SVP 106&#10;..."></textarea><button id="imp" class="blue" style="margin-top:6px">불러오기</button><div id="bad" class="small"></div></div></div></div>`;
@@ -277,7 +277,7 @@ function deckEditor(deck) {
   const drawRes = () => {
     let items = ALL.filter(c => filt === 'all' || c.st === filt);
     if (q.trim()) { const m = KS.matcher(q); items = items.map(c => [m(KS.norm(cname(c)), KS.norm(c.n), c._sc ||= {}), c]).filter(h => h[0] >= 0).sort((a, b) => a[0] - b[0]).map(h => h[1]); }
-    else items = items.filter(c => c.rm >= 'I' || c.st === 'E').reverse();
+    else items = items.filter(c => c.rm >= 'I' || c.st === 'E').reverse().sort((a, b) => (a.kro ? 1 : 0) - (b.kro ? 1 : 0)); // 최신 카드부터, 한국판 전용 카드는 뒤로
     $('#res').innerHTML = items.slice(0, 60).map(c => card(c, list.find(x => x.id === c.id)?.n)).join('') || '<p class="muted">찾는 카드가 없어요.</p>';
     $('#res').querySelectorAll('.c').forEach(el => el.onclick = () => cardSheet(el.dataset.id));
   };
@@ -394,7 +394,7 @@ function slotHtml(sl, opt = {}) {
     <div class="rotwrap ${rot}">${energyTabs(sl)}${under}${cardFace(t, 'onfield')}
       ${sl.dmg ? `<span class="dmg" data-dmg="${sl.sid}">${sl.dmg}</span>` : ''}
       ${c.hp ? `<span class="hpb ${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}">${hpLeft}</span>` : ''}
-      ${sl.tl.length ? `<div class="tools">${sl.tl.map(x => `<span data-k="${x.i}">🔧 ${esc(nmOf(x))}</span>`).join('')}</div>` : ''}
+      ${sl.tl.length ? `<div class="tools">${sl.tl.map(x => `<span data-k="${x.i}" title="도구: ${esc(nmOf(x))}">🔧</span>`).join('')}</div>` : ''}
     </div>
     ${marks ? `<div class="marks">${marks}</div>` : ''}</div>`;
 }
@@ -414,7 +414,7 @@ function prizesHtml(p) {
 function hudHtml(p, isBottom) {
   const v = G.view, P = v.p[p];
   const now = v.phase === 'play' && v.current === p;
-  const used = isBottom && now && v.me === p ? [['energy', '⚡', '에너지'], ['supporter', '👤', '서포트'], ['retreat', '↩', '후퇴'], ['attack', '⚔', '기술']].map(([k, ic, l]) => `<span class="use ${P.used[k] ? 'done' : ''}" title="${l}">${ic} ${l}</span>`).join('') : '';
+  const used = isBottom && now && v.me === p ? [['energy', '⚡', '에너지'], ['supporter', '👤', '서포트'], ['retreat', '↩', '후퇴'], ['attack', '⚔', '기술']].map(([k, ic, l]) => `<span class="use ${P.used[k] ? 'done' : ''}" title="${l}${P.used[k] ? ' (썼어요)' : ''}"><i>${ic}</i><span class="ul">${l}</span></span>`).join('') : '';
   const handN = (!isBottom || v.me == null) ? `<span class="hchip" data-zone="hand" data-p="${p}">손패 ${P.handN}</span>` : '';
   const state = v.phase === 'setup' ? `<span class="hchip ${P.ready ? 'ok' : ''}">${P.ready ? '준비 완료' : '준비 중'}</span>` : now ? '<span class="hchip turn">차례</span>' : '';
   return `<div class="hud ${isBottom ? 'me' : 'opp'} ${now ? 'now' : ''}"><span class="av">${esc(P.name.slice(0, 1))}</span><span class="nm">${esc(P.name)}</span>${state}${P.mull ? `<span class="hchip">멀리건 ${P.mull}</span>` : ''}${handN}${used ? `<span class="uses">${used}</span>` : ''}</div>`;
