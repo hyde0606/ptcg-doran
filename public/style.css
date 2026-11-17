@@ -255,6 +255,8 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 .dk-top svg, .sheet [data-cv] svg { width: 18px; height: 18px; flex: none; }
 button.ib { width: 40px; min-width: 40px; padding: 0; }
 .sheet [data-cv].on svg { fill: currentColor; }
+/* 아주 좁은 화면: 덱 이름은 둘째 줄 전체로 (이름이 잘리지 않게) */
+@media (max-width: 340px) { .dk-top { flex-wrap: wrap; row-gap: 6px; } .dk-top #dn { order: 9; flex: 1 1 100%; } .dk-top #back { margin-right: auto; } .dk-top > button { width: 38px; min-width: 38px; } .dk-top #save { width: auto; } .dk-top .cntb { width: auto; } .cntb span { display: none; } }
 /* 장수 단추: 규칙 통과면 초록, 아니면 주황 (누르면 무엇이 문제인지) */
 .cntb { --c: #f0a020; --c2: #ffd27a; flex: none; min-height: 40px; height: 40px; padding: 0 12px 0 9px; gap: 4px; font-family: var(--fh); font-size: .9rem; color: #b26a00; white-space: nowrap; }
 .cntb b { font-family: 'Rubik', var(--fh); font-weight: 700; font-size: 1.02rem; } .cntb span { opacity: .75; }
@@ -564,6 +566,9 @@ input.wide { width: 100%; box-sizing: border-box; }
 @keyframes nudge { 50% { translate: 0 var(--ny); } }
 .specs { position: absolute; top: calc(100% + 9px); left: 50%; transform: translateX(-50%); font-size: .72rem; white-space: nowrap; color: var(--m-ink); background: var(--m-cnt); padding: 0 8px; border-radius: 999px; }
 .specs:empty { display: none; }
+.specs { display: inline-flex; align-items: center; gap: 3px; } .specs .ic { width: 12px; height: 12px; }
+.overpill { display: inline-flex; align-items: center; gap: 8px; } .overpill .ic { width: 1.1em; height: 1.1em; }
+.sheet .acts button .ic { width: 18px; height: 18px; flex: none; }
 .ztag .av { position: relative; }
 .ztag.turn .av::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--pc); animation: fping 1.8s ease-out infinite; --sx: 1.35; --sy: 1.35; }
 .overpill { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 23; font-family: var(--fh); font-size: 1.2rem; padding: 8px 22px; border-radius: 999px; background: linear-gradient(90deg, #ffb35c, #ff7a2f); color: #fff; box-shadow: 0 0 0 4px #fff, var(--shadow); white-space: nowrap; pointer-events: none; }

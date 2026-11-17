@@ -569,7 +569,7 @@ function deckEditor(deck) {
     try { q = localStorage.getItem('addQ') || ''; filt = localStorage.getItem('addTab') || 'all'; } catch {}
     if (!['all', 'P', 'T', 'E'].includes(filt)) filt = 'all';
     const TABS = [['all', 'deck', '전체'], ['P', 'battle', '포켓몬'], ['T', 'user', '트레이너스'], ['E', 'bolt', '에너지']];
-    openSheet(`<div class="adds"><div class="addh"><h3>카드 추가</h3><span class="chip" id="acnt"></span><label class="addq">${ICON.search}<input id="q" placeholder="이름 검색 (피카츄, ㅍㅋㅊ, vzc)" autocomplete="off" value="${esc(q)}"></label><button class="sm ib" data-close aria-label="닫기">${ICON.x}</button></div>
+    openSheet(`<div class="adds"><div class="addh"><h3>카드 추가</h3><span class="chip" id="acnt"></span><label class="addq">${ICON.search}<input id="q" placeholder="${innerWidth < 480 ? '카드 이름 검색' : '이름 검색 (피카츄, ㅍㅋㅊ, vzc)'}" autocomplete="off" value="${esc(q)}"></label><button class="sm ib" data-close aria-label="닫기">${ICON.x}</button></div>
       <nav class="addt" aria-label="카드 종류">${TABS.map(([k, ic, l]) => `<button type="button" class="lgt ${k === filt ? 'on' : ''}" data-f="${k}">${ICON[ic]}<span>${l}</span></button>`).join('')}</nav>
       <div class="addr"><div id="res" class="dkgrid add sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}"></div></div><div class="addi" hidden></div></div>`, el => {
       el.classList.add('wide', 'addsheet');
@@ -867,7 +867,7 @@ document.addEventListener('pointerdown', e => {
 function matHtml(readOnly = false) {
   const bs = bottomSeat(), os = 1 - bs, v = G.view;
   const f = readOnly ? {} : fabHtml();
-  const over = v.phase === 'over' ? `<div class="overpill">🏆 ${esc(v.p[v.winner]?.name || '')} 승리</div>` : '';
+  const over = v.phase === 'over' ? `<div class="overpill">${ICON.trophy}${esc(v.p[v.winner]?.name || '')} 승리</div>` : '';
   return `${oppHandHtml(os)}<div class="matwrap"><div class="matbox"><div class="mat ${readOnly ? 'ro' : ''}">${areaHtml(os, false)}${midHtml(readOnly)}${areaHtml(bs, true)}</div>
     ${over}${f.left || ''}<div class="rcol">${f.more || ''}${rbarHtml(readOnly)}${f.end || ''}</div></div></div>${f.log || ''}${handHtml(bs)}`;
 }
@@ -919,7 +919,7 @@ function effects(prevView, newLines) {
   }
   if (prevView.phase === 'setup' && v.phase === 'play') banner('대전 시작!', 'start');
   else if (v.phase === 'play' && prevView.current !== v.current) banner(v.current === v.me ? '내 차례!' : v.me == null ? `${v.p[v.current].name} 님 차례` : '상대 차례', v.current === v.me ? 'mine' : 'theirs');
-  if (prevView.phase !== 'over' && v.phase === 'over') banner(`🏆 ${v.p[v.winner]?.name} 님 승리!`, 'win', 2600);
+  if (prevView.phase !== 'over' && v.phase === 'over') banner(`${v.p[v.winner]?.name} 님 승리!`, 'win', 2600);
 }
 function gameSounds(pv, lines) { // 새 기록 줄과 판 변화에 맞는 효과음 (한 번에 4개까지)
   const v = G.view; if (!pv) return;
@@ -979,7 +979,7 @@ function draw(newLines) {
   flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); }
   G.prev = JSON.parse(JSON.stringify(v));
 }
-function drawSpecs() { const el = $('#specs'); if (el) el.textContent = G.specs.length ? `👀 관전 ${G.specs.length}` : ''; }
+function drawSpecs() { const el = $('#specs'); if (el) el.innerHTML = G.specs.length ? `${ICON.eye}관전 ${G.specs.length}` : ''; }
 // ----- 확인할 것 -----
 // 내가 지금 답해야 하는 것(급함)만 판 위에 크게 열고, 상대 판정 동의·상대 확인 대기 같은 건 한 줄씩 작게. 기다리는 중 안내는 작은 알약으로.
 const qIcon = (ic, k = '') => `<i class="qi ${k}">${ICON[ic]}</i>`;
@@ -1205,10 +1205,10 @@ async function onSlot(sid) {
   if (me != null && v.phase === 'setup' && mine) opts.push({ label: '손패로 되돌리기', value: ['setupReturn'] });
   if (me != null && v.phase === 'play') {
     if (mine && f.where === 'active') {
-      (c.at || []).forEach((a, k) => opts.push({ label: `⚔ ${esc((c.kat || [])[k]?.n || a.n)} ${esc(a.d || '')}`, value: ['attack', k], cls: 'primary' }));
+      (c.at || []).forEach((a, k) => opts.push({ label: `${ICON.battle}${esc((c.kat || [])[k]?.n || a.n)} ${esc(a.d || '')}`, value: ['attack', k], cls: 'primary' }));
       if (v.p[me].bench.length) opts.push({ label: '후퇴', value: ['retreat'], cls: 'blue' });
     }
-    if (mine) (c.ab || []).forEach((a, k) => opts.push({ label: `✨ 특성 ${esc((c.kab || [])[k]?.n || a.n)}`, value: ['ability', k], cls: 'blue' }));
+    if (mine) (c.ab || []).forEach((a, k) => opts.push({ label: `${ICON.spark}특성 ${esc((c.kab || [])[k]?.n || a.n)}`, value: ['ability', k], cls: 'blue' }));
     if (f.where === 'bench') opts.push({ label: '배틀 포켓몬과 바꾸기 (효과)', value: ['switch'], cls: 'judge' });
     opts.push({ label: '데미지 +10', value: ['dmg', 10], cls: 'judge' }, { label: '데미지 −10', value: ['dmg', -10], cls: 'judge' }, { label: '데미지 직접 넣기', value: ['dmgN'], cls: 'judge' });
     if (f.where === 'active') opts.push({ label: '특수상태', value: ['cond'], cls: 'judge' });
@@ -1239,7 +1239,7 @@ async function onSlot(sid) {
       if (k === 'dmg') return send({ type: 'damage', sid, n: arg });
       if (k === 'dmgN') { const fm = await ask('데미지 직접 넣기', '<label class="h">더할 데미지 (빼려면 −)</label><input name="n" type="number" step="10" value="10">'); if (fm) send({ type: 'damage', sid, n: +fm.n }); return; }
       if (k === 'cond') {
-        const opt = Object.entries(COND_KO).map(([ck, l]) => ({ label: (f.sl.cond[ck] ? '✓ ' : '') + l + (f.sl.cond[ck] ? ' 회복' : ''), value: ck }));
+        const opt = Object.entries(COND_KO).map(([ck, l]) => ({ label: (f.sl.cond[ck] ? ICON.check : '') + l + (f.sl.cond[ck] ? ' 회복' : ''), value: ck }));
         const ck = await pick('특수상태', opt); if (ck) send({ type: 'cond', sid, c: ck, on: !f.sl.cond[ck] }); return;
       }
       if (k === 'parts') {
