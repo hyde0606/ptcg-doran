@@ -47,6 +47,7 @@ const ICON = {
   pause: svg('<path d="M8.5 5v14M15.5 5v14"/>'),
   x: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
   up: svg('<path d="M6 15l6-6 6 6"/>'),
+  info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>'),
   down: svg('<path d="M6 9l6 6 6-6"/>'),
   chat: svg('<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/>'),
 };
@@ -176,13 +177,31 @@ function openSheet(html, onMount) {
 }
 function closeSheet(fromPop) {
   const sh = $('#sheet'); if (sh.hidden) return;
+  const sub = SUBVIEW ? 1 : 0; SUBVIEW = null;
   sh.hidden = true; sh.innerHTML = ''; sheetStack.length = 0;
-  if (!fromPop) history.back();
+  if (!fromPop) { popSkip++; history.go(-1 - sub); }
 }
-let backArmed = 0;
+// ---------- 뒤로 가기 ----------
+// 순서: 크게 보기 → 창 안의 자세히 보기 → 선택 창 → 기보 보기 → 페이지. 대전·기보·덱 고치기는 두 번 눌러야 나감 (첫 번째엔 안내, 덱을 고쳤으면 저장할지 물음)
+let GUARD = null, SUBVIEW = null, popSkip = 0, navCount = 0;
+function guardPage(msg, onLeave) { if (GUARD) clearTimeout(GUARD.t); GUARD = { hash: location.hash, msg, onLeave, t: 0, armed: 0 }; history.pushState({ guard: 1 }, ''); }
+function rearm() { if (GUARD && location.hash === GUARD.hash && !GUARD.leaving) { GUARD.armed = 0; history.pushState({ guard: 1 }, ''); } }
+function leavePage(fallback) { // 화면의 '닫기'로 나갈 때: 지킴 칸을 건너뛰고 바로 앞 페이지로
+  if (GUARD) { GUARD.leaving = true; clearTimeout(GUARD.t); }
+  if (navCount > 1 && GUARD && !GUARD.armed) history.go(-2); else location.hash = fallback;
+}
 window.addEventListener('popstate', () => {
+  if (popSkip) { popSkip--; return; }
   if (ZOOM) { closeZoom(); return; }
+  if (SUBVIEW) { SUBVIEW(); return; }
   if (!$('#sheet').hidden) { closeSheet(true); return; }
+  if (!GUARD || GUARD.leaving || location.hash !== GUARD.hash) return; // 다른 페이지로 가는 중 (hashchange가 그림)
+  if (G && G.rw && G.rw.mode === 'game') { endRewatch(); rearm(); return; }
+  const fn = GUARD.onLeave && GUARD.onLeave();
+  if (fn) { rearm(); fn(); return; }
+  if (GUARD.armed) return;
+  GUARD.armed = 1; toast(GUARD.msg, 2200); clearTimeout(GUARD.t);
+  GUARD.t = setTimeout(() => { if (GUARD && GUARD.armed) rearm(); }, 2200);
 });
 function pick(title, options) { // options: [{label, value, cls}]
   return new Promise(res => {
@@ -213,6 +232,7 @@ function drawSnd() { // 머리의 소리 단추: 누르면 효과음·배경음�
 let leaveGame = null;
 async function route() {
   if (leaveGame) { leaveGame(); leaveGame = null; }
+  if (GUARD) { clearTimeout(GUARD.t); GUARD = null; } SUBVIEW = null; navCount++;
   if (!ME) { try { await loadMe(); } catch { ME = null; } }
   else if (Date.now() - meAt > 60000) loadMe().catch(() => {}); // 관리자가 바꾼 모임 기본값을 가끔 다시 받아 옴
   const h = location.hash || '#lobby';
@@ -455,75 +475,150 @@ async function renderDecks(editId) {
   const { decks } = await api('/api/decks');
   if (editId) return deckEditor(decks.find(d => d.id === editId) || { name: '새 덱', list: [] });
   app.innerHTML = `<div class="row" style="margin-bottom:10px"><h2 class="grow">내 덱</h2></div>
-    <div class="dtiles"><button class="dtile new" id="nd"><span class="fan">${ringIcon('plus', 'k-ok')}</span><span class="dtl"><b>새 덱 만들기</b><small>카드를 골라 60장을 채워요</small></span></button>${decks.map(d => { const ch = checkDeck(d.list, IDX), cv = deckCover(d.list);
-      return `<a class="dtile" href="#decks/${d.id}"><span class="fan" style="--n:${cv.length}">${cv.map((c, i) => `<span class="cpic" style="--i:${i}">${picHtml(c, D.dimg)}</span>`).join('')}</span><span class="dtl"><span class="dtr"><b>${esc(d.name)}</b>${ch.ok ? '<span class="chip ok">사용 가능</span>' : '<span class="chip warn">확인 필요</span>'}</span><small>${ch.total}장 · ${ch.ok ? '규칙 통과' : esc(ch.problems[0])}</small></span></a>`; }).join('')}</div>`;
-  $('#nd').onclick = () => deckEditor({ name: '새 덱', list: [] });
+    <div class="dtiles"><button class="dtile new" id="nd"><span class="fan">${ringIcon('plus', 'k-ok')}</span><span class="dtl"><span class="dtr"><b>새 덱 만들기</b></span><small>카드를 골라 60장을 채워요</small></span></button>${decks.map(d => { const ch = checkDeck(d.list, IDX);
+      return `<a class="dtile" href="#decks/${d.id}">${coverFan(deckCover(d.list))}<span class="dtl"><span class="dtr"><b>${esc(d.name)}</b>${ch.ok ? '<span class="chip ok">사용 가능</span>' : '<span class="chip warn">확인 필요</span>'}</span><small>${ch.total}장 · ${ch.ok ? '규칙 통과' : esc(ch.problems[0])}</small></span></a>`; }).join('')}</div>`;
+  $('#nd').onclick = () => go('#decks/new');
 }
-// 덱 상자에 겹쳐 보일 카드 (최대 4장): ★ 대표 카드 → 포켓몬 ex → 포켓몬 → 트레이너스 → 에너지, 같으면 많이 넣은 카드
+// 덱 상자에 겹쳐 보일 카드 (최대 4장, 이름이 같은 카드는 한 장만). ★ 대표 카드를 먼저, 모자라면 자동으로:
+// 포켓몬(메가 ex > ex > 그 밖) → HP 높은 순 → 2진화 > 1진화 > 기본 → 많이 넣은 카드 / 그다음 트레이너스(ACE SPEC > 서포트 > 그 밖), 에너지(특수 먼저)
+function coverRank(c) {
+  const s = c.sub || [];
+  if (c.st === 'P') return [0, s.includes('MEGA') ? 0 : s.includes('ex') ? 1 : 2, -(c.hp || 0), s.includes('Stage 2') ? 0 : s.includes('Stage 1') ? 1 : 2];
+  if (c.st === 'T') return [1, s.includes('ACE SPEC') ? 0 : s.includes('Supporter') ? 1 : 2, 0, 0];
+  return [2, s.includes('Special') ? 0 : 1, 0, 0];
+}
 function deckCover(list) {
-  const rank = c => (c.st === 'P' ? ((c.sub || []).includes('ex') ? 0 : 1) : c.st === 'T' ? 2 : 3);
-  return [...list].filter(x => IDX.byId[x.id]).sort((a, b) => (b.c ? 1 : 0) - (a.c ? 1 : 0) || rank(IDX.byId[a.id]) - rank(IDX.byId[b.id]) || b.n - a.n).slice(0, 4).map(x => IDX.byId[x.id]);
+  const cmp = (a, b) => { const A = coverRank(a.c0), B = coverRank(b.c0); for (let i = 0; i < 4; i++) if (A[i] !== B[i]) return A[i] - B[i]; return b.n - a.n; };
+  const xs = list.filter(x => IDX.byId[x.id]).map(x => ({ ...x, c0: IDX.byId[x.id] }));
+  const pool = [...xs.filter(x => x.c).sort(cmp), ...xs.filter(x => !x.c).sort(cmp)];
+  const seen = new Set(), out = [];
+  for (const x of pool) { const k = cname(x.c0); if (seen.has(k)) continue; seen.add(k); out.push(x.c0); if (out.length === 4) break; }
+  return out; // 0번이 가장 대표: 가운데 맨 위에
 }
+function coverFan(cv) { // 대표 카드는 가운데 맨 위, 나머지는 양옆 뒤로
+  const n = cv.length, mid = Math.floor(n / 2), pos = [...Array(n).keys()].sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);
+  return `<span class="fan" style="--n:${n}">${cv.map((c, r) => `<span class="cpic${r === 0 ? ' main' : ''}" style="--i:${pos[r]};--z:${n - r}">${picHtml(c, D.dimg)}</span>`).join('')}</span>`;
+}
+// 같은 카드(이름·HP·기술·특성이 같음)는 그림이 달라도 한 칸으로 묶음. 대표 그림은 일반 등급·최신 카드 먼저
+const REG_RARE = new Set(['C', 'U', 'R', 'RR', 'ACE', 'PR', 'TR', 'K', undefined, '']);
+const fkey = c => c._fk ||= c.st + '|' + (c.st === 'P' ? [c.n, c.hp, (c.sub || []).join(','), (c.at || []).map(a => a.n + (a.d || '')).join(';'), (c.ab || []).map(a => a.n).join(';')].join('|') : c.n);
+let PRINTS = null;
+function printsOf(c) { // 같은 카드의 다른 그림들 (보이는 그림이 같은 것은 하나만)
+  if (!PRINTS) {
+    PRINTS = new Map(); ALL.forEach((x, i) => { x._ix = i; const k = fkey(x); if (!PRINTS.has(k)) PRINTS.set(k, []); PRINTS.get(k).push(x); });
+    for (const [k, xs] of PRINTS) PRINTS.set(k, xs.sort((a, b) => (REG_RARE.has(a.kra) ? 0 : 1) - (REG_RARE.has(b.kra) ? 0 : 1) || b._ix - a._ix));
+  }
+  const xs = PRINTS.get(fkey(c)) || [c], seen = new Set();
+  return xs.filter(x => { const u = picKey(x); if (seen.has(u)) return false; seen.add(u); return true; });
+}
+const picKey = x => D.dimg === 'en' || !x.kimg ? x.img || x.id : x.kimg;
 function deckEditor(deck) {
   let list = deck.list.map(x => ({ ...x }));
   document.body.classList.add('nohdr');
+  const snap = () => JSON.stringify([($('#dn') || {}).value ?? deck.name, list.map(x => [x.id, x.n, x.c || 0]).sort()]);
+  const saved0 = JSON.stringify([deck.name, deck.list.map(x => [x.id, x.n, x.c || 0]).sort()]);
+  const dirty = () => snap() !== saved0 && !(deck.id == null && !list.length);
   const count = () => list.reduce((a, b) => a + b.n, 0);
   const KIND = { P: '포켓몬', T: '트레이너스', E: '에너지' }, KIND_EN = { P: 'Pokémon', T: 'Trainer', E: 'Energy' };
+  const kindName = st => D.dtext === 'en' ? KIND_EN[st] : KIND[st];
   const setNo = c => D.dtext !== 'en' && c.kset ? `${c.kset} ${c.kno || ''}` : `${c.set || ''} ${c.no || ''}`;
   const hexN = n => `<span class="hexn"><b>${n}</b></span>`;
-  const tile = (c, n, extra = '') => `<div class="dkc" data-id="${c.id}">${picMode(c, D.dimg) ? `<span class="cpic">${picHtml(c, D.dimg)}</span>` : `<div class="ph">${esc(cname(c))}</div>`}${n ? hexN(n) : ''}${extra}<div class="cnm">${esc(cname(c))}${altName(c) ? `<small class="alt">${esc(altName(c))}</small>` : D.dtext === 'both' ? '<small class="alt">&nbsp;</small>' : ''}</div><div class="muted cno">${esc(setNo(c))}</div></div>`;
-  app.innerHTML = `<div class="dk-top"><button class="sm" id="back" aria-label="덱 목록으로">${ICON.back}<span class="lb">덱 목록</span></button><input id="dn" value="${esc(deck.name)}" maxlength="30" aria-label="덱 이름"><span id="cnt" class="chip"></span><button class="primary" id="save">저장</button>${deck.id ? '<button class="bad sm" id="del">삭제</button>' : ''}</div>
-    <div class="dk-bar"><button class="primary" id="add">${ICON.plus}카드 추가</button><button id="imp">${ICON.paste}리스트 붙여 넣기</button><div id="chk" class="small"></div></div>
+  const tile = (c, n, extra = '', note = '') => `<div class="dkc" data-id="${c.id}">${picMode(c, D.dimg) ? `<span class="cpic">${picHtml(c, D.dimg)}</span>` : `<div class="ph">${esc(cname(c))}</div>`}${n ? hexN(n) : ''}${extra}<div class="cnm">${esc(cname(c))}${altName(c) ? `<small class="alt">${esc(altName(c))}</small>` : D.dtext === 'both' ? '<small class="alt">&nbsp;</small>' : ''}</div><div class="muted cno">${esc(setNo(c))}${note}</div></div>`;
+  let view = 'kind'; try { view = localStorage.getItem('dkView') === 'all' ? 'all' : 'kind'; } catch {}
+  // 위쪽은 한 줄: 뒤로 · 덱 이름 · 장수(규칙) · 카드 추가 · 더 보기 · 저장
+  app.innerHTML = `<div class="dk-top"><button class="sm ib" id="back" aria-label="덱 목록으로">${ICON.back}</button><input id="dn" value="${esc(deck.name)}" maxlength="30" aria-label="덱 이름" placeholder="덱 이름"><button type="button" id="cnt" class="cntb" aria-label="덱 규칙 보기"></button><button class="primary sm" id="add">${ICON.plus}<span class="lb">카드 추가</span></button><button class="sm ib" id="more" aria-label="더 보기">${FAB_ICON.more}</button><button class="good sm" id="save">${ICON.check}<span class="lb">저장</span></button></div>
     <div id="lst"></div>`;
   const drawList = () => {
-    const ch = checkDeck(list, IDX);
-    $('#cnt').textContent = count() + ' / 60';
-    $('#chk').innerHTML = ch.ok ? '<span class="chip ok">덱 규칙 통과</span>' : ch.problems.map(p => `<span class="chip warn">${esc(p)}</span>`).join(' ');
+    const ch = checkDeck(list, IDX), cb = $('#cnt');
+    cb.className = 'cntb ' + (ch.ok ? 'ok' : 'warn'); cb.innerHTML = `${ch.ok ? ICON.check : ICON.warn}<b>${count()}</b><span>/ 60</span>`; cb.title = ch.ok ? '덱 규칙 통과' : ch.problems.join(' / ');
     const sorted = [...list].sort((a, b) => ('PTE'.indexOf(IDX.byId[a.id].st) - 'PTE'.indexOf(IDX.byId[b.id].st)) || cname(IDX.byId[a.id]).localeCompare(cname(IDX.byId[b.id])));
-    $('#lst').innerHTML = [...'PTE'].map(st => { const xs = sorted.filter(x => IDX.byId[x.id].st === st); if (!xs.length) return '';
-      return `<div class="dgrp"><span>${D.dtext === 'en' ? KIND_EN[st] : KIND[st]}</span><span>${xs.reduce((a, b) => a + b.n, 0)}장</span></div><div class="dkgrid sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}">${xs.map(x => tile(IDX.byId[x.id], x.n, x.c ? `<span class="cvstar" title="덱 목록에 보이는 카드">${ICON.star}</span>` : '')).join('')}</div>`; }).join('')
-      || `<div class="empty-note">${ringIcon('deck', 'k-ok')}아직 카드가 없어요. '카드 추가'를 눌러 넣어요.</div>`;
+    const per = st => sorted.filter(x => IDX.byId[x.id].st === st), sum = xs => xs.reduce((a, b) => a + b.n, 0);
+    const vsw = `<span class="vsw" role="group" aria-label="보기 방식">${[['kind', '종류별'], ['all', '한꺼번에']].map(([k, l]) => `<button type="button" data-v="${k}" class="${view === k ? 'on' : ''}" aria-pressed="${view === k}">${l}</button>`).join('')}</span>`;
+    const grid = xs => `<div class="dkgrid sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}">${xs.map(x => tile(IDX.byId[x.id], x.n, x.c ? `<span class="cvstar" title="덱 목록에 보이는 대표 카드">${ICON.star}</span>` : '')).join('')}</div>`;
+    $('#lst').innerHTML = !list.length ? `<div class="empty-note">${ringIcon('deck', 'k-ok')}<p>아직 카드가 없어요.</p><div class="row"><button class="primary" id="add2">${ICON.plus}카드 추가</button><button id="imp">${ICON.paste}리스트 붙여 넣기</button></div></div>`
+      : view === 'all' ? `<div class="dgrp"><span class="dkst">${[...'PTE'].map(st => `<span>${kindName(st)} <b>${sum(per(st))}</b></span>`).join('')}</span>${vsw}</div>${grid(sorted)}` // 보기 단추는 첫 머리 줄 오른쪽 (줄을 따로 쓰지 않음)
+      : [...'PTE'].filter(st => per(st).length).map((st, i) => { const xs = per(st); return `<div class="dgrp"><span>${kindName(st)} <small>${sum(xs)}장</small></span>${i === 0 ? vsw : ''}</div>${grid(xs)}`; }).join('');
     $('#lst').querySelectorAll('.dkc').forEach(el => el.onclick = () => cardSheet(el.dataset.id));
+    const a2 = $('#add2'); if (a2) a2.onclick = openAdd; const im = $('#imp'); if (im) im.onclick = openImp;
+    $('#lst').querySelectorAll('.vsw [data-v]').forEach(b => b.onclick = () => { view = b.dataset.v; try { localStorage.setItem('dkView', view); } catch {} drawList(); });
   };
   const addN = (id, d) => { let x = list.find(y => y.id === id); if (!x && d > 0) list.push(x = { id, n: 0 }); if (x) { x.n += d; if (x.n <= 0) list = list.filter(y => y !== x); } drawList(); };
   const cardSheet = id => {
     const c = IDX.byId[id], x = list.find(y => y.id === id), have = x?.n || 0, cv = !!x?.c;
-    openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}<div class="row" style="margin-top:10px"><button class="primary" data-a="1">+1장</button><button data-a="-1"${have ? '' : ' disabled'}>−1장</button><span class="chip">지금 ${have}장</span>${have ? `<button class="sm ${cv ? 'on' : ''}" data-cv aria-pressed="${cv}">${ICON.star}${cv ? '대표 카드' : '대표 카드로'}</button>` : ''}</div><p class="small muted" style="margin:6px 0 0">대표 카드는 내 덱 목록에서 덱 상자 위에 겹쳐 보여요 (최대 4장).</p>`, el => {
+    openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}<div class="row" style="margin-top:10px"><button class="primary" data-a="1">+1장</button><button data-a="-1"${have ? '' : ' disabled'}>−1장</button><span class="chip">지금 ${have}장</span>${have ? `<button class="sm ${cv ? 'on' : ''}" data-cv aria-pressed="${cv}">${ICON.star}${cv ? '대표 카드' : '대표 카드로'}</button>` : ''}</div><p class="small muted" style="margin:6px 0 0">대표 카드는 내 덱 목록에서 덱 상자 위에 겹쳐 보여요 (최대 4장). 고르지 않으면 메가 ex, ex, HP가 높은 포켓몬 순으로 알아서 골라요.</p>`, el => {
       el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { addN(id, +b.dataset.a); closeSheet(); });
       const cb = el.querySelector('[data-cv]'); if (cb) cb.onclick = () => { const y = list.find(z => z.id === id); if (!y) return; if (!y.c && list.filter(z => z.c).length >= 4) { toast('대표 카드는 4장까지예요.'); return; } y.c = y.c ? 0 : 1; if (!y.c) delete y.c; closeSheet(); drawList(); };
     });
   };
-  // 카드 추가 창: 검색(초성·겹자모·영문 자판) + 종류 탭. 누를 때마다 1장씩 넣고, 넣은 카드는 '빼기' 단추
+  // 카드 추가 창: 위는 한 줄(검색·장수·닫기), 종류는 옆 줄. 카드를 누르면 1장, ⓘ는 자세히 보기. 같은 카드는 한 칸(그림 여러 개면 '그림 N')
+  const artPick = {};
   const openAdd = () => {
     let q = '', filt = 'all';
-    openSheet(`<button class="x sm" data-close>닫기</button><h3>카드 추가 <span class="chip" id="acnt"></span></h3>
-      <input id="q" class="wide" placeholder="이름 검색 (예: 피카츄, ㅍㅋㅊ, vzc)" autocomplete="off">
-      <div class="tabs g2" style="margin-top:8px">${[['all', '전체'], ['P', '포켓몬'], ['T', '트레이너스'], ['E', '에너지']].map(([k, l]) => `<button class="tab ${k === 'all' ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
-      <p class="small muted" style="margin:6px 0">카드를 누르면 1장씩 들어가요.</p><div id="res" class="dkgrid add sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}"></div>`, el => {
-      el.classList.add('wide');
+    try { q = localStorage.getItem('addQ') || ''; filt = localStorage.getItem('addTab') || 'all'; } catch {}
+    if (!['all', 'P', 'T', 'E'].includes(filt)) filt = 'all';
+    const TABS = [['all', 'deck', '전체'], ['P', 'battle', '포켓몬'], ['T', 'user', '트레이너스'], ['E', 'bolt', '에너지']];
+    openSheet(`<div class="adds"><div class="addh"><h3>카드 추가</h3><span class="chip" id="acnt"></span><label class="addq">${ICON.search}<input id="q" placeholder="이름 검색 (피카츄, ㅍㅋㅊ, vzc)" autocomplete="off" value="${esc(q)}"></label><button class="sm ib" data-close aria-label="닫기">${ICON.x}</button></div>
+      <nav class="addt" aria-label="카드 종류">${TABS.map(([k, ic, l]) => `<button type="button" class="lgt ${k === filt ? 'on' : ''}" data-f="${k}">${ICON[ic]}<span>${l}</span></button>`).join('')}</nav>
+      <div class="addr"><div id="res" class="dkgrid add sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}"></div></div><div class="addi" hidden></div></div>`, el => {
+      el.classList.add('wide', 'addsheet');
+      const repOf = c => { const ps = printsOf(c), inDeck = ps.find(p => list.some(x => x.id === p.id)); return IDX.byId[artPick[fkey(c)]] || inDeck || ps[0]; };
+      const nIn = c => { const ids = new Set(printsOf(c).map(p => p.id)); return list.filter(x => ids.has(x.id) || fkey(IDX.byId[x.id]) === fkey(c)).reduce((a, b) => a + b.n, 0); };
+      const minusId = c => { const r = repOf(c); if (list.some(x => x.id === r.id)) return r.id; const k = fkey(c); return list.find(x => fkey(IDX.byId[x.id]) === k)?.id; };
       const draw = () => {
         el.querySelector('#acnt').textContent = count() + ' / 60';
         let items = ALL.filter(c => filt === 'all' || c.st === filt);
         if (q.trim()) { const m = KS.matcher(q); items = items.map(c => [m(KS.norm(cnameKo(c)), KS.norm(c.n), c._sc ||= {}), c]).filter(h => h[0] >= 0).sort((a, b) => a[0] - b[0]).map(h => h[1]); }
         else items = items.filter(c => c.rm >= 'I' || c.st === 'E').reverse().sort((a, b) => (a.kro ? 1 : 0) - (b.kro ? 1 : 0)); // 최신 카드부터, 한국판 전용 카드는 뒤로
-        el.querySelector('#res').innerHTML = items.slice(0, 60).map(c => { const n = list.find(x => x.id === c.id)?.n; return tile(c, n, n ? `<button class="sm dkminus" data-m="${c.id}" aria-label="1장 빼기">${ICON.minus}</button>` : ''); }).join('') || '<p class="muted">찾는 카드가 없어요.</p>';
-        el.querySelectorAll('#res .dkc').forEach(t => t.onclick = e => { const m = e.target.closest('[data-m]'); addN(t.dataset.id, m ? -1 : 1); Sound.sfx(m ? 'tap' : 'place'); draw(); });
+        const seen = new Set(), out = [];
+        for (const c of items) { const k = fkey(c); if (seen.has(k)) continue; seen.add(k); out.push(repOf(c)); if (out.length >= 60) break; }
+        el.querySelector('#res').innerHTML = out.map(c => { const n = nIn(c), arts = printsOf(c).length;
+          return tile(c, n, `${n ? `<button class="sm dkminus" data-m aria-label="1장 빼기">${ICON.minus}</button>` : ''}<button class="sm dki" data-i aria-label="자세히 보기">${ICON.info}</button>`, arts > 1 ? ` · <b class="arts">그림 ${arts}</b>` : ''); }).join('') || '<p class="muted">찾는 카드가 없어요.</p>';
+        el.querySelectorAll('#res .dkc').forEach(t => t.onclick = e => {
+          const c = IDX.byId[t.dataset.id];
+          if (e.target.closest('[data-i]')) return showInfo(c);
+          const m = e.target.closest('[data-m]'); if (m) { const id = minusId(c); if (id) addN(id, -1); } else addN(c.id, 1);
+          Sound.sfx(m ? 'tap' : 'place'); draw();
+        });
       };
-      const qi = el.querySelector('#q'); qi.oninput = () => { q = qi.value; draw(); };
-      el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filt = b.dataset.f; el.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x === b)); draw(); });
-      draw(); if (matchMedia('(hover: hover)').matches) qi.focus();
+      const info = el.querySelector('.addi');
+      const showInfo = (c, open = true) => { // 자세히 보기: 창 안에서 겹쳐 보여 줌 (뒤로 가기·'목록으로'로 돌아감)
+        const ps = printsOf(c), cur = repOf(c), n = nIn(c);
+        info.innerHTML = `<div class="addih"><button class="sm" data-back>${ICON.back}<span>목록으로</span></button><span class="chip">덱에 ${n}장</span></div><div class="addib">${cardInfoHtml(cur)}
+          ${ps.length > 1 ? `<label class="h">그림 고르기 <small class="muted">넣을 그림을 골라요 (효과는 같아요)</small></label><div class="artrow">${ps.map(p => `<button type="button" class="artc ${p.id === cur.id ? 'on' : ''}" data-art="${p.id}" aria-pressed="${p.id === cur.id}" title="${esc(setNo(p))}"><span class="cpic">${picHtml(p, D.dimg)}</span><small>${esc(setNo(p))}</small></button>`).join('')}</div>` : ''}</div>
+          <div class="addia"><button class="primary" data-a="1">${ICON.plus}1장 넣기</button><button data-a="-1" ${n ? '' : 'disabled'}>${ICON.minus}1장 빼기</button></div>`;
+        if (open) { info.hidden = false; info.scrollTop = 0; SUBVIEW = () => { info.hidden = true; SUBVIEW = null; draw(); }; history.pushState({ sub: 1 }, ''); }
+        info.querySelector('[data-back]').onclick = () => history.back();
+        info.querySelectorAll('[data-art]').forEach(b => b.onclick = () => { artPick[fkey(c)] = b.dataset.art; showInfo(c, false); });
+        info.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { if (+b.dataset.a > 0) addN(repOf(c).id, 1); else { const id = minusId(c); if (id) addN(id, -1); } Sound.sfx('place'); showInfo(c, false); });
+        const z = info.querySelector('[data-zoom]'); if (z) z.onclick = () => openZoom(z.dataset.zoom);
+      };
+      const qi = el.querySelector('#q'); qi.oninput = () => { q = qi.value; try { localStorage.setItem('addQ', q); } catch {} draw(); };
+      el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filt = b.dataset.f; try { localStorage.setItem('addTab', filt); } catch {} el.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x === b)); draw(); });
+      draw(); if (matchMedia('(hover: hover)').matches) { qi.focus(); qi.select(); }
     });
   };
   const openImp = () => openSheet(`<button class="x sm" data-close>닫기</button><h3>리스트 붙여 넣기</h3><p class="small muted">PTCGL에서 내보낸 덱 리스트를 붙여 넣으면 지금 리스트를 바꿔요.</p><textarea id="paste" placeholder="4 Pikachu ex SVP 106&#10;..."></textarea><div class="row" style="margin-top:8px"><button id="go" class="primary">불러오기</button></div><div id="bad" class="small"></div>`, el => {
     el.querySelector('#go').onclick = () => { const r = parseDeckList(el.querySelector('#paste').value, IDX); list = r.list; drawList(); if (r.bad.length) el.querySelector('#bad').innerHTML = '못 찾은 줄: ' + r.bad.map(esc).join(' · '); else { closeSheet(); toast('리스트를 모두 불러왔어요.'); } };
   });
-  $('#back').onclick = () => go('#decks');
-  $('#add').onclick = openAdd;
-  $('#imp').onclick = openImp;
-  $('#save').onclick = async () => {
-    try { const r = await api('/api/decks', { id: deck.id, name: $('#dn').value, list }); deck.id = r.deck.id; toast(r.check.ok ? '저장했어요.' : '저장했어요. 덱 규칙을 확인해 주세요.'); go('#decks'); } catch (e) { toast(e.message); }
+  const save = async () => {
+    try { const r = await api('/api/decks', { id: deck.id, name: $('#dn').value, list }); deck.id = r.deck.id; GUARD = null; toast(r.check.ok ? '저장했어요.' : '저장했어요. 덱 규칙을 확인해 주세요.'); go('#decks'); return true; } catch (e) { toast(e.message); return false; }
   };
-  if ($('#del')) $('#del').onclick = async () => { if (!(await ask('덱을 지울까요?', '<p>지우면 되돌릴 수 없어요.</p>', '지우기', 'bad'))) return; await api('/api/decks/' + deck.id, null, 'DELETE'); go('#decks'); };
+  const leave = async () => { // 고친 게 있으면 저장할지 먼저 물음
+    if (dirty()) {
+      const k = await pick('저장하지 않은 변경이 있어요', [{ label: `${ICON.check}저장하고 나가기`, value: 'save', cls: 'primary' }, { label: '저장하지 않고 나가기', value: 'drop', cls: 'bad' }, { label: '계속 고치기', value: 'stay' }]);
+      if (k === 'save') return save();
+      if (k !== 'drop') return false;
+    }
+    GUARD = null; go('#decks'); return true;
+  };
+  $('#back').onclick = leave;
+  $('#add').onclick = openAdd;
+  $('#cnt').onclick = () => { const ch = checkDeck(list, IDX); openSheet(`<button class="x sm" data-close>닫기</button><h3>덱 규칙</h3>${ch.ok ? '<p><span class="chip ok">덱 규칙 통과</span> 60장, 같은 이름 4장까지, 기본 포켓몬 1장 이상을 모두 지켰어요.</p>' : `<ul class="probs">${ch.problems.map(p => `<li>${ICON.warn}<span>${esc(p)}</span></li>`).join('')}</ul>`}`); };
+  $('#more').onclick = async () => { const k = await pick('덱 더 보기', [{ label: `${ICON.paste}리스트 붙여 넣기`, value: 'imp' }, ...(deck.id ? [{ label: '덱 지우기', value: 'del', cls: 'bad' }] : [])]);
+    if (k === 'imp') setTimeout(openImp, 40);
+    if (k === 'del' && await ask('덱을 지울까요?', '<p>지우면 되돌릴 수 없어요.</p>', '지우기', 'bad')) { await api('/api/decks/' + deck.id, null, 'DELETE'); GUARD = null; go('#decks'); } };
+  $('#save').onclick = save;
+  guardPage('한 번 더 누르면 덱 목록으로 가요', () => dirty() ? leave : null);
   drawList();
 }
 function cardInfoHtml(c) { // 카드를 눌렀을 때: 글자 + 작은 카드 / 카드만 크게 (표시 설정)
@@ -590,13 +685,14 @@ function renderGame(id) {
       if (m.t === 'full') { const first = !G.view; G.view = m.view; G.lines = m.lines; G.cards = m.cards; if (m.specs) G.specs = m.specs; draw(first ? [] : null); }
       else if (m.t === 'upd') { G.view = m.view; G.lines.push(...m.lines); draw(m.lines); }
       else if (m.t === 'specs') { G.specs = m.specs; drawSpecs(); }
-      else if (m.t === 'spec') { (G.specChat ||= []).push(m); if (G.ui.tab === 'spec') drawSide(); }
+      else if (m.t === 'spec') { (G.specChat ||= []).push(m); drawSide(); }
       else if (m.t === 'res') { const p = G.pend[m.id]; if (p) { delete G.pend[m.id]; p(m); } }
     };
     ws.onopen = () => { retry = 0; };
     ws.onclose = () => { if (!closed) setTimeout(connect, Math.min(8000, 500 * 2 ** retry++)); };
   };
   connect();
+  guardPage('한 번 더 누르면 대전에서 나가요. 대전은 그대로 이어져요');
   const ping = setInterval(() => { try { G.ws.readyState === 1 && G.ws.send('{"t":"ping"}'); } catch {} }, 25000);
   leaveGame = () => { closed = true; clearInterval(ping); if (G.rw) { clearTimeout(G.rw.timer); G.rw = null; } try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
 }
@@ -1278,7 +1374,7 @@ function rwTurnJump(d) {
 }
 function endRewatch() {
   const rw = G.rw; if (!rw) return; clearTimeout(rw.timer); G.rw = null;
-  if (rw.mode === 'page') { if (history.length > 1 && rw.back) history.back(); else location.hash = rw.over || rw.me == null ? '#lobby' : `#game/${rw.id}`; return; }
+  if (rw.mode === 'page') { leavePage(rw.over || rw.me == null ? '#lobby' : `#game/${rw.id}`); return; }
   draw([]);
 }
 document.addEventListener('keydown', e => { // PC: ← → 한 수, Shift + ← → 차례, 스페이스 재생·멈춤, Esc 닫기
@@ -1448,12 +1544,13 @@ async function renderReplay(id, k0) {
   let info; try { info = await api(`/api/games/${id}/info`); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
   const k = k0 >= 0 ? Math.min(k0, info.n) : info.over ? 0 : info.n;
   G = { id, view: null, lines: info.lines, cards: info.cards, specs: [], ui: {} };
-  const rw = { mode: 'page', id, me: info.me, n: info.n, k, lines: info.lines, views: {}, playing: false, timer: null, prev: null, start: k, over: info.over, back: history.length > 1 };
+  const rw = { mode: 'page', id, me: info.me, n: info.n, k, lines: info.lines, views: {}, playing: false, timer: null, prev: null, start: k, over: info.over };
   G.rw = rw;
   leaveGame = () => { if (G.rw) clearTimeout(G.rw.timer); G.rw = null; document.body.classList.remove('in-game'); };
   try { await vwLoad(rw, k); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
   G.view = rw.views[k];
   drawRw(false); vwPrefetch(rw);
+  guardPage('한 번 더 누르면 기보를 닫아요');
 }
 
 document.addEventListener('error', e => { const im = e.target; if (im.tagName === 'IMG' && !im.dataset.f) { im.dataset.f = 1; const d = document.createElement('div'); d.className = 'ph'; d.textContent = im.alt || '카드'; d.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.72rem;padding:2px;word-break:keep-all;aspect-ratio:63/88'; im.replaceWith(d); } }, true);

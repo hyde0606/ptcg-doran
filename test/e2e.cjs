@@ -29,7 +29,7 @@ const OUT = __dirname + '/out/';
   for (const p of [A, B]) {
     await p.goto(BASE + '/#decks'); await p.waitForSelector('#nd'); await p.click('#nd');
     await p.click('#imp'); await p.fill('#paste', DECK); await p.click('#go');
-    await p.waitForSelector('#chk .chip.ok');
+    await p.waitForSelector('#cnt.ok');
     await p.click('#add'); await p.waitForSelector('#q');
     await p.fill('#q', 'ㅍㅋㅊ'); await p.waitForTimeout(200);
     const found = await p.$$eval('#res .dkc .cnm', els => els.map(e => e.textContent).join('|'));
@@ -40,6 +40,16 @@ const OUT = __dirname + '/out/';
     await p.click('.sheet [data-close]'); await p.waitForTimeout(150);
     await p.click('#save'); await p.waitForSelector('#nd');
   }
+  // 덱 고치기: 고친 뒤 뒤로 가기 → 저장할지 물음 (계속 고치기 / 저장하지 않고 나가기)
+  await A.click('.dtile:not(.new)'); await A.waitForSelector('#dn'); await A.fill('#dn', '이름 바꿈 시험');
+  await A.evaluate(() => history.back()); await A.waitForTimeout(400);
+  if (!/저장하지 않은 변경/.test(await A.textContent('.sheet .in').catch(() => ''))) errs.push('덱 고친 뒤 뒤로 가기: 저장 확인 없음');
+  else { await A.click('.sheet [data-i="2"]'); await A.waitForTimeout(300); if (!(await A.$('#dn'))) errs.push('계속 고치기 후 덱 화면이 아님');
+    await A.click('#back'); await A.waitForSelector('.sheet [data-i="1"]'); await A.click('.sheet [data-i="1"]'); await A.waitForSelector('#nd'); }
+  // 추가 창: 탭과 검색어 기억
+  await A.click('.dtile:not(.new)'); await A.waitForSelector('#add'); await A.click('#add'); await A.waitForSelector('#q');
+  if ((await A.inputValue('#q')) !== 'vlzkcb') errs.push('카드 추가 창이 검색어를 기억 못 함: ' + await A.inputValue('#q'));
+  await A.click('.sheet [data-close]'); await A.waitForTimeout(200); await A.click('#back'); await A.waitForSelector('#nd');
   await A.goto(BASE + '/#lobby'); await A.waitForSelector('[data-tab=new]'); await A.click('[data-tab=new]');
   await A.selectOption('select[name=mode]', 'async'); await A.click('#newroom button.primary');
   await A.waitForTimeout(400);
@@ -108,7 +118,13 @@ const OUT = __dirname + '/out/';
     const sw = await B.evaluate(() => document.documentElement.scrollWidth); if (sw > w + 1) errs.push(`판 폭 ${w}: 가로 넘침 ${sw}`);
   }
   await B.setViewportSize({ width: 1280, height: 860 }); await B.waitForTimeout(1500); await B.screenshot({ path: OUT + 'game-1280.png' }); await B.setViewportSize({ width: 390, height: 844 }); await B.click('[data-dock]').catch(()=>{}); await B.waitForTimeout(800); await B.screenshot({ path: OUT + 'game-390.png' });
-  await B.goto(BASE + '/#lobby'); await B.waitForSelector('.tabs');
+  // 대전 화면: 뒤로 가기 한 번은 안내만, 두 번이면 나감
+  await B.goto(BASE + '/#lobby'); await B.waitForSelector('.tabs'); await B.evaluate(u => { location.hash = u; }, new URL(gameUrl).hash); await B.waitForSelector('.area.bottom');
+  await B.evaluate(() => history.back()); await B.waitForTimeout(400);
+  if (!/#game/.test(B.url()) || !/한 번 더/.test(await B.textContent('#toast'))) errs.push('대전에서 뒤로 한 번: 안내 없이 나감 ' + B.url());
+  await B.evaluate(() => history.back()); await B.waitForTimeout(500);
+  if (!/#lobby/.test(B.url())) errs.push('대전에서 뒤로 두 번: 안 나가짐 ' + B.url());
+  await B.waitForSelector('.tabs');
   for (const w of [260, 360]) { await B.setViewportSize({ width: w, height: 800 }); await B.waitForTimeout(150); const sw = await B.evaluate(() => document.documentElement.scrollWidth); if (sw > w + 1) errs.push(`로비 폭 ${w}: 넘침 ${sw}`); }
   await B.screenshot({ path: OUT + 'lobby-360.png' });
   console.log(errs.length ? '문제:\n' + errs.join('\n') : '문제 없음');
