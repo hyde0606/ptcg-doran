@@ -33,10 +33,11 @@ for _ in range(26):
     leaves += f'<g transform="translate({x:.1f} {y:.1f}) rotate({a:.0f}) scale({s:.2f})"><path d="M0-5 C3-3 3 3 0 5 C-3 3 -3-3 0-5Z" fill="#d9ffd9" fill-opacity=".22"/><path d="M0-4.5 L0 4.5" stroke="#ffffff" stroke-opacity=".25" stroke-width=".4"/></g>'
 backs['leaf'] = back('<linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6fcf86"/><stop offset="1" stop-color="#2b8a57"/></linearGradient>',
     f'<rect width="63" height="88" fill="url(#g)"/>{leaves}' + emblem('#2a6a43', acc='#7fdc95'))
-# 노을: 주황→분홍→보라, 햇살
-rays = ''.join(f'<path d="M31.5 44 L{31.5+80*math.cos(math.radians(a)):.1f} {44+80*math.sin(math.radians(a)):.1f} L{31.5+80*math.cos(math.radians(a+9)):.1f} {44+80*math.sin(math.radians(a+9)):.1f}Z" fill="#fff" fill-opacity=".12"/>' for a in range(0, 360, 18))
+# 노을: 주황→분홍→보라, 가로로 길게 흐르는 구름 띠 (방사형 햇살 무늬는 쓰지 않음)
+bands = ''.join(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{h/2}" fill="#fff" fill-opacity="{o}"/>' for x, y, w, h, o in
+    [(-6, 12, 34, 4.5, .22), (30, 19, 40, 3.5, .16), (-4, 62, 28, 3.5, .16), (36, 70, 34, 4.5, .2), (8, 80, 24, 3, .14), (42, 8, 22, 3, .14)])
 backs['sunset'] = back('<linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc061"/><stop offset=".55" stop-color="#ff7482"/><stop offset="1" stop-color="#9d5fd3"/></linearGradient>',
-    f'<rect width="63" height="88" fill="url(#g)"/>{rays}' + emblem('#a8456f', acc='#ffb35c'))
+    f'<rect width="63" height="88" fill="url(#g)"/>{bands}' + sparkle(12, 30, .6, '#fff', .7) + sparkle(52, 56, .7, '#fff', .75) + emblem('#a8456f', acc='#ffb35c'))
 
 # 바다: 파도 줄무늬
 waves = ''.join(f'<path d="M-4 {y} q 8.5 -5 17 0 t 17 0 t 17 0 t 17 0 t 17 0" fill="none" stroke="#fff" stroke-opacity="{.10 + (i % 3) * .05:.2f}" stroke-width="1.6"/>' for i, y in enumerate(range(4, 92, 7)))

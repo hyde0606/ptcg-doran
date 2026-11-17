@@ -1388,6 +1388,6 @@ document.addEventListener('error', e => { const im = e.target; if (im.tagName ==
   let seed = 7; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const clouds = Array.from({ length: 6 }, (_, i) => `<i class="cl" style="--w:${Math.round(90 + r() * 120)}px;--y:${Math.round(6 + r() * 58)}vh;--o:${(.5 + r() * .4).toFixed(2)};--d:${Math.round(110 + r() * 90)}s;--dl:${-Math.round(r() * 200)}s"></i>`).join('');
   const motes = Array.from({ length: 16 }, () => `<i class="mo" style="--x:${Math.round(r() * 100)}vw;--s:${Math.round(4 + r() * 7)}px;--o:${(.35 + r() * .45).toFixed(2)};--sw:${Math.round(-40 + r() * 80)}px;--d:${Math.round(16 + r() * 14)}s;--dl:${-Math.round(r() * 30)}s"></i>`).join('');
-  document.body.insertAdjacentHTML('afterbegin', `<div id="amb" aria-hidden="true"><i class="rays"></i><i class="sun"></i>${clouds}${motes}</div>`);
+  document.body.insertAdjacentHTML('afterbegin', `<div id="amb" aria-hidden="true"><i class="sun"></i>${clouds}${motes}</div>`);
 })();
 route();
