@@ -1,5 +1,6 @@
 import KS from '/lib/ks.js';
 import { indexCards, parseDeckList, checkDeck } from '/lib/deck.js';
+import Sound from '/lib/sound.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -9,6 +10,42 @@ const TYPE_COLOR = { Grass: '#5fb35a', Fire: '#e8503f', Water: '#3b8fd9', Lightn
 const COND_KO = { asleep: '잠듦', confused: '혼란', paralyzed: '마비', poisoned: '독', burned: '화상' };
 
 let ME = null, ALL = null, IDX = null;
+
+// ---------- 아이콘 (선 그림) ----------
+const svg = d => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  battle: svg('<path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/>'),
+  deck: svg('<rect x="8" y="3" width="12" height="16" rx="2"/><path d="M5 6.5V19a2 2 0 0 0 2 2h9"/>'),
+  gear: svg('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/>'),
+  sound: svg('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>'),
+  mute: svg('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9.5l5 5M22 9.5l-5 5"/>'),
+  bolt: svg('<path d="M13 2 5 13h6l-1 9 8-11h-6z"/>'),
+  door: svg('<path d="M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17M4 21h16M14.5 12h.01"/>'),
+  wait: svg('<path d="M7 3h10M7 21h10M8 3c0 4 8 5 8 9s-8 5-8 9M16 3c0 4-8 5-8 9s8 5 8 9"/>'),
+  eye: svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  trophy: svg('<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8M10 17h4"/>'),
+  warn: svg('<path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4M12 17h.01"/>'),
+  check: svg('<path d="M5 12.5 9.5 17 19 7"/>'),
+  user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.5-6 8-6s7 1.5 8 6"/>'),
+  play: svg('<path d="M8 5v14l11-7z"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+};
+const ringIcon = (ic, k = '', ping = false) => `<span class="ring ${k} ${ping ? 'ping' : ''}"><i>${ICON[ic]}</i></span>`;
+
+// ---------- 뒷면·매트 고르기 (이 기기에만 저장) ----------
+const BACKS = [['ball', '기본'], ['ring', '링'], ['sea', '바다'], ['night', '밤하늘'], ['leaf', '숲'], ['sunset', '노을']];
+const MATS = [['grass', '풀밭'], ['sky', '하늘'], ['sand', '바닷가'], ['snow', '눈밭'], ['sakura', '벚꽃'], ['night', '밤하늘']];
+const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
+const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+let BACK = pref('back', 'ball'), MAT = pref('mat', 'grass');
+if (!BACKS.some(b => b[0] === BACK)) BACK = 'ball';
+if (!MATS.some(m => m[0] === MAT)) MAT = 'grass';
+function applySkin() {
+  const b = document.body;
+  [...b.classList].filter(c => /^(back|mat)-/.test(c)).forEach(c => b.classList.remove(c));
+  b.classList.add('back-' + BACK, 'mat-' + MAT);
+}
+applySkin();
 async function api(path, body, method) {
   const r = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
   const j = await r.json().catch(() => ({ error: '서버 응답을 읽지 못했어요.' }));
@@ -16,7 +53,7 @@ async function api(path, body, method) {
   if (!r.ok) throw new Error(j.error || '오류가 났어요.');
   return j;
 }
-function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
+function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidden = false; Sound.sfx('notify'); clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
 async function loadCards() { if (!ALL) { ALL = await (await fetch('/cards.json')).json(); IDX = indexCards(ALL); } return ALL; }
 // 카드 그림: mix = 판·손패는 영문 그림(워터마크 없음) + 한글 이름표, 크게 볼 때 한글 그림 / en = 모두 영문 / kr = 모두 한글
 const ART_KINDS = [['mix', '판은 영문 그림, 크게 볼 때 한글 그림'], ['en', '모두 영문 그림'], ['kr', '모두 한글 그림']];
@@ -30,7 +67,7 @@ const cname = c => { if (!c) return '?'; if (c.kn) return c.kn; if (!c.ko) retur
 const sheetStack = [];
 function openSheet(html, onMount) {
   const sh = $('#sheet');
-  sh.innerHTML = `<div class="in">${html}</div>`; sh.hidden = false;
+  sh.innerHTML = `<div class="in">${html}</div>`; sh.hidden = false; Sound.sfx('open');
   if (!sheetStack.length) history.pushState({ sheet: 1 }, '');
   sheetStack.push(1);
   sh.onclick = e => { if (e.target === sh || e.target.closest('[data-close]')) closeSheet(); };
@@ -62,8 +99,15 @@ function ask(title, html, okLabel = '확인', cls = 'primary') {
 }
 
 // ---------- 화면 이동 ----------
-const NAV = [['#lobby', '🎮 대전'], ['#decks', '🃏 덱']];
-function nav(cur) { $('#nav').innerHTML = ME ? NAV.map(([h, l]) => `<a href="${h}" class="${cur === h ? 'on' : ''}">${l}</a>`).join('') + `<a href="#me">${esc(ME.name)}</a>` : ''; }
+const NAV = [['#lobby', 'battle', '대전'], ['#decks', 'deck', '덱'], ['#settings', 'gear', '설정']];
+function nav(cur) { $('#nav').innerHTML = ME ? NAV.map(([h, ic, l]) => `<a href="${h}" class="${cur === h ? 'on' : ''}" aria-label="${l}">${ICON[ic]}<span class="lb">${l}</span></a>`).join('') : ''; drawSnd(); }
+function drawSnd() { // 머리의 소리 단추: 누르면 효과음·배경음악 모두 끄고 켬
+  const b = $('#snd'); if (!b) return;
+  const off = Sound.get('mute');
+  b.hidden = false; b.classList.toggle('off', off); b.innerHTML = off ? ICON.mute : ICON.sound;
+  b.setAttribute('aria-label', off ? '소리 켜기' : '소리 끄기');
+  b.onclick = () => { Sound.set('mute', !off); drawSnd(); Sound.sfx('notify'); };
+}
 let leaveGame = null;
 async function route() {
   if (leaveGame) { leaveGame(); leaveGame = null; }
@@ -71,33 +115,69 @@ async function route() {
   const h = location.hash || '#lobby';
   if (!ME && h !== '#login') { location.hash = '#login'; return; }
   const [base, arg] = h.split('/');
-  nav(base);
+  nav(base === '#me' ? '#settings' : base);
+  Sound.music(base === '#game' ? 'battle' : 'lobby');
   if (base === '#login') return renderLogin();
   if (base === '#lobby') return renderLobby();
   if (base === '#decks') return renderDecks(arg);
   if (base === '#game') return renderGame(arg);
   if (base === '#replay') return renderReplay(arg, +(h.split('/')[2] || -1));
-  if (base === '#me') return renderMe();
+  if (base === '#me' || base === '#settings') return renderSettings();
   location.hash = '#lobby';
 }
 window.addEventListener('hashchange', route);
 const go = h => { if (location.hash === h) route(); else location.hash = h; };
 
 function renderLogin() {
-  app.innerHTML = `<div class="card-box" style="max-width:420px;margin:24px auto">
-    <h2>모임 입장</h2><p class="muted">모임에서 받은 입장 코드와 대전에 쓸 이름을 넣어 주세요.</p>
+  app.innerHTML = `<div class="card-box hero">
+    <div class="logo">${ringIcon('bolt', '', true)}<div><h2>도란 카드 대전</h2><div class="muted small">우리 모임 카드 대전</div></div></div>
+    <p class="muted">모임에서 받은 입장 코드와 대전에 쓸 이름을 넣어 주세요.</p>
     <label class="h">이름</label><input id="nm" maxlength="12" autocomplete="nickname" style="width:100%">
     <label class="h">입장 코드</label><input id="cd" type="password" style="width:100%">
-    <div class="row" style="margin-top:12px"><button class="primary" id="go">들어가기</button></div></div>`;
+    <button class="primary" id="go">들어가기</button></div>`;
   $('#go').onclick = async () => {
     try { const r = await api('/api/login', { name: $('#nm').value, code: $('#cd').value }); ME = r.user; location.hash = '#lobby'; }
     catch (e) { toast(e.message); }
   };
 }
-function renderMe() {
-  app.innerHTML = `<div class="card-box"><h2>${esc(ME.name)}</h2><p class="muted">이 기기에서 로그인되어 있어요.</p><button id="lo">로그아웃</button></div>`;
-  $('#lo').onclick = async () => { await api('/api/logout', {}); ME = null; location.hash = '#login'; };
+// ---------- 설정 (뒷면·매트·카드 그림·소리, 이 기기에만 저장) ----------
+function settingsHtml(inSheet) {
+  const opt = (kind, k, label, pv, on) => `<button class="opt" data-set="${kind}" data-v="${k}" ${on ? 'aria-pressed="true"' : ''}>${pv}<span>${esc(label)}</span></button>`;
+  const vol = k => Math.round(Sound.get(k) * 100);
+  return `<section class="set"><h3>카드 뒷면</h3><div class="opts backs">${BACKS.map(([k, l]) => opt('back', k, l, `<div class="pc back bk-${k}"><div class="cb"></div></div>`, k === BACK)).join('')}</div></section>
+    <section class="set"><h3>매트</h3><div class="opts mats">${MATS.map(([k, l]) => opt('mat', k, l, `<div class="pv-mat mt-${k}"><i></i><i></i></div>`, k === MAT)).join('')}</div></section>
+    <section class="set"><h3>카드 그림</h3><div class="seg">${ART_KINDS.map(([k, l]) => opt('art', k, l, '', k === ART)).join('')}</div></section>
+    <section class="set"><h3>소리</h3><div class="snd">
+      <div class="r"><span class="nm">효과음</span><button class="sw" data-sw="sfx" aria-label="효과음 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('sfxVol')}" style="--v:${vol('sfxVol')}%" data-vol="sfxVol" aria-label="효과음 크기"><button class="sm" data-try>${ICON.play}들어 보기</button></div>
+      <div class="r"><span class="nm">배경음악</span><button class="sw" data-sw="bgm" aria-label="배경음악 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('bgmVol')}" style="--v:${vol('bgmVol')}%" data-vol="bgmVol" aria-label="배경음악 크기"></div>
+      <p class="small muted" style="margin:0">효과음과 배경음악은 모두 이 사이트에서 직접 만든 소리예요. 위쪽 스피커 단추로 한 번에 끌 수도 있어요.</p></div></section>
+    ${inSheet ? '' : `<section class="set"><h3>내 정보</h3><div class="row"><span class="grow">${esc(ME.name)} 님으로 들어와 있어요.</span><button id="lo">로그아웃</button></div></section>`}`;
 }
+function bindSettings(root, onArt) {
+  const mark = () => {
+    root.querySelectorAll('[data-set]').forEach(b => b.classList.toggle('on', b.dataset.v === { back: BACK, mat: MAT, art: ART }[b.dataset.set]));
+    root.querySelectorAll('[data-sw]').forEach(b => { const on = Sound.get(b.dataset.sw); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  };
+  mark();
+  root.querySelectorAll('[data-set]').forEach(b => b.onclick = () => {
+    const k = b.dataset.set, v = b.dataset.v;
+    if (k === 'back') { BACK = v; setPref('back', v); applySkin(); Sound.sfx('place'); }
+    if (k === 'mat') { MAT = v; setPref('mat', v); applySkin(); Sound.sfx('place'); }
+    if (k === 'art') { ART = v; setPref('art', v); onArt && onArt(); }
+    mark();
+  });
+  root.querySelectorAll('[data-sw]').forEach(b => b.onclick = () => { const k = b.dataset.sw; Sound.set(k, !Sound.get(k)); mark(); if (k === 'sfx') Sound.sfx('notify'); });
+  root.querySelectorAll('[data-vol]').forEach(r => { r.oninput = () => { Sound.set(r.dataset.vol, r.value / 100); r.style.setProperty('--v', r.value + '%'); }; r.onchange = () => { if (r.dataset.vol === 'sfxVol') Sound.sfx('coin'); }; });
+  const tr = root.querySelector('[data-try]');
+  if (tr) tr.onclick = () => ['draw', 'place', 'attack', 'coin', 'turnMine'].forEach((n, i) => setTimeout(() => Sound.sfx(n), i * 450));
+  const lo = root.querySelector('#lo');
+  if (lo) lo.onclick = async () => { await api('/api/logout', {}); ME = null; location.hash = '#login'; };
+}
+function renderSettings() {
+  app.innerHTML = `<div class="card-box" style="max-width:820px;margin:0 auto"><h2>설정</h2><p class="muted small" style="margin-top:0">고르면 바로 바뀌어요. 이 기기에만 저장돼요.</p>${settingsHtml(false)}</div>`;
+  bindSettings(app);
+}
+function openSettings(onArt) { openSheet(`<button class="x sm" data-close>닫기</button><h3>설정</h3>${settingsHtml(true)}`, el => bindSettings(el, onArt)); }
 
 // ---------- 로비 ----------
 const fmtLeft = ms => { if (ms <= 0) return '기한 지남'; const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3); return h ? `${h}시간 ${m}분 남음` : `${m}분 남음`; };
@@ -127,10 +207,11 @@ async function renderLobby() {
     else if (last && (r.status === 'playing')) btns = `<a class="btn ${r.mine ? 'primary' : ''} sm" href="#game/${last}">${r.mine ? '판으로' : '관전'}</a>`;
     if (r.status === 'between' && r.mine) btns += `<button class="primary sm" data-next="${r.id}">다음 판 시작</button>`;
     if (last && r.status !== 'open') btns += `<a class="btn sm" href="#replay/${last}">기보</a>`;
-    return `<div class="item ${r.myTurn ? 'hot' : ''}"><div class="grow"><div class="t">${esc(r.cfg.title || vs)}</div><div class="small muted">${esc(r.cfg.title ? vs + ' · ' : '')}${esc(modeKo(r.cfg))}${r.cfg.invite ? ' · 초대: ' + esc(r.cfg.invite) : ''}</div></div>${badge}${dl}<div class="row">${btns}</div></div>`;
+    const ic = r.status === 'open' ? ['door', 'k-open'] : r.myTurn ? ['bolt', 'k-turn'] : r.status === 'playing' ? (r.mine ? ['wait', 'k-wait'] : ['eye', 'k-watch']) : ['trophy', 'k-done'];
+    return `<div class="item ${r.myTurn ? 'hot' : ''}">${ringIcon(ic[0], ic[1], r.myTurn)}<div class="grow"><div class="t">${esc(r.cfg.title || vs)}</div><div class="small muted">${esc(r.cfg.title ? vs + ' · ' : '')}${esc(modeKo(r.cfg))}${r.cfg.invite ? ' · 초대: ' + esc(r.cfg.invite) : ''}</div></div>${badge}${dl}<div class="row">${btns}</div></div>`;
   };
   const lists = { mine, open, watch, done };
-  const body = lobbyTab === 'new' ? newRoomForm(decks.decks) : `<div class="list">${(lists[lobbyTab] || []).map(roomItem).join('') || '<p class="muted">아직 없어요.</p>'}</div>`;
+  const body = lobbyTab === 'new' ? newRoomForm(decks.decks) : `<div class="list">${(lists[lobbyTab] || []).map(roomItem).join('') || `<div class="empty-note">${ringIcon('wait', 'k-wait')}아직 없어요.</div>`}</div>`;
   app.innerHTML = `<div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${lobbyTab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>${body}`;
   app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { lobbyTab = b.dataset.tab; try { localStorage.setItem('lobbyTab', lobbyTab); } catch {} renderLobby(); });
   const chooseDeck = async () => {
@@ -169,7 +250,7 @@ async function renderDecks(editId) {
   const { decks } = await api('/api/decks');
   if (editId) return deckEditor(decks.find(d => d.id === editId) || { name: '새 덱', list: [] });
   app.innerHTML = `<div class="row" style="margin-bottom:10px"><h2 class="grow">내 덱</h2><button class="primary" id="nd">+ 새 덱</button></div>
-    <div class="list">${decks.map(d => { const ch = checkDeck(d.list, IDX); return `<div class="item"><div class="grow"><div class="t">${esc(d.name)}</div><div class="small muted">${ch.total}장 · ${ch.ok ? '규칙 통과' : esc(ch.problems[0])}</div></div>${ch.ok ? '<span class="chip ok">사용 가능</span>' : '<span class="chip warn">확인 필요</span>'}<a class="btn sm" href="#decks/${d.id}">고치기</a></div>`; }).join('') || '<p class="muted">아직 덱이 없어요.</p>'}</div>`;
+    <div class="list">${decks.map(d => { const ch = checkDeck(d.list, IDX); return `<div class="item">${ringIcon(ch.ok ? 'deck' : 'warn', ch.ok ? 'k-ok' : 'k-warn')}<div class="grow"><div class="t">${esc(d.name)}</div><div class="small muted">${ch.total}장 · ${ch.ok ? '규칙 통과' : esc(ch.problems[0])}</div></div>${ch.ok ? '<span class="chip ok">사용 가능</span>' : '<span class="chip warn">확인 필요</span>'}<a class="btn sm" href="#decks/${d.id}">고치기</a></div>`; }).join('') || `<div class="empty-note">${ringIcon('deck', 'k-ok')}아직 덱이 없어요.</div>`}</div>`;
   $('#nd').onclick = () => deckEditor({ name: '새 덱', list: [] });
 }
 function deckEditor(deck) {
@@ -392,11 +473,12 @@ function fabHtml() {
   </div>`;
 }
 // 누르면 버튼마다 '누를 때' 움직임을 한 번
+// 누르면 통 튀는 효과 + 소리 (버튼·탭·카드)
 document.addEventListener('pointerdown', e => {
-  const f = e.target.closest && e.target.closest('.fab');
-  if (!f) return;
-  f.classList.remove('pop'); void f.offsetWidth; f.classList.add('pop');
-  setTimeout(() => f.classList.remove('pop'), 650);
+  const t = e.target.closest && e.target.closest('.fab, button, .btn, #nav a, .pc.inhand, .cardgrid .c, .spot.filled, .pile, .prizes');
+  if (!t) return;
+  if (t.matches('.fab, button, .btn')) { t.classList.remove('pop'); void t.offsetWidth; t.classList.add('pop'); clearTimeout(t._pop); t._pop = setTimeout(() => t.classList.remove('pop'), 650); }
+  Sound.sfx(t.classList.contains('fab') ? 'pop' : 'tap');
 });
 function matHtml(readOnly = false) {
   const bs = bottomSeat(), os = 1 - bs;
@@ -451,6 +533,34 @@ function effects(prevView, newLines) {
   else if (v.phase === 'play' && prevView.current !== v.current) banner(v.current === v.me ? '내 차례!' : v.me == null ? `${v.p[v.current].name} 님 차례` : '상대 차례', v.current === v.me ? 'mine' : 'theirs');
   if (prevView.phase !== 'over' && v.phase === 'over') banner(`🏆 ${v.p[v.winner]?.name} 님 승리!`, 'win', 2600);
 }
+function gameSounds(pv, lines) { // 새 기록 줄과 판 변화에 맞는 효과음 (한 번에 4개까지)
+  const v = G.view; if (!pv) return;
+  const q = [];
+  let hurt = false, heal = false;
+  const dm = {}; for (const p of [0, 1]) for (const sl of [pv.p[p].active, ...pv.p[p].bench]) if (sl && !sl.hidden) dm[sl.sid] = sl.dmg;
+  for (const p of [0, 1]) for (const sl of [v.p[p].active, ...v.p[p].bench]) { if (!sl || sl.hidden || dm[sl.sid] == null) continue; if (sl.dmg > dm[sl.sid]) hurt = true; if (sl.dmg < dm[sl.sid]) heal = true; }
+  for (const { txt: t } of lines || []) {
+    if (/의 기술 「/.test(t)) q.push('attack');
+    else if (/기절 → 트래시/.test(t)) q.push('ko');
+    else if (/코인/.test(t)) q.push('coin');
+    else if (/진화시켰어요/.test(t)) q.push('evolve');
+    else if (/붙였어요/.test(t)) q.push('attach');
+    else if (/섞었어요/.test(t)) q.push('shuffle');
+    else if (/뽑았어요/.test(t)) q.push('draw');
+    else if (/프라이즈 1장을 손패로/.test(t)) q.push('prize');
+    else if (/효과 처리 시작/.test(t)) q.push('judge');
+    else if (/이의가 있어요/.test(t)) q.push('error');
+    else if (/후퇴하고/.test(t)) q.push('retreat');
+    else if (/냈어요/.test(t)) q.push('place');
+    else if (/썼어요/.test(t)) q.push('play');
+  }
+  if (hurt && !q.includes('attack')) q.push('damage');
+  if (heal) q.push('heal');
+  if (pv.phase === 'setup' && v.phase === 'play') q.push('start');
+  else if (v.phase === 'play' && pv.current !== v.current) q.push(v.current === v.me ? 'turnMine' : 'turnTheirs');
+  if (pv.phase !== 'over' && v.phase === 'over') q.push(v.me == null || v.winner === v.me ? 'win' : 'lose');
+  [...new Set(q)].slice(0, 4).forEach((n, i) => setTimeout(() => Sound.sfx(n), i * 170));
+}
 function banner(text, kind, ms = 1300) {
   const b = document.createElement('div'); b.className = 'banner ' + kind; b.innerHTML = `<span>${esc(text)}</span>`;
   document.body.appendChild(b); setTimeout(() => b.remove(), ms);
@@ -475,7 +585,7 @@ function draw(newLines) {
     </div><aside class="panel" id="side"></aside></div>`;
   drawSpecs(); drawSide(); bindBoard();
   const dt = app.querySelector('[data-dock]'); if (dt) dt.onclick = () => { G.ui.dockOpen = !G.ui.dockOpen; draw([]); };
-  flip(prev); if (newLines) effects(prevView, newLines);
+  flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); }
   G.prev = JSON.parse(JSON.stringify(v));
 }
 function drawSpecs() { const el = $('#specs'); if (el) el.textContent = `👀 관전 ${G.specs.length}`; }
@@ -724,8 +834,8 @@ function bindBoard() {
     if (t === 'coin') { const f = await ask('코인 던지기', '<label class="h">몇 번?</label><input name="n" type="number" min="1" max="20" value="1"><label class="h">무엇 때문에? (선택)</label><input name="why" maxlength="60" style="width:100%">', '던지기'); if (f) send({ type: 'coin', n: +f.n, why: f.why }); return; }
     if (t === 'effect') { const f = await ask('효과 쓰기', '<p>지금부터 하는 카드 이동, 데미지 등이 이 효과 아래에 묶여 기록돼요.</p><label class="h">어떤 카드의 효과인가요?</label><input name="title" maxlength="40" style="width:100%" placeholder="예: 보스의 지령"><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '시작', 'judge'); if (f) send({ type: 'effect', title: f.title || '카드 효과', note: f.note }); return; }
     if (t === 'effectEnd') { const f = await ask('효과 끝', '<p>상대에게 "이렇게 처리했어요"로 보여요.</p><label class="h">한 줄 설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '끝내기', 'judge'); if (f) send({ type: 'effectEnd', note: f.note }); return; }
-    if (t === 'more') { const k = await pick('더 보기', [{ label: '카드 그림 바꾸기', value: 'art' }, { label: '항복하기', value: 'concede', cls: 'bad' }, { label: '로비로', value: 'lobby' }]); if (k === 'lobby') location.hash = '#lobby';
-      if (k === 'art') { const a = await pick('카드 그림', ART_KINDS.map(([value, label]) => ({ label: (value === ART ? '✓ ' : '') + label, value }))); if (a) { ART = a; try { localStorage.setItem('art', a); } catch {} draw([]); } } if (k === 'concede' && await ask('항복할까요?', '<p>이 판은 상대 승리로 끝나요.</p>', '항복', 'bad')) send({ type: 'concede' }); }
+    if (t === 'more') { const k = await pick('더 보기', [{ label: `${ICON.gear}설정`, value: 'set' }, { label: '항복하기', value: 'concede', cls: 'bad' }, { label: '로비로', value: 'lobby' }]); if (k === 'lobby') location.hash = '#lobby';
+      if (k === 'set') openSettings(() => draw([])); if (k === 'concede' && await ask('항복할까요?', '<p>이 판은 상대 승리로 끝나요.</p>', '항복', 'bad')) send({ type: 'concede' }); }
   });
 }
 
