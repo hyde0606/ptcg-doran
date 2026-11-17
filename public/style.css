@@ -687,6 +687,24 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .dinfos .dinfo { background: rgba(255,255,255,.94); box-shadow: var(--shadow2); padding: 5px 14px 5px 10px; font-size: .9rem; }
 
 /* 기록 패널 */
+/* 코인 던지기 창 */
+.stepper { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 4px 0 6px; }
+.stp { width: 56px; height: 56px; min-height: 56px; padding: 0; border-radius: 50%; }
+.stp .ic { width: 24px; height: 24px; }
+.stv { min-width: 92px; text-align: center; font-family: var(--fh); font-size: 1.1rem; color: var(--head); }
+.stv b { font-weight: 400; font-size: 2.4rem; line-height: 1; margin-right: 3px; color: var(--text); font-family: 'Rubik', var(--fh); font-weight: 700; }
+.cwhy { display: flex; flex-direction: column; gap: 10px; max-height: min(40vh, 440px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px 4px 2px; margin: 0 -4px 0 -2px; } /* 횟수·던지기 단추는 늘 보이게, 카드 목록만 스크롤 */
+.cwg { display: flex; flex-direction: column; gap: 5px; }
+.cwl { font-family: var(--fh); font-size: .86rem; color: var(--muted); }
+.cwrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+.cwc { --cw: 100%; flex-direction: column; justify-content: flex-start; gap: 3px; min-height: 0; padding: 5px 5px 6px; border-radius: 14px; border-width: 2px; background: linear-gradient(#fff, #fff) padding-box, linear-gradient(#e3ebf2, #e3ebf2) border-box; box-shadow: none; }
+.cwc .pc.cwpc { width: 100%; box-shadow: 0 2px 5px rgba(20, 50, 80, .18); pointer-events: none; }
+.cwc .cwn { font-family: var(--fh); font-size: .78rem; line-height: 1.2; color: var(--text); text-align: center; word-break: keep-all; overflow-wrap: anywhere; }
+.cwc small { font-size: .68rem; color: var(--muted); line-height: 1; }
+.cwc[aria-pressed=true], .cws[aria-pressed=true] { background: linear-gradient(#fff7e0, #fff7e0) padding-box, linear-gradient(135deg, #ffd45c, #ff9d2e) border-box; box-shadow: 0 0 0 3px rgba(255, 170, 40, .25); }
+.cws { min-height: 40px; padding: 4px 14px; font-family: var(--fh); }
+.cwg .cwrow:has(.cws) { display: flex; flex-wrap: wrap; gap: 8px; }
+.acts1 { display: flex; margin-top: 14px; position: sticky; bottom: 0; } .acts1 .primary { flex: 1; min-height: 50px; font-family: var(--fh); font-size: 1.05rem; } .acts1 .ic { width: 20px; height: 20px; }
 /* 기록·채팅 창: 왼쪽 줄에 탭·기보 보기·닫기, 넓으면 입력칸도 왼쪽 줄에. 기록이 창 높이를 다 씀 */
 .sheet > .in.logsheet { width: min(980px, 100%); height: 90vh; padding: 14px; display: flex; }
 .sheet > .in.logsheet::before { position: absolute; top: 0; left: 0; right: 0; margin: 0; height: 6px; background: linear-gradient(90deg, var(--r1), var(--r2)); border-radius: 28px 28px 0 0; }

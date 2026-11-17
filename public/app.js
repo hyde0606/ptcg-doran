@@ -973,6 +973,34 @@ function logHtml() {
     return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}">${jc}${esc(o.txt)}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}</div>`;
   });
 }
+// 코인 던지기: 횟수는 ▼▲ 단추로(키보드 없이), '무엇 때문에?'는 카드를 눌러서 고름 (내 포켓몬·상대 포켓몬·내 손패의 트레이너스·특수 상태)
+function openCoin() {
+  const v = G.view, me = meSeat(); if (me == null) return;
+  const tile = (x, sub) => { const nm = nmOf(x); return `<button type="button" class="cwc" data-why="${esc(nm)}" aria-pressed="false" title="${esc(nm)}">${cardFace(x, 'cwpc')}<span class="cwn">${esc(nm)}</span>${sub ? `<small>${sub}</small>` : ''}</button>`; };
+  const slots = p => allSlots(p).map(sl => tile(topOf(sl), v.p[p].active?.sid === sl.sid ? '배틀' : '벤치')).join('');
+  const hand = v.p[me].hand.filter(h => h.c && cinfo(h.c).st === 'T').map(h => tile(h, '')).join('');
+  const grp = (t, body) => body ? `<div class="cwg"><span class="cwl">${t}</span><div class="cwrow">${body}</div></div>` : '';
+  let n = 1, why = '';
+  openSheet(`<button class="x sm" data-close>닫기</button><h3>코인 던지기</h3>
+    <label class="h">몇 번 던질까요?</label>
+    <div class="stepper"><button type="button" class="stp" data-d="-1" aria-label="한 번 줄이기">${ICON.down}</button><output class="stv" aria-live="polite"><b>1</b>번</output><button type="button" class="stp" data-d="1" aria-label="한 번 늘리기">${ICON.up}</button></div>
+    <label class="h">무엇 때문에? <small class="muted">고르지 않아도 돼요</small></label>
+    <div class="cwhy">${grp('내 포켓몬', slots(me))}${grp('상대 포켓몬', slots(1 - me))}${grp('내 손패의 트레이너스', hand)}
+      ${grp('특수 상태', ['잠듦', '혼란', '마비'].map(s => `<button type="button" class="cws" data-why="${s} 확인" aria-pressed="false">${s} 확인</button>`).join(''))}</div>
+    <div class="acts1"><button class="primary" data-go>${ICON.coin}<span class="gol"></span></button></div>`, el => {
+    const stv = el.querySelector('.stv b'), gol = el.querySelector('.gol'), stp = [...el.querySelectorAll('.stp')];
+    const upd = () => { stv.textContent = n; stp[0].disabled = n <= 1; stp[1].disabled = n >= 20; gol.textContent = `${n}번 던지기${why ? ` · ${why}` : ''}`; };
+    stp.forEach(b => b.onclick = () => { n = Math.max(1, Math.min(20, n + +b.dataset.d)); upd(); });
+    el.querySelectorAll('[data-why]').forEach(b => b.onclick = () => {
+      const on = b.getAttribute('aria-pressed') !== 'true'; // 다시 누르면 고르기 취소
+      el.querySelectorAll('[data-why]').forEach(o => o.setAttribute('aria-pressed', 'false'));
+      if (on) b.setAttribute('aria-pressed', 'true'); why = on ? b.dataset.why : ''; upd();
+    });
+    el.onkeydown = e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); n = Math.max(1, Math.min(20, n + (e.key === 'ArrowUp' ? 1 : -1))); upd(); } };
+    el.querySelector('[data-go]').onclick = () => { closeSheet(); send({ type: 'coin', n, why }); };
+    upd();
+  });
+}
 // 기록·채팅 창: 탭·기보 보기·입력칸은 옆 줄에, 기록은 창 높이 전부를 씀
 function openLog() {
   openSheet('<div class="lgs"></div>', box => { box.classList.add('wide', 'logsheet'); drawSide(box.querySelector('.lgs')); });
@@ -1189,7 +1217,7 @@ function bindBoard() {
     if (t === 'rewatch') return startRewatch();
     if (t === 'shuffleMine') return send({ type: 'shuffle', p: me });
     if (t === 'log') return openLog();
-    if (t === 'coin') { const f = await ask('코인 던지기', '<label class="h">몇 번?</label><input name="n" type="number" min="1" max="20" value="1"><label class="h">무엇 때문에? (선택)</label><input name="why" maxlength="60" style="width:100%">', '던지기'); if (f) send({ type: 'coin', n: +f.n, why: f.why }); return; }
+    if (t === 'coin') return openCoin();
     if (t === 'effect') { const f = await ask('효과 쓰기', '<p>지금부터 하는 카드 이동, 데미지 등이 이 효과 아래에 묶여 기록돼요.</p><label class="h">어떤 카드의 효과인가요?</label><input name="title" maxlength="40" style="width:100%" placeholder="예: 보스의 지령"><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '시작', 'judge'); if (f) send({ type: 'effect', title: f.title || '카드 효과', note: f.note }); return; }
     if (t === 'effectEnd') { const f = await ask('효과 끝', '<p>상대에게 "이렇게 처리했어요"로 보여요.</p><label class="h">한 줄 설명 (선택)</label><input name="note" maxlength="100" style="width:100%">', '끝내기', 'judge'); if (f) send({ type: 'effectEnd', note: f.note }); return; }
     if (t === 'more') { const k = await pick('더 보기', [{ label: `${ICON.gear}설정`, value: 'set' }, { label: '항복하기', value: 'concede', cls: 'bad' }, { label: '로비로', value: 'lobby' }]); if (k === 'lobby') location.hash = '#lobby';
