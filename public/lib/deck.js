@@ -5,7 +5,7 @@ export function indexCards(cards) {
   const byId = {}, bySetNo = {}, byName = {};
   for (const c of cards) {
     byId[c.id] = c;
-    if (c.set) bySetNo[(c.set + ' ' + c.no).toUpperCase()] = c;
+    if (c.set && !c.kro) bySetNo[(c.set + ' ' + c.no).toUpperCase()] = c; // 한국판 카드(kro)는 세트 코드가 영문과 겹칠 수 있어 뺀다
     (byName[c.n.toLowerCase()] ||= []).push(c);
   }
   return { byId, bySetNo, byName };
@@ -38,19 +38,20 @@ const isBasicEnergy = c => c.st === 'E' && (c.sub || []).includes('Basic');
 export function checkDeck(list, idx) {
   const problems = [];
   let total = 0, basics = 0, ace = 0;
-  const byName = {};
+  const byName = {}, shown = {};
   for (const { id, n } of list) {
     const c = idx.byId[id]; if (!c) { problems.push(`모르는 카드: ${id}`); continue; }
     total += n;
     if (c.st === 'P' && (c.sub || []).includes('Basic')) basics += n;
     if ((c.sub || []).includes('ACE SPEC')) ace += n;
-    if (!isBasicEnergy(c)) byName[c.n] = (byName[c.n] || 0) + n;
+    // 같은 이름 4장: 한글 이름이 있으면 한글 이름으로 센다 (영문 카드와 한국 전용 카드가 섞여도 같이 셈)
+    if (!isBasicEnergy(c)) { const k = (c.kn || c.n).replace(/\s+/g, ''); byName[k] = (byName[k] || 0) + n; shown[k] = c.kn || c.n; }
     if (!isBasicEnergy(c) && !['H', 'I', 'J'].includes(c.rm)) problems.push(`스탠다드에서 못 쓰는 카드: ${c.n} (${c.rm || '마크 없음'})`);
   }
   if (total !== 60) problems.push(`덱은 60장이어야 해요 (지금 ${total}장).`);
   if (!basics) problems.push('기본 포켓몬이 1장 이상 있어야 해요.');
   if (ace > 1) problems.push(`에이스 스펙은 1장까지예요 (지금 ${ace}장).`);
-  for (const [n, k] of Object.entries(byName)) if (k > 4) problems.push(`같은 이름은 4장까지예요: ${n} ${k}장`);
+  for (const [n, k] of Object.entries(byName)) if (k > 4) problems.push(`같은 이름은 4장까지예요: ${shown[n]} ${k}장`);
   return { ok: problems.length === 0, problems, total };
 }
 

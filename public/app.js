@@ -223,7 +223,7 @@ function deckEditor(deck) {
 function cardInfoHtml(c) {
   if (!c) return '<p>카드 정보가 없어요.</p>';
   const cost = cs => (cs || []).map(t => `<i title="${TYPE_KO[t] || t}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${TYPE_COLOR[t] || '#ccc'};border:1px solid rgba(0,0,0,.3)"></i>`).join('');
-  return `<div class="cardinfo">${cimg(c) ? `<div class="big"><img src="${bigImg(c)}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" onerror="if(!this.dataset.s){this.dataset.s=1;this.src='${cimg(c)}'}"></div>` : ''}<div class="txt"><h3>${esc(cname(c))}</h3><div class="small muted">${esc(c.n)} · ${esc(c.set || '')} ${esc(c.no || '')} · 레귤레이션 ${esc(c.rm || '—')}</div>
+  return `<div class="cardinfo">${cimg(c) ? `<div class="big"><img src="${bigImg(c)}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" onerror="if(!this.dataset.s){this.dataset.s=1;this.src='${cimg(c)}'}"></div>` : ''}<div class="txt"><h3>${esc(cname(c))}</h3><div class="small muted">${c.kro ? '한국판 카드' : esc(c.n)} · ${esc(c.set || '')} ${esc(c.no || '')} · 레귤레이션 ${esc(c.rm || '—')}</div>
     <div class="row" style="margin:4px 0">${(c.sub || []).map(s => `<span class="chip">${esc(s)}</span>`).join('')}${c.hp ? `<span class="chip">HP ${c.hp}</span>` : ''}${(c.ty || []).map(t => `<span class="chip">${TYPE_KO[t] || t}</span>`).join('')}</div>
     ${(c.ab || []).map((a, i) => { const k = (c.kab || [])[i] || a; return `<div class="atk"><b>특성 ${esc(k.n)}</b><div>${esc(k.t)}</div></div>`; }).join('')}
     ${(c.at || []).map((a, i) => { const k = (c.kat || [])[i] || a; return `<div class="atk"><b>${cost(a.c)} ${esc(k.n)} ${esc(a.d || '')}</b><div>${esc(k.t || '')}</div></div>`; }).join('')}
