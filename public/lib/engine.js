@@ -31,6 +31,7 @@ export const COND_KO = { asleep: '잠듦', confused: '혼란', paralyzed: '마�
 const info = (s, iid) => s.cards[s.inst[iid]] || { n: '?', st: '?' };
 const nm = (s, iid) => {
   const c = info(s, iid);
+  if (c.kn) return c.kn;
   if (!c.ko) return c.n;
   let k = c.ko;
   if (/^Mega /.test(c.n)) k = '메가' + k;
@@ -309,7 +310,8 @@ export function apply(s, who, a, idx = 0) {
     }
     case 'ability': { // {sid, k}
       const f = findSlot(s, a.sid); if (!f || f.p !== who) return fail('내 포켓몬이 아니에요.');
-      const ab = (top(s, f.slot).ab || [])[a.k | 0]; if (!ab) return fail('특성이 없어요.');
+      const tc = top(s, f.slot); const ab0 = (tc.ab || [])[a.k | 0]; if (!ab0) return fail('특성이 없어요.');
+      const ab = (tc.kab || [])[a.k | 0] || ab0;
       closeGroup(s, who);
       const g = openGroup(s, who, `${slotName(s, f.slot)}의 특성 ${ab.n}`, idx, a.note); gid = g.gid;
       say(`${me}: ${slotName(s, f.slot)}의 특성 「${ab.n}」을(를) 썼어요.${a.note ? ' — ' + a.note : ''}`);
@@ -334,7 +336,8 @@ export function apply(s, who, a, idx = 0) {
     }
     case 'attack': { // {k, dmg?: 최종 데미지(사람이 고친 값), note}
       if (!P.active) return fail('배틀 포켓몬이 없어요.');
-      const c = top(s, P.active), at = (c.at || [])[a.k | 0]; if (!at) return fail('기술이 없어요.');
+      const c = top(s, P.active), at0 = (c.at || [])[a.k | 0]; if (!at0) return fail('기술이 없어요.');
+      const at = { ...at0, n: ((c.kat || [])[a.k | 0] || at0).n };
       if (!myTurn()) warn('내 차례가 아니에요.');
       if (s.turn === 1) warn('선공 첫 차례에는 기술을 쓸 수 없어요.');
       if (P.used.attack) warn('이번 차례에 이미 기술을 썼어요.');
