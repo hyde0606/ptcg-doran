@@ -84,14 +84,23 @@ const OUT = __dirname + '/out/';
     await oth.click('.drow [data-dispute]'); await oth.fill('.sheet input[name=t]', '에너지는 한 번만'); await oth.click('.sheet [data-ok]'); await oth.waitForTimeout(300);
     await oth.click('[data-rwask]'); await oth.waitForTimeout(300);
     await cur.waitForSelector('[data-rwok]'); await cur.click('[data-rwok]'); await cur.click('.sheet [data-ok]'); await cur.waitForTimeout(600);
-    if (!/되돌렸어요/.test(await cur.textContent('.panel .log'))) errs.push('되돌리기 기록 없음');
+    await cur.click('[data-t=log]'); await cur.waitForSelector('.sheet .lgs .log'); // 기록·채팅 창 (옆 줄에 탭·입력칸)
+    if (!/되돌렸어요/.test(await cur.textContent('.sheet .lgs .log'))) errs.push('되돌리기 기록 없음');
+    await cur.fill('.lgin textarea', '시험 채팅'); await cur.press('.lgin textarea', 'Enter'); await cur.waitForTimeout(500);
+    if (!/시험 채팅/.test(await cur.textContent('.sheet .lgs .log'))) errs.push('채팅이 기록에 안 보임');
+    await cur.click('.sheet [data-close]'); await cur.waitForTimeout(200);
   } else console.log('에너지 부족, 경고 시험 건너뜀');
   await cur.waitForTimeout(1500); await cur.screenshot({ path: OUT + 'game-cur.png', fullPage: true });
   await oth.screenshot({ path: OUT + 'game-oth.png', fullPage: true });
   await cur.click('[data-t=endTurn]'); await cur.waitForTimeout(500);
   console.log('다음:', await oth.textContent('.ztag.turn .zn'));
-  await A.goto(gameUrl.replace('#game', '#replay')); await A.waitForSelector('#rk');
-  await A.click('[data-j=prev]'); await A.waitForTimeout(300); await A.click('[data-j=turnPrev]'); await A.waitForTimeout(400);
+  await oth.click('[data-t=rewatch]'); await oth.waitForSelector('.arena.rwmode .vw'); // 대전 중 기보 보기: 판 크기 그대로
+  await oth.click('[data-rw=tprev]'); await oth.waitForTimeout(400); await oth.click('[data-rw=next]'); await oth.waitForTimeout(400);
+  if (!/수/.test(await oth.textContent('.vwk'))) errs.push('기보 보기 수 표시 없음');
+  await oth.click('.vw [data-rw=close]'); await oth.waitForSelector('.arena:not(.rwmode) .area.bottom');
+  await A.goto(gameUrl.replace('#game', '#replay')); await A.waitForSelector('.vw');
+  await A.click('[data-rw=prev]'); await A.waitForTimeout(300); await A.click('[data-rw=tprev]'); await A.waitForTimeout(400);
+  if (await A.$('input[type=range]')) errs.push('기보에 스크롤바가 남아 있음');
   await A.screenshot({ path: OUT + 'replay.png', fullPage: true });
   await B.goto(gameUrl); await B.waitForSelector('.area.bottom');
   for (const w of [260, 360, 390, 768, 1280]) {
