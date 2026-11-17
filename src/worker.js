@@ -20,6 +20,26 @@ async function readToken(env, tok) {
 }
 const cookieTok = req => (req.headers.get('cookie') || '').match(/(?:^|;\s*)tok=([^;]+)/)?.[1];
 
+// ---- 꾸미기: 카드 뒷면·매트·카드 그림 (모임 기본값은 관리자가, 각자 덮어쓰기) ----
+const BACK_KEYS = ['ball', 'ring', 'sea', 'night', 'leaf', 'sunset', 'flame'];
+const MAT_KEYS = ['grass', 'sky', 'sand', 'snow', 'sakura', 'night', 'autumn'];
+const ART_KEYS = ['mix', 'en', 'kr'];
+const IMG_TYPES = { 'image/webp': b => b[0] === 0x52 && b[1] === 0x49 && b[8] === 0x57 && b[9] === 0x45, 'image/jpeg': b => b[0] === 0xff && b[1] === 0xd8, 'image/png': b => b[0] === 0x89 && b[1] === 0x50 };
+const IMG_MAX = 1.5 * 1024 * 1024;
+// 관리자: .dev.vars 의 ADMINS(쉼표로 이름 여러 개). 없으면 맨 처음 가입한 사람
+async function isAdmin(env, lobby, me) {
+  if (env.ADMINS) return String(env.ADMINS).split(',').map(x => x.trim()).filter(Boolean).includes(me.name);
+  return (await lobby.firstUser()) === me.uid;
+}
+function pick(o, rules) { // 허용된 값만 남김
+  const out = {};
+  for (const [k, ok] of Object.entries(rules)) if (o[k] != null && ok.includes(o[k])) out[k] = o[k];
+  return out;
+}
+const PREF_RULES = { back: [...BACK_KEYS, 'group', 'mine'], mat: [...MAT_KEYS, 'group', 'mine'], art: [...ART_KEYS, 'group'] };
+const GROUP_RULES = { back: [...BACK_KEYS, 'custom'], mat: [...MAT_KEYS, 'custom'], art: ART_KEYS };
+async function meInfo(env, lobby, me) { return { user: me, admin: await isAdmin(env, lobby, me), ...(await lobby.skin(me.uid)) }; }
+
 let CARDS = null;
 async function cardIndex(env, req) {
   if (!CARDS) { const r = await env.ASSETS.fetch(new URL('/cards.json', req.url)); CARDS = indexCards(await r.json()); }
@@ -44,7 +64,31 @@ export default {
     const me = await lobby.user(uid); if (!me) return err('로그인이 필요해요.', 401);
 
     let m;
-    if (path === '/api/me') return json({ user: me });
+    if (path === '/api/me') return json(await meInfo(env, lobby, me));
+    if (path === '/api/prefs' && req.method === 'POST') { await lobby.setPrefs(uid, pick(await req.json().catch(() => ({})), PREF_RULES)); return json(await meInfo(env, lobby, me)); }
+    if (path === '/api/group' && req.method === 'POST') {
+      if (!await isAdmin(env, lobby, me)) return err('모임 기본값은 관리자만 바꿀 수 있어요.', 403);
+      await lobby.setGroup(pick(await req.json().catch(() => ({})), GROUP_RULES)); return json(await meInfo(env, lobby, me));
+    }
+    if ((m = path.match(/^\/api\/img\/(\w+)$/)) && req.method === 'GET') {
+      const im = await lobby.img(m[1]); if (!im) return err('사진이 없어요.', 404);
+      return new Response(im.data, { headers: { 'content-type': im.type, 'cache-control': 'private, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' } });
+    }
+    if (path === '/api/img' && (req.method === 'POST' || req.method === 'DELETE')) {
+      const kind = url.searchParams.get('kind'), scope = url.searchParams.get('scope');
+      if (!['back', 'mat'].includes(kind) || !['me', 'group'].includes(scope)) return err('잘못된 요청이에요.');
+      if (scope === 'group' && !await isAdmin(env, lobby, me)) return err('모임 사진은 관리자만 올릴 수 있어요.', 403);
+      const owner = scope === 'group' ? '*' : uid;
+      if (req.method === 'DELETE') { await lobby.delImg(owner, kind); return json(await meInfo(env, lobby, me)); }
+      const type = (req.headers.get('content-type') || '').split(';')[0].trim();
+      if (!IMG_TYPES[type]) return err('사진은 JPG, PNG, WEBP 만 올릴 수 있어요.');
+      const buf = await req.arrayBuffer();
+      if (buf.byteLength > IMG_MAX) return err('사진이 너무 커요.');
+      if (buf.byteLength < 16 || !IMG_TYPES[type](new Uint8Array(buf, 0, 16))) return err('사진 파일이 아니에요.');
+      let meta = {}; try { meta = JSON.parse(req.headers.get('x-meta') || '{}'); } catch {}
+      await lobby.putImg(owner, kind, type, buf, { dark: !!meta.dark });
+      return json(await meInfo(env, lobby, me));
+    }
     if (path === '/api/logout') return json({ ok: 1 }, 200, { 'set-cookie': 'tok=; Path=/; Max-Age=0' });
     if (path === '/api/decks' && req.method === 'GET') return json({ decks: await lobby.decks(uid) });
     if (path === '/api/decks' && req.method === 'POST') {
@@ -111,7 +155,10 @@ export class Lobby extends DurableObject {
     super(ctx, env); this.sql = ctx.storage.sql;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS users(uid TEXT PRIMARY KEY, name TEXT UNIQUE, created INTEGER);
       CREATE TABLE IF NOT EXISTS decks(id TEXT PRIMARY KEY, uid TEXT, name TEXT, list TEXT, ok INTEGER, updated INTEGER);
-      CREATE TABLE IF NOT EXISTS rooms(id TEXT PRIMARY KEY, host TEXT, cfg TEXT, status TEXT, players TEXT, decks TEXT, games TEXT, wins TEXT, waiting TEXT, phase TEXT, turn INTEGER, deadline INTEGER, updated INTEGER);`);
+      CREATE TABLE IF NOT EXISTS rooms(id TEXT PRIMARY KEY, host TEXT, cfg TEXT, status TEXT, players TEXT, decks TEXT, games TEXT, wins TEXT, waiting TEXT, phase TEXT, turn INTEGER, deadline INTEGER, updated INTEGER);
+      CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
+      CREATE TABLE IF NOT EXISTS prefs(uid TEXT PRIMARY KEY, v TEXT);
+      CREATE TABLE IF NOT EXISTS imgs(id TEXT PRIMARY KEY, owner TEXT, kind TEXT, type TEXT, data BLOB, meta TEXT, created INTEGER);`);
   }
   one(q, ...a) { return this.sql.exec(q, ...a).toArray()[0] || null; }
   login(name) {
@@ -120,6 +167,35 @@ export class Lobby extends DurableObject {
     return u;
   }
   user(uid) { return this.one('SELECT uid,name FROM users WHERE uid=?', uid); }
+  firstUser() { return this.one('SELECT uid FROM users ORDER BY created LIMIT 1')?.uid || null; }
+  // 꾸미기: 모임 기본값(kv 'group'), 각자 고른 것(prefs), 올린 사진(imgs: owner '*' = 모임 사진)
+  skin(uid) {
+    const imgs = owner => Object.fromEntries(this.sql.exec('SELECT id,kind,meta FROM imgs WHERE owner=?', owner).toArray().map(r => [r.kind, { id: r.id, ...JSON.parse(r.meta || '{}') }]));
+    const p = this.one('SELECT v FROM prefs WHERE uid=?', uid);
+    return { group: JSON.parse(this.one("SELECT v FROM kv WHERE k='group'")?.v || '{}'), prefs: p ? JSON.parse(p.v) : null, imgs: imgs(uid), gimgs: imgs('*') };
+  }
+  setPrefs(uid, o) {
+    const cur = JSON.parse(this.one('SELECT v FROM prefs WHERE uid=?', uid)?.v || '{}');
+    this.sql.exec('INSERT OR REPLACE INTO prefs VALUES(?,?)', uid, JSON.stringify({ back: 'group', mat: 'group', art: 'group', ...cur, ...o }));
+  }
+  setGroup(o) {
+    const cur = JSON.parse(this.one("SELECT v FROM kv WHERE k='group'")?.v || '{}');
+    this.sql.exec("INSERT OR REPLACE INTO kv VALUES('group',?)", JSON.stringify({ ...cur, ...o }));
+  }
+  putImg(owner, kind, type, data, meta) {
+    this.sql.exec('DELETE FROM imgs WHERE owner=? AND kind=?', owner, kind);
+    const id = 'i' + rid(12);
+    this.sql.exec('INSERT INTO imgs VALUES(?,?,?,?,?,?,?)', id, owner, kind, type, data, JSON.stringify(meta), Date.now());
+    if (owner === '*') this.setGroup({ [kind]: 'custom' }); else this.setPrefs(owner, { [kind]: 'mine' }); // 올리면 바로 그 사진으로
+    return id;
+  }
+  delImg(owner, kind) {
+    this.sql.exec('DELETE FROM imgs WHERE owner=? AND kind=?', owner, kind);
+    if (owner === '*') { const g = JSON.parse(this.one("SELECT v FROM kv WHERE k='group'")?.v || '{}'); if (g[kind] === 'custom') { delete g[kind]; this.sql.exec("INSERT OR REPLACE INTO kv VALUES('group',?)", JSON.stringify(g)); } }
+    else { const p = JSON.parse(this.one('SELECT v FROM prefs WHERE uid=?', owner)?.v || '{}'); if (p[kind] === 'mine') this.setPrefs(owner, { [kind]: 'group' }); }
+    return true;
+  }
+  img(id) { const r = this.one('SELECT type,data FROM imgs WHERE id=?', id); return r && { type: r.type, data: r.data }; }
   decks(uid) { return this.sql.exec('SELECT id,name,list,ok,updated FROM decks WHERE uid=? ORDER BY updated DESC', uid).toArray().map(d => ({ ...d, list: JSON.parse(d.list), ok: !!d.ok })); }
   deck(uid, id) { const d = this.one('SELECT id,name,list,ok FROM decks WHERE uid=? AND id=?', uid, id); return d && { ...d, list: JSON.parse(d.list) }; }
   saveDeck(uid, d) {

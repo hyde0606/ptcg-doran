@@ -32,20 +32,54 @@ const ICON = {
 };
 const ringIcon = (ic, k = '', ping = false) => `<span class="ring ${k} ${ping ? 'ping' : ''}"><i>${ICON[ic]}</i></span>`;
 
-// ---------- 뒷면·매트 고르기 (이 기기에만 저장) ----------
-const BACKS = [['ball', '기본'], ['ring', '링'], ['sea', '바다'], ['night', '밤하늘'], ['leaf', '숲'], ['sunset', '노을']];
-const MATS = [['grass', '풀밭'], ['sky', '하늘'], ['sand', '바닷가'], ['snow', '눈밭'], ['sakura', '벚꽃'], ['night', '밤하늘']];
+// ---------- 꾸미기: 카드 뒷면·매트·카드 그림 ----------
+// 관리자가 정한 모임 기본값(group) → 각자 고른 것(prefs: 'group' 이면 모임 기본 따르기, 'mine' 이면 내가 올린 사진)
+const BACKS = [['ball', '기본'], ['ring', '링'], ['sea', '바다'], ['night', '밤하늘'], ['leaf', '숲'], ['sunset', '노을'], ['flame', '불꽃']];
+const MATS = [['grass', '풀밭'], ['sky', '하늘'], ['sand', '바닷가'], ['snow', '눈밭'], ['sakura', '벚꽃'], ['night', '밤하늘'], ['autumn', '단풍']];
+const SKIN_DEF = { back: 'ball', mat: 'grass', art: 'mix' };
 const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
 const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-let BACK = pref('back', 'ball'), MAT = pref('mat', 'grass');
-if (!BACKS.some(b => b[0] === BACK)) BACK = 'ball';
-if (!MATS.some(m => m[0] === MAT)) MAT = 'grass';
+// 서버에서 받은 꾸미기 정보 (빠르게 그리려고 이 기기에도 같이 저장)
+let SK = (() => { try { return JSON.parse(localStorage.getItem('skin') || 'null'); } catch { return null; } })() || { group: {}, prefs: null, imgs: {}, gimgs: {}, admin: false };
+const imgUrl = im => `url(/api/img/${im.id})`;
+function groupSkin(kind) { // 모임 기본값이 실제로 무엇인지 → { preset } 또는 { img }
+  const g = SK.group?.[kind] || SKIN_DEF[kind];
+  if (g === 'custom') return SK.gimgs?.[kind] ? { img: SK.gimgs[kind] } : { preset: SKIN_DEF[kind] };
+  return { preset: g };
+}
+function effSkin(kind) { // 지금 내 화면에 보일 것
+  const p = SK.prefs?.[kind] || 'group';
+  if (p === 'mine') return SK.imgs?.[kind] ? { img: SK.imgs[kind] } : groupSkin(kind);
+  if (p === 'group') return groupSkin(kind);
+  return { preset: p };
+}
+let ART = 'mix';
 function applySkin() {
   const b = document.body;
   [...b.classList].filter(c => /^(back|mat)-/.test(c)).forEach(c => b.classList.remove(c));
-  b.classList.add('back-' + BACK, 'mat-' + MAT);
+  const bk = effSkin('back'), mt = effSkin('mat');
+  if (bk.img) { b.classList.add('back-custom'); b.style.setProperty('--bk-img', imgUrl(bk.img)); } else b.classList.add('back-' + bk.preset);
+  if (mt.img) { b.classList.add('mat-custom', mt.img.dark ? 'mat-dark' : 'mat-light'); b.style.setProperty('--mt-img', imgUrl(mt.img)); } else b.classList.add('mat-' + mt.preset);
+  const a = SK.prefs?.art || 'group';
+  ART = a === 'group' ? (SK.group?.art || SKIN_DEF.art) : a;
+}
+function setSkin(info) { // /api/me 등에서 받은 꾸미기 정보 반영
+  SK = { group: info.group || {}, prefs: info.prefs, imgs: info.imgs || {}, gimgs: info.gimgs || {}, admin: !!info.admin };
+  try { localStorage.setItem('skin', JSON.stringify(SK)); } catch {}
+  applySkin();
 }
 applySkin();
+let meAt = 0;
+async function loadMe() {
+  const r = await api('/api/me'); ME = r.user; meAt = Date.now(); setSkin(r);
+  if (!r.prefs) { // 예전에 이 기기에서 고른 것이 있으면 내 설정으로 옮김 (처음 한 번)
+    const old = { back: pref('back', ''), mat: pref('mat', ''), art: pref('art', '') }, o = {};
+    if (BACKS.some(x => x[0] === old.back) && old.back !== 'ball') o.back = old.back;
+    if (MATS.some(x => x[0] === old.mat) && old.mat !== 'grass') o.mat = old.mat;
+    if (['en', 'kr'].includes(old.art)) o.art = old.art;
+    api('/api/prefs', o).then(setSkin).catch(() => {});
+  }
+}
 async function api(path, body, method) {
   const r = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
   const j = await r.json().catch(() => ({ error: '서버 응답을 읽지 못했어요.' }));
@@ -57,7 +91,6 @@ function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidde
 async function loadCards() { if (!ALL) { ALL = await (await fetch('/cards.json')).json(); IDX = indexCards(ALL); } return ALL; }
 // 카드 그림: mix = 판·손패는 영문 그림(워터마크 없음) + 한글 이름표, 크게 볼 때 한글 그림 / en = 모두 영문 / kr = 모두 한글
 const ART_KINDS = [['mix', '판은 영문 그림, 크게 볼 때 한글 그림'], ['en', '모두 영문 그림'], ['kr', '모두 한글 그림']];
-let ART = (() => { try { return localStorage.getItem('art') || 'mix'; } catch { return 'mix'; } })();
 const hires = u => u ? u.replace(/\.png$/, '_hires.png') : null;
 const cimg = c => c && (ART === 'kr' ? (c.kimg || c.img) : (c.img || c.kimg));
 const bigImg = c => !c ? null : ART === 'en' ? (hires(c.img) || c.kimg) : (c.kimg || hires(c.img));
@@ -111,7 +144,8 @@ function drawSnd() { // 머리의 소리 단추: 누르면 효과음·배경음�
 let leaveGame = null;
 async function route() {
   if (leaveGame) { leaveGame(); leaveGame = null; }
-  if (!ME) { try { ME = (await api('/api/me')).user; } catch { ME = null; } }
+  if (!ME) { try { await loadMe(); } catch { ME = null; } }
+  else if (Date.now() - meAt > 60000) loadMe().catch(() => {}); // 관리자가 바꾼 모임 기본값을 가끔 다시 받아 옴
   const h = location.hash || '#lobby';
   if (!ME && h !== '#login') { location.hash = '#login'; return; }
   const [base, arg] = h.split('/');
@@ -136,48 +170,122 @@ function renderLogin() {
     <label class="h">입장 코드</label><input id="cd" type="password" style="width:100%">
     <button class="primary" id="go">들어가기</button></div>`;
   $('#go').onclick = async () => {
-    try { const r = await api('/api/login', { name: $('#nm').value, code: $('#cd').value }); ME = r.user; location.hash = '#lobby'; }
+    try { const r = await api('/api/login', { name: $('#nm').value, code: $('#cd').value }); ME = r.user; await loadMe().catch(() => {}); location.hash = '#lobby'; }
     catch (e) { toast(e.message); }
   };
 }
-// ---------- 설정 (뒷면·매트·카드 그림·소리, 이 기기에만 저장) ----------
+// ---------- 설정 (꾸미기는 내 계정에 저장, 소리는 이 기기에만) ----------
+const backPv = sk => sk.img ? `<div class="pc back bk-img" style="--bk-img:${imgUrl(sk.img)}"><div class="cb"></div></div>` : `<div class="pc back bk-${sk.preset}"><div class="cb"></div></div>`;
+const matPv = sk => sk.img ? `<div class="pv-mat mt-img ${sk.img.dark ? 'mt-dark' : 'mt-light'}" style="--mt-img:${imgUrl(sk.img)}"><i></i><i></i></div>` : `<div class="pv-mat mt-${sk.preset}"><i></i><i></i></div>`;
+const addPv = kind => `<div class="pv-add ${kind === "back" ? "pa-back" : "pa-mat"}">${ICON.plus}</div>`;
+const skinLabel = (kind, sk) => sk.img ? '사진' : ((kind === 'back' ? BACKS : MATS).find(x => x[0] === sk.preset) || [, ''])[1];
 function settingsHtml(inSheet) {
-  const opt = (kind, k, label, pv, on) => `<button class="opt" data-set="${kind}" data-v="${k}" ${on ? 'aria-pressed="true"' : ''}>${pv}<span>${esc(label)}</span></button>`;
+  const opt = (kind, k, label, pv, extra = '') => `<button class="opt" data-set="${kind}" data-v="${k}" ${extra}>${pv}<span>${esc(label)}</span></button>`;
   const vol = k => Math.round(Sound.get(k) * 100);
-  return `<section class="set"><h3>카드 뒷면</h3><div class="opts backs">${BACKS.map(([k, l]) => opt('back', k, l, `<div class="pc back bk-${k}"><div class="cb"></div></div>`, k === BACK)).join('')}</div></section>
-    <section class="set"><h3>매트</h3><div class="opts mats">${MATS.map(([k, l]) => opt('mat', k, l, `<div class="pv-mat mt-${k}"><i></i><i></i></div>`, k === MAT)).join('')}</div></section>
-    <section class="set"><h3>카드 그림</h3><div class="seg">${ART_KINDS.map(([k, l]) => opt('art', k, l, '', k === ART)).join('')}</div></section>
+  const pv = kind => kind === 'back' ? backPv : matPv;
+  // 내 것: 모임 기본 + 기본 7종 + 내 사진 = 9칸 (3×3)
+  const mine = (kind, title) => {
+    const list = kind === 'back' ? BACKS : MATS, my = SK.imgs?.[kind], g = groupSkin(kind);
+    return `<section class="set"><h3>${title}</h3><div class="opts n9">
+      ${opt(kind, 'group', '모임 기본', pv(kind)(g), `title="관리자가 정한 모임 기본 (지금: ${esc(skinLabel(kind, g))})"`)}
+      ${list.map(([k, l]) => opt(kind, k, l, pv(kind)({ preset: k }))).join('')}
+      ${opt(kind, 'mine', '내 사진', my ? pv(kind)({ img: my }) : addPv(kind))}</div>
+      <div class="photo-row">${my ? `<button class="sm" data-up="${kind}" data-scope="me">${ICON.plus}사진 바꾸기</button><button class="sm" data-del="${kind}" data-scope="me">사진 지우기</button>` : `<span class="small muted">'내 사진' 칸을 누르면 휴대폰이나 PC의 사진으로 ${kind === 'back' ? '카드 뒷면' : '매트'}을 꾸밀 수 있어요.</span>`}</div></section>`;
+  };
+  // 관리자: 기본 7종 + 모임 사진 = 8칸 (4×2)
+  const admin = (kind, title) => {
+    const list = kind === 'back' ? BACKS : MATS, gi = SK.gimgs?.[kind];
+    return `<h4>${title}</h4><div class="opts n8">${list.map(([k, l]) => opt('g-' + kind, k, l, pv(kind)({ preset: k }))).join('')}${opt('g-' + kind, 'custom', '모임 사진', gi ? pv(kind)({ img: gi }) : addPv(kind))}</div>
+      <div class="photo-row">${gi ? `<button class="sm" data-up="${kind}" data-scope="group">${ICON.plus}사진 바꾸기</button><button class="sm" data-del="${kind}" data-scope="group">사진 지우기</button>` : `<span class="small muted">'모임 사진' 칸을 누르면 사진을 올려 모두의 기본으로 쓸 수 있어요.</span>`}</div>`;
+  };
+  return `${mine('back', '카드 뒷면')}${mine('mat', '매트')}
+    <section class="set"><h3>카드 그림</h3><div class="seg"><button class="opt" data-set="art" data-v="group"><span>모임 기본 따르기<small class="sub">지금: ${esc((ART_KINDS.find(x => x[0] === (SK.group?.art || SKIN_DEF.art)) || ART_KINDS[0])[1])}</small></span></button>${ART_KINDS.map(([k, l]) => opt('art', k, l, '')).join('')}</div></section>
     <section class="set"><h3>소리</h3><div class="snd">
       <div class="r"><span class="nm">효과음</span><button class="sw" data-sw="sfx" aria-label="효과음 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('sfxVol')}" style="--v:${vol('sfxVol')}%" data-vol="sfxVol" aria-label="효과음 크기"><button class="sm" data-try>${ICON.play}들어 보기</button></div>
       <div class="r"><span class="nm">배경음악</span><button class="sw" data-sw="bgm" aria-label="배경음악 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('bgmVol')}" style="--v:${vol('bgmVol')}%" data-vol="bgmVol" aria-label="배경음악 크기"></div>
-      <p class="small muted" style="margin:0">효과음과 배경음악은 모두 이 사이트에서 직접 만든 소리예요. 위쪽 스피커 단추로 한 번에 끌 수도 있어요.</p></div></section>
+      <p class="small muted" style="margin:0">효과음과 배경음악은 모두 이 사이트에서 직접 만든 소리예요. 소리 설정은 이 기기에만 저장돼요.</p></div></section>
+    ${!inSheet && SK.admin ? `<section class="set admin"><h3>모임 기본값 <span class="chip k-admin">관리자</span></h3>
+      <p class="small muted">처음 들어온 사람과 '모임 기본'을 고른 사람에게 보이는 모양이에요. 각자 다른 것을 고른 사람은 그대로예요.</p>
+      ${admin('back', '카드 뒷면')}${admin('mat', '매트')}
+      <h4>카드 그림</h4><div class="seg">${ART_KINDS.map(([k, l]) => opt('g-art', k, l, '')).join('')}</div></section>` : ''}
     ${inSheet ? '' : `<section class="set"><h3>내 정보</h3><div class="row"><span class="grow">${esc(ME.name)} 님으로 들어와 있어요.</span><button id="lo">로그아웃</button></div></section>`}`;
 }
-function bindSettings(root, onArt) {
+// 사진 줄이기: 카드 뒷면은 카드 비율로 가운데를 잘라 440px, 매트는 긴 쪽 1600px. 밝기도 재서 매트 선 색을 고름
+async function prepImage(file, kind) {
+  let src;
+  try { src = await createImageBitmap(file); }
+  catch { src = await new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('사진을 읽지 못했어요.')); im.src = URL.createObjectURL(file); }); }
+  const W0 = src.width, H0 = src.height; let sx = 0, sy = 0, sw = W0, sh = H0, w, h;
+  if (kind === 'back') { const r = 63 / 88; if (sw / sh > r) { sw = sh * r; sx = (W0 - sw) / 2; } else { sh = sw / r; sy = (H0 - sh) / 2; } w = 440; h = Math.round(440 / r); }
+  else { const k = Math.min(1, 1600 / Math.max(sw, sh)); w = Math.round(sw * k); h = Math.round(sh * k); }
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d'); cx.imageSmoothingQuality = 'high'; cx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  const sm = document.createElement('canvas'); sm.width = sm.height = 24; const sc = sm.getContext('2d'); sc.drawImage(cv, 0, 0, 24, 24);
+  const d = sc.getImageData(0, 0, 24, 24).data; let L = 0;
+  for (let i = 0; i < d.length; i += 4) L += (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255;
+  L /= d.length / 4;
+  let blob = null;
+  for (let q = .86; q > .4; q -= .15) {
+    blob = await new Promise(r => cv.toBlob(r, 'image/webp', q));
+    if (!blob || blob.type !== 'image/webp') blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', q));
+    if (blob && blob.size < 1.4e6) break;
+  }
+  if (!blob) throw new Error('사진을 줄이지 못했어요.');
+  return { blob, dark: L < .55 };
+}
+async function uploadSkin(kind, scope, file) {
+  toast('사진을 올리는 중이에요…', 20000);
+  const { blob, dark } = await prepImage(file, kind);
+  const r = await fetch(`/api/img?kind=${kind}&scope=${scope}`, { method: 'POST', headers: { 'content-type': blob.type, 'x-meta': JSON.stringify({ dark }) }, body: blob, credentials: 'same-origin' });
+  const j = await r.json().catch(() => ({ error: '서버 응답을 읽지 못했어요.' }));
+  if (!r.ok) throw new Error(j.error || '올리지 못했어요.');
+  setSkin(j); toast(scope === 'group' ? '모임 사진을 올렸어요. 모두의 기본이 됐어요.' : '사진을 올렸어요.');
+}
+function bindSettings(root, onArt, inSheet) {
+  const refresh = () => { root.innerHTML = settingsHtml(inSheet); bindSettings(root, onArt, inSheet); };
+  const curOf = { back: () => SK.prefs?.back || 'group', mat: () => SK.prefs?.mat || 'group', art: () => SK.prefs?.art || 'group',
+    'g-back': () => SK.group?.back || SKIN_DEF.back, 'g-mat': () => SK.group?.mat || SKIN_DEF.mat, 'g-art': () => SK.group?.art || SKIN_DEF.art };
   const mark = () => {
-    root.querySelectorAll('[data-set]').forEach(b => b.classList.toggle('on', b.dataset.v === { back: BACK, mat: MAT, art: ART }[b.dataset.set]));
+    root.querySelectorAll('[data-set]').forEach(b => { const on = b.dataset.v === curOf[b.dataset.set](); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
     root.querySelectorAll('[data-sw]').forEach(b => { const on = Sound.get(b.dataset.sw); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
   };
   mark();
+  // 사진 고르기 (숨긴 파일 칸 하나를 같이 씀)
+  let fp = root.querySelector('input[type=file]');
+  if (!fp) { fp = document.createElement('input'); fp.type = 'file'; fp.accept = 'image/*'; fp.hidden = true; root.appendChild(fp); }
+  const pickPhoto = (kind, scope) => { fp.value = ''; fp.onchange = async () => { const f = fp.files[0]; if (!f) return; try { await uploadSkin(kind, scope, f); Sound.sfx('place'); onArt && onArt(); refresh(); } catch (e) { toast(e.message); } }; fp.click(); };
+  const save = async (url, body) => { try { setSkin(await api(url, body)); } catch (e) { toast(e.message); } onArt && onArt(); refresh(); };
   root.querySelectorAll('[data-set]').forEach(b => b.onclick = () => {
     const k = b.dataset.set, v = b.dataset.v;
-    if (k === 'back') { BACK = v; setPref('back', v); applySkin(); Sound.sfx('place'); }
-    if (k === 'mat') { MAT = v; setPref('mat', v); applySkin(); Sound.sfx('place'); }
-    if (k === 'art') { ART = v; setPref('art', v); onArt && onArt(); }
-    mark();
+    if (k === 'back' || k === 'mat' || k === 'art') {
+      if (v === 'mine' && !SK.imgs?.[k]) return pickPhoto(k, 'me');
+      SK.prefs = { back: 'group', mat: 'group', art: 'group', ...SK.prefs, [k]: v }; applySkin(); mark(); if (k !== 'art') Sound.sfx('place');
+      if (k === 'art' && onArt) onArt();
+      return save('/api/prefs', { [k]: v });
+    }
+    const gk = k.slice(2); // 관리자: 모임 기본값
+    if (v === 'custom' && !SK.gimgs?.[gk]) return pickPhoto(gk, 'group');
+    SK.group = { ...SK.group, [gk]: v }; applySkin(); mark(); if (gk !== 'art') Sound.sfx('place');
+    save('/api/group', { [gk]: v });
+  });
+  root.querySelectorAll('[data-up]').forEach(b => b.onclick = () => pickPhoto(b.dataset.up, b.dataset.scope));
+  root.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    try { const r = await fetch(`/api/img?kind=${b.dataset.del}&scope=${b.dataset.scope}`, { method: 'DELETE', credentials: 'same-origin' }); const j = await r.json(); if (!r.ok) throw new Error(j.error || '지우지 못했어요.'); setSkin(j); toast('사진을 지웠어요.'); }
+    catch (e) { toast(e.message); }
+    onArt && onArt(); refresh();
   });
   root.querySelectorAll('[data-sw]').forEach(b => b.onclick = () => { const k = b.dataset.sw; Sound.set(k, !Sound.get(k)); mark(); if (k === 'sfx') Sound.sfx('notify'); });
   root.querySelectorAll('[data-vol]').forEach(r => { r.oninput = () => { Sound.set(r.dataset.vol, r.value / 100); r.style.setProperty('--v', r.value + '%'); }; r.onchange = () => { if (r.dataset.vol === 'sfxVol') Sound.sfx('coin'); }; });
   const tr = root.querySelector('[data-try]');
   if (tr) tr.onclick = () => ['draw', 'place', 'attack', 'coin', 'turnMine'].forEach((n, i) => setTimeout(() => Sound.sfx(n), i * 450));
   const lo = root.querySelector('#lo');
-  if (lo) lo.onclick = async () => { await api('/api/logout', {}); ME = null; location.hash = '#login'; };
+  if (lo) lo.onclick = async () => { await api('/api/logout', {}); ME = null; try { localStorage.removeItem('skin'); } catch {} setSkin({}); location.hash = '#login'; };
 }
 function renderSettings() {
-  app.innerHTML = `<div class="card-box" style="max-width:820px;margin:0 auto"><h2>설정</h2><p class="muted small" style="margin-top:0">고르면 바로 바뀌어요. 이 기기에만 저장돼요.</p>${settingsHtml(false)}</div>`;
-  bindSettings(app);
+  app.innerHTML = `<div class="card-box" style="max-width:860px;margin:0 auto"><h2>설정</h2><p class="muted small" style="margin-top:0">고르면 바로 바뀌어요. 카드 뒷면·매트·카드 그림은 내 계정에 저장돼서 다른 기기에서도 그대로예요.</p><div class="setwrap">${settingsHtml(false)}</div></div>`;
+  bindSettings(app.querySelector('.setwrap'), null, false);
 }
-function openSettings(onArt) { openSheet(`<button class="x sm" data-close>닫기</button><h3>설정</h3>${settingsHtml(true)}`, el => bindSettings(el, onArt)); }
+function openSettings(onArt) { openSheet(`<button class="x sm" data-close>닫기</button><h3>설정</h3><div class="setwrap">${settingsHtml(true)}</div>`, el => bindSettings(el.querySelector('.setwrap'), onArt, true)); }
 
 // ---------- 로비 ----------
 const fmtLeft = ms => { if (ms <= 0) return '기한 지남'; const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3); return h ? `${h}시간 ${m}분 남음` : `${m}분 남음`; };

@@ -43,6 +43,15 @@ waves = ''.join(f'<path d="M-4 {y} q 8.5 -5 17 0 t 17 0 t 17 0 t 17 0 t 17 0" fi
 backs['sea'] = back('<linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5cc8f0"/><stop offset="1" stop-color="#1f5fb8"/></linearGradient>',
     f'<rect width="63" height="88" fill="url(#g)"/>{waves}' + sparkle(13, 15, .7, '#fff', .8) + sparkle(51, 72, .6, '#fff', .7) + emblem('#174a8f', acc='#5cc8f0'))
 
+# 불꽃: 빨강→주황, 위로 오르는 불꽃 무늬
+random.seed(11)
+flames = ''
+for _ in range(16):
+    x, y, s = random.uniform(0, 63), random.uniform(6, 92), random.uniform(.8, 1.6)
+    flames += f'<path transform="translate({x:.1f} {y:.1f}) scale({s:.2f})" d="M0 0 C-4-3-3-8 0-12 C0-8 4-7 3-3 C5-5 5-8 4-10 C8-6 6 0 0 0Z" fill="#fff3c4" fill-opacity="{random.uniform(.12,.24):.2f}"/>'
+backs['flame'] = back('<linearGradient id="g" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffb347"/><stop offset=".5" stop-color="#ff6a3d"/><stop offset="1" stop-color="#c8283a"/></linearGradient>',
+    f'<rect width="63" height="88" fill="url(#g)"/>{flames}' + sparkle(11, 13, .8, '#fff3c4', .85) + sparkle(52, 76, .7, '#fff3c4', .75) + emblem('#9c2233', acc='#ffb347'))
+
 # 매트 무늬 (반복 타일)
 def tile(w, h, body):
     return f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">{body}</svg>'
@@ -70,7 +79,11 @@ mats = {
   'sand':   dict(bg=f'radial-gradient(ellipse at 50% 50%, rgba(255,255,255,.5) 0, transparent 60%), {uri(pat_sand)} 0 0 / 120px 120px, linear-gradient(180deg, #ecd099, #f8e8c4 48%, #f8e8c4 52%, #ecd099)', edge='#efdcb4', label='#8a5a1c', labelbg='#fff6e3', ink='#6b4a1a', glow='rgba(120, 80, 30, .22)'),
   'sakura': dict(bg=f'radial-gradient(ellipse at 50% 50%, rgba(255,255,255,.5) 0, transparent 60%), {uri(pat_sakura)} 0 0 / 180px 180px, linear-gradient(180deg, #f5bcd2, #fde0eb 48%, #fde0eb 52%, #f5bcd2)', edge='#f6d3e1', label='#a2456b', labelbg='#fff0f5', ink='#7a2f50', glow='rgba(140, 40, 90, .2)'),
 }
+maple = lambda x, y, a, s, c: f'<path transform="translate({x:.0f} {y:.0f}) rotate({a:.0f}) scale({s:.2f})" d="M0-9 L2-4 L6-6 L5-1 L9 0 L4 2 L5 6 L1 4 L0 9 L-1 4 L-5 6 L-4 2 L-9 0 L-5-1 L-6-6 L-2-4Z" fill="{c}" fill-opacity=".5"/>'
+random.seed(5)
+pat_autumn = tile(200, 200, ''.join(maple(random.uniform(0,200), random.uniform(0,200), random.uniform(0,360), random.uniform(.8,1.4), random.choice(['#ffffff', '#e8692f', '#d84a3a', '#f2a93b'])) for _ in range(11)))
 mats['snow'] = dict(bg=f'radial-gradient(ellipse at 50% 50%, rgba(255,255,255,.6) 0, transparent 60%), {uri(pat_snow)} 0 0 / 200px 200px, linear-gradient(180deg, #b9dcf0, #e6f4fc 48%, #e6f4fc 52%, #b9dcf0)', edge='#d6e9f5', label='#3a6f92', labelbg='#f2f9fe', ink='#2c5674', glow='rgba(40, 90, 130, .2)')
+mats['autumn'] = dict(bg=f'radial-gradient(ellipse at 50% 50%, rgba(255,255,255,.55) 0, transparent 60%), {uri(pat_autumn)} 0 0 / 200px 200px, linear-gradient(180deg, #f2c18c, #fbe4c6 48%, #fbe4c6 52%, #f2c18c)', edge='#f3d9bb', label='#9a4a1c', labelbg='#fff3e6', ink='#7a3a14', glow='rgba(140, 70, 20, .22)')
 for k, m in mats.items():
     v = f"--m-bg: {m['bg']}; --m-edge: {m['edge']}; --m-label: {m['label']}; --m-labelbg: {m['labelbg']}; --m-ink: {m['ink']}; --m-glow: {m['glow']};"
     DEF = {'line': 'rgba(255,255,255,.75)', 'zone': 'rgba(255,255,255,.28)', 'empty': 'rgba(255,255,255,.8)', 'cnt': 'rgba(255,255,255,.9)'}

@@ -28,11 +28,20 @@
 npm install
 python3 tools/build-cards.py <cards_en.json> <sets_en.json> public/cards.json
 # 카드 자료가 없으면 먼저: python3 tools/fetch-cards.py card-src  (공개 자료에서 받아요)
-printf 'GROUP_CODE=모임코드\nSECRET=아무긴문자열\n' > .dev.vars
+printf 'GROUP_CODE=모임코드\nSECRET=아무긴문자열\nADMINS=관리자이름\n' > .dev.vars
 npx wrangler dev
 node test/engine.test.js      # 엔진 시험
 node test/e2e.cjs             # 두 사람 + 관전자 화면 시험 (Playwright)
 ```
+
+## 꾸미기와 관리자
+
+- 설정에서 카드 뒷면·매트(기본 7종씩, 모두 자체 디자인)와 카드 그림을 고르고, 내 사진을 올려 뒷면·매트로 쓸 수 있어요. 고른 것은 계정에 저장돼요(소리 설정만 기기별).
+- 각자 "모임 기본"을 고르면(처음 들어온 사람은 모두 이것) 관리자가 정한 모임 기본값을 따라가요.
+- 관리자는 설정 맨 아래 "모임 기본값" 칸에서 모두의 기본 뒷면·매트·카드 그림을 정하고, 모임 사진을 올릴 수 있어요.
+- 관리자: `.dev.vars`(배포 때는 `wrangler secret put ADMINS`)의 `ADMINS=이름1,이름2`. 없으면 맨 처음 가입한 사람이 관리자예요.
+- 올린 사진은 휴대폰에서 줄여서(뒷면 440px, 매트 긴 쪽 1600px, WEBP) 로비 DB에 저장하고 `/api/img/<id>`로 보여 줘요. JPG·PNG·WEBP만, 1.5MB까지.
+- 뒷면·매트 디자인을 바꾸려면 `python3 tools/make-skins.py`로 `public/skins.css`를 다시 만들어요.
 
 ## 배포 (Cloudflare 무료)
 
@@ -40,6 +49,7 @@ node test/e2e.cjs             # 두 사람 + 관전자 화면 시험 (Playwright
 npx wrangler login
 npx wrangler secret put GROUP_CODE
 npx wrangler secret put SECRET
+npx wrangler secret put ADMINS   # 관리자 이름 (쉼표로 여러 명)
 npx wrangler deploy
 ```
 
