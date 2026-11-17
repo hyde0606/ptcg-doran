@@ -1022,40 +1022,68 @@ function rwLoc(v) { // 카드 번호 → 있는 곳
   if (v.stadium) m.set(v.stadium.i, 'stad');
   return m;
 }
-function rwTargets(a, b) { // 두 장면 사이에 바뀐 곳 (화면 요소 선택자)
-  const A = rwLoc(a), B = rwLoc(b), out = [], add = s => { if (!out.includes(s)) out.push(s); };
+function rwTargets(a, b, lines = []) { // 두 장면 사이에 바뀐 곳: [{s: 화면 요소 선택자, kind: move(움직임) | target(기술 대상) | big(센 장면)}]
+  const A = rwLoc(a), B = rwLoc(b), out = [], rank = { move: 0, target: 1, big: 2 };
+  const add = (s, kind = 'move') => { const o = out.find(x => x.s === s); if (!o) out.push({ s, kind }); else if (rank[kind] > rank[o.kind]) o.kind = kind; };
+  const ko = lines.some(l => /기절|프라이즈/.test(l.txt || ''));
   const sel = (loc, i) => { const [z, p] = loc.split(':');
     if (z === 'slot') return `.mat [data-sid="${p}"]`; if (z === 'disc') return `.pile.disc[data-p="${p}"]`; if (z === 'lost') return `.lostc[data-p="${p}"]`;
     if (z === 'prz') return `.prizes[data-p="${p}"]`; if (z === 'stad') return '.stadium';
     if (z === 'hand') return +p === bottomSeat() ? `.handbar [data-k="${i}"]` : '.ohand'; return null; };
-  for (const [i, loc] of B) if (A.get(i) !== loc) { const s2 = sel(loc, i); if (s2) add(s2); }
-  const st = v => { const o = {}; for (const p of [0, 1]) [v.p[p].active, ...v.p[p].bench].forEach((sl, j) => { if (sl && !sl.hidden) o[sl.sid] = `${sl.dmg}|${JSON.stringify(sl.cond || {})}|${p}:${j ? 'b' : 'a'}`; }); return o; };
+  const st = v => { const o = {}; for (const p of [0, 1]) [v.p[p].active, ...v.p[p].bench].forEach((sl, j) => { if (sl && !sl.hidden) o[sl.sid] = { dmg: sl.dmg || 0, cond: JSON.stringify(sl.cond || {}), pos: `${p}:${j ? 'b' : 'a'}`, p }; }); return o; };
   const sa = st(a), sb = st(b);
-  for (const sid in sb) if (sa[sid] != null && sa[sid] !== sb[sid]) add(`.mat [data-sid="${sid}"]`);
+  for (const sid in sb) { // 데미지·상태 이상이 바뀐 포켓몬 = 기술 대상, 100 넘게 받으면 센 장면
+    const x = sa[sid], y = sb[sid]; if (!x) continue;
+    if (y.dmg - x.dmg >= 100) add(`.mat [data-sid="${sid}"]`, 'big');
+    else if (y.dmg !== x.dmg || y.cond !== x.cond) add(`.mat [data-sid="${sid}"]`, 'target');
+    else if (y.pos !== x.pos) add(`.mat [data-sid="${sid}"]`);
+  }
+  for (const sid in sa) if (!sb[sid] && sa[sid].dmg > 0) add(`.pile.disc[data-p="${sa[sid].p}"]`, 'big'); // 기절해서 트래시로
+  for (const [i, loc] of B) if (A.get(i) !== loc) { const s2 = sel(loc, i); if (s2) add(s2, ko && /^\.(pile\.disc|prizes)/.test(s2) ? 'big' : 'move'); }
   for (const p of [0, 1]) {
     if (a.p[p].deck.n !== b.p[p].deck.n) add(`.pile.deck[data-p="${p}"]`);
     if (!b.p[p].hand && a.p[p].handN !== b.p[p].handN) add('.ohand');
-    if (a.p[p].prizesN !== b.p[p].prizesN) add(`.prizes[data-p="${p}"]`);
+    if (a.p[p].prizesN !== b.p[p].prizesN) add(`.prizes[data-p="${p}"]`, 'big');
   }
-  return out.slice(0, 5);
+  return out.sort((x, y) => rank[y.kind] - rank[x.kind]).slice(0, 5);
 }
-function hlFrame(w, h) { // 강조 틀: 가는 선 하나, 왼쪽 위·오른쪽 아래 모서리만 비스듬히 (링크 님이 고른 모양으로 바꿀 자리)
-  const o = 2, c = Math.max(6, Math.min(12, Math.min(w, h) * .14)), f = n => n.toFixed(1);
-  const d = `M${f(o + c)} ${f(o)}H${f(w - o)}V${f(h - o - c)}L${f(w - o - c)} ${f(h - o)}H${f(o)}V${f(o + c)}Z`;
-  return `<svg viewBox="0 0 ${f(w)} ${f(h)}" aria-hidden="true"><path class="hd" pathLength="1" d="${d}" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+// 강조 틀 (링크 님이 고른 것, '가는 테두리 도감' 기준): 움직임 = 14번 볼 띠, 기술 대상 = 6번 자 눈금, 센 장면 = 1번 색 어긋남
+function hlFrame(w, h, kind = 'move') {
+  const f = n => (+n).toFixed(1), o = 2, x0 = o, y0 = o, x1 = w - o, y1 = h - o, cx = w / 2, cy = h / 2;
+  const ln = (d, sw = 1.4, c = '#fff', cls = '', op = 1) => `<path class="${cls}" d="${d}" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`;
+  const dr = (d, sw = 1.4) => `<path class="hd" pathLength="1" d="${d}" fill="none" stroke="#fff" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const svg = body => `<svg viewBox="0 0 ${f(w)} ${f(h)}" aria-hidden="true">${body}</svg>`;
+  if (kind === 'big') { // 흰 선 뒤로 빨간 선이 대각선으로 살짝 어긋나 있음
+    const c = Math.max(6, Math.min(9, Math.min(w, h) * .09));
+    const P = `M${f(x0)} ${f(y0)}L${f(x1 - c)} ${f(y0)}L${f(x1)} ${f(y0 + c)}L${f(x1)} ${f(y1)}L${f(x0 + c)} ${f(y1)}L${f(x0)} ${f(y1 - c)}Z`;
+    return svg(`<g class="hsnap"><g class="hbreathe">${ln(P, 1.6, '#ff3b4e')}</g></g>${dr(P)}`);
+  }
+  if (kind === 'target') { // 안쪽 위아래에 자 눈금, 가운데만 길게. 위쪽 작은 삼각형이 눈금 위를 오감
+    const r = 3; let t = '';
+    for (let x = x0 + 7; x <= x1 - 7 + .1; x += 7.5) { const L = Math.abs(x - cx) < 3.8 ? 4.6 : 2.4; t += `M${f(x)} ${f(y0 + .8)}v${L}M${f(x)} ${f(y1 - .8)}v${-L}`; }
+    const rr = `M${f(x0 + r)} ${f(y0)}H${f(x1 - r)}A${r} ${r} 0 0 1 ${f(x1)} ${f(y0 + r)}V${f(y1 - r)}A${r} ${r} 0 0 1 ${f(x1 - r)} ${f(y1)}H${f(x0 + r)}A${r} ${r} 0 0 1 ${f(x0)} ${f(y1 - r)}V${f(y0 + r)}A${r} ${r} 0 0 1 ${f(x0 + r)} ${f(y0)}Z`;
+    const tx = x0 + 10, dist = Math.max(0, x1 - 10 - tx);
+    return svg(`${dr(rr, 1.25)}${ln(t, .8, '#fff', 'hlate', .9)}<g class="hlate"><g class="hsweep" style="--dist:${f(dist)}px"><path d="M${f(tx - 3)} ${f(y0 - 6.5)}L${f(tx + 3)} ${f(y0 - 6.5)}L${f(tx)} ${f(y0 - 2.5)}Z" fill="#fff"/></g></g>`);
+  }
+  // 둥근 가는 선의 양옆 가운데가 끊기고 작은 볼 버튼 고리 (6-약 버튼과 같은 잔물결)
+  const r = Math.max(5, Math.min(11, Math.min(w, h) * .14)), g = 5.4;
+  const top = `M${f(x1)} ${f(cy - g)}V${f(y0 + r)}A${f(r)} ${f(r)} 0 0 0 ${f(x1 - r)} ${f(y0)}H${f(x0 + r)}A${f(r)} ${f(r)} 0 0 0 ${f(x0)} ${f(y0 + r)}V${f(cy - g)}`;
+  const bot = `M${f(x0)} ${f(cy + g)}V${f(y1 - r)}A${f(r)} ${f(r)} 0 0 0 ${f(x0 + r)} ${f(y1)}H${f(x1 - r)}A${f(r)} ${f(r)} 0 0 0 ${f(x1)} ${f(y1 - r)}V${f(cy + g)}`;
+  const ring = (x, dl) => `<g class="hpop"><circle cx="${f(x)}" cy="${f(cy)}" r="3.4" fill="none" stroke="#fff" stroke-width="1.4"/><circle cx="${f(x)}" cy="${f(cy)}" r="1.2" fill="#fff"/></g><g class="hlate"><circle class="hping" style="animation-delay:${dl}s" cx="${f(x)}" cy="${f(cy)}" r="3.4" fill="none" stroke="#fff" stroke-width="1"/></g>`;
+  return svg(`${dr(top)}${dr(bot)}${ln(`M${f(x0 - 3.4)} ${f(cy)}h-5M${f(x1 + 3.4)} ${f(cy)}h5`, 1.2, '#fff', 'hlate')}${ring(x0, 0)}${ring(x1, -1.3)}`);
 }
 function rwHighlight(sels) {
   const layer = app.querySelector('.hl-layer'), tb = app.querySelector('.table'); if (!layer || !tb) return;
-  sels.forEach(s => app.querySelectorAll(s).forEach(el => el.classList.add('rwon')));
+  sels.forEach(t => app.querySelectorAll(t.s).forEach(el => el.classList.add('rwon')));
   setTimeout(() => { // 카드가 다 움직인 뒤에 틀을 그림
     if (!layer.isConnected) return;
     const T = tb.getBoundingClientRect(), m = 6, pn = app.querySelector('.rwpanel')?.getBoundingClientRect();
     const lim = pn && pn.bottom > T.bottom - 30 ? pn.top : T.bottom; // 세로 화면: 아래 안내판 위까지만
-    layer.innerHTML = sels.flatMap(s => [...app.querySelectorAll(s)].slice(0, 1)).map(el => {
+    layer.innerHTML = sels.flatMap(t => [...app.querySelectorAll(t.s)].slice(0, 1).map(el => [el, t.kind])).map(([el, kind]) => {
       const r = el.getBoundingClientRect(); if (!r.width) return '';
       const top = Math.max(r.top, T.top + m), bot = Math.min(r.bottom, lim - m); if (bot - top < 8) return '';
       const w = r.width + m * 2, h = bot - top + m * 2;
-      return `<div class="hlf" style="left:${(r.left - T.left - m).toFixed(1)}px;top:${(top - T.top - m).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px">${hlFrame(w, h)}</div>`;
+      return `<div class="hlf" style="left:${(r.left - T.left - m).toFixed(1)}px;top:${(top - T.top - m).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px">${hlFrame(w, h, kind)}</div>`;
     }).join('');
   }, reduceMotion() ? 0 : 520);
 }
@@ -1086,8 +1114,8 @@ function drawRw(forward) {
   flip(prevRects);
   if (before) {
     if (forward && rw.prev) { effects(rw.prev, stepLines); gameSounds(rw.prev, stepLines); }
-    const sels = rwTargets(before, cur);
-    sels.forEach(s => { if (s.startsWith('.handbar')) app.querySelector(s)?.classList.add('rwlift'); });
+    const sels = rwTargets(before, cur, stepLines);
+    sels.forEach(t => { if (t.s.startsWith('.handbar')) app.querySelector(t.s)?.classList.add('rwlift'); });
     rwHighlight(sels);
   }
   rw.prev = JSON.parse(JSON.stringify(cur));

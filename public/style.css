@@ -431,8 +431,22 @@ body.mat-custom.mat-light, .mt-img.mt-light { --m-veil: rgba(255, 255, 255, .2);
 .rwpanel .rwcap { display: contents; } .rwpanel .rwbar { order: 1; } .rwpanel .rwt { order: 2; }
 .hl-layer { position: absolute; inset: 0; z-index: 24; pointer-events: none; }
 .hlf { position: absolute; pointer-events: none; animation: hlin .3s ease-out both; }
-.hlf svg { width: 100%; height: 100%; overflow: visible; display: block; filter: drop-shadow(0 0 .7px rgba(0, 30, 40, .95)) drop-shadow(0 0 1.6px rgba(0, 30, 40, .45)) drop-shadow(0 0 6px rgba(255, 255, 255, .75)); }
-.hlf .hd { stroke-dasharray: 1 1; animation: hldraw .8s cubic-bezier(.5, .05, .25, 1) both; }
+.hlf svg { width: 100%; height: 100%; overflow: visible; display: block; filter: drop-shadow(0 0 .6px rgba(6, 34, 46, .9)) drop-shadow(0 0 1.4px rgba(6, 34, 46, .45)); }
+body.mat-night .hlf svg, body.mat-dark .hlf svg { filter: drop-shadow(0 0 .6px rgba(6, 34, 46, .8)) drop-shadow(0 0 1.6px rgba(150, 210, 255, .6)); }
+.hlf .hlate { animation: hlfade .45s .65s ease-out both; }
+.hlf .hpop, .hlf .hping { transform-box: fill-box; transform-origin: center; }
+.hlf .hpop { animation: hlpop .5s .6s cubic-bezier(.2, .9, .3, 1.35) both; }
+.hlf .hping { animation: hlping 2.6s ease-out infinite; }
+.hlf .hsnap { animation: hlsnap .5s cubic-bezier(.2, .9, .25, 1.25) both; }
+.hlf .hbreathe { animation: hlbreathe 2.8s ease-in-out infinite; }
+.hlf .hsweep { animation: hlsweep 3.6s ease-in-out infinite alternate; }
+@keyframes hlfade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hlpop { from { opacity: 0; transform: scale(.82); } to { opacity: 1; transform: none; } }
+@keyframes hlping { 0% { transform: scale(1); opacity: .8; } 70%, 100% { transform: scale(2.3); opacity: 0; } }
+@keyframes hlsnap { from { opacity: 0; transform: translate(9px, 9px); } to { opacity: 1; transform: none; } }
+@keyframes hlbreathe { 0%, 100% { transform: translate(3px, 3px); } 50% { transform: translate(1.6px, 1.6px); } }
+@keyframes hlsweep { from { transform: translateX(0); } to { transform: translateX(var(--dist)); } }
+.hlf .hd { stroke-dasharray: 1 1; animation: hldraw .85s cubic-bezier(.5, .05, .25, 1) both; }
 @keyframes hlin { from { opacity: 0; transform: scale(1.08); } to { opacity: 1; transform: none; } }
 @keyframes hldraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 .arena.rwmode .pc.inhand.rwlift { transform: translateY(calc(var(--cw) * .42)); z-index: 10; }
