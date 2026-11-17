@@ -455,7 +455,7 @@ function renderGame(id) {
   };
   connect();
   const ping = setInterval(() => { try { G.ws.readyState === 1 && G.ws.send('{"t":"ping"}'); } catch {} }, 25000);
-  leaveGame = () => { closed = true; clearInterval(ping); try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
+  leaveGame = () => { closed = true; clearInterval(ping); if (G.rw) { clearTimeout(G.rw.timer); G.rw = null; } try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
 }
 function send(a) {
   return new Promise(res => {
@@ -526,7 +526,7 @@ function areaHtml(p, isBottom) {
   const now = v.phase === 'play' && v.current === p;
   const uses = now ? `<span class="uses">${USES.map(([k, ic, l]) => `<span class="use ${P.used[k] ? 'done' : ''}" title="${l} ${P.used[k] ? '(이번 차례에 썼어요)' : '(아직 안 썼어요)'}"><i>${ic}</i><span class="ul">${l}</span></span>`).join('')}</span>` : '';
   const state = v.phase === 'setup' ? `<b class="zst ${P.ready ? 'ok' : ''}">${P.ready ? '준비 완료' : '준비 중'}</b>` : '';
-  const tag = `<span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><i class="av">${esc(P.name.slice(0, 1))}</i><span class="zn">${esc(P.name)}</span>${state}${P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}${uses}</span>`;
+  const tag = `<span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><i class="av">${esc(P.name.slice(0, 1))}</i><span class="zn">${esc(P.name)}</span>${state}${v.phase === 'setup' && P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}${uses}</span>`;
   return `<section class="area ${isBottom ? 'bottom' : 'top'} ${now ? 'now' : ''}" data-area="${p}">
       <div class="g-pz">${prizesHtml(p)}</div>
       <div class="g-act">${slotHtml(P.active, { active: true })}</div>
@@ -569,6 +569,7 @@ const FAB_ICON = {
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="2.3" fill="currentColor"/><circle cx="12" cy="12" r="2.3" fill="currentColor"/><circle cx="18.5" cy="12" r="2.3" fill="currentColor"/></svg>',
   flag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 2.5h1.8v19H5v-19Zm2.8 1h11.4l-2.6 4.4 2.6 4.4H7.8V3.5Z"/></svg>',
+  rewatch: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M4.6 12a7.4 7.4 0 1 0 2.3-5.4"/><path fill="currentColor" d="M3.4 3.4v6h6z"/><path fill="currentColor" d="M10.2 8.4v7.2l5.8-3.6z"/></svg>',
 };
 const FAB_FX = '<i class="fx f1"></i><i class="fx f3"></i><i class="fx f4"></i>';
 const fabBtn = (t, ic, l, k, extra = '') => `<div class="fabw"><button class="fab ${k}" data-t="${t}" aria-label="${l}">${FAB_FX}<span class="core">${FAB_ICON[ic]}</span>${extra}</button><span class="fl">${l}</span></div>`;
@@ -579,7 +580,9 @@ function fabHtml() { // 왼쪽: 코인·효과 / 오른쪽: 더 보기(위)·기
   if (me == null || v.phase === 'over') return `<div class="rbtns lo">${log}</div>`;
   const myTurn = v.phase === 'play' && v.current === me;
   const open = v.openGroup[me];
-  return `<div class="lbtns">${fabBtn('coin', 'coin', '코인', 'k-coin')}${open ? fabBtn('effectEnd', 'check', '효과 끝', 'k-fx on') : fabBtn('effect', 'hand', '효과 쓰기', 'k-fx')}</div>
+  const rwt = lastOppTurn(), rwNew = rwt && !rwSeen(rwt);
+  const rw = rwt ? `<div class="rwbtn">${fabBtn('rewatch', 'rewatch', '상대 턴', 'k-rw' + (rwNew ? ' on nudge' : ''), rwNew ? '<i class="badge">새</i>' : '')}</div>` : '';
+  return `${rw}<div class="lbtns">${fabBtn('coin', 'coin', '코인', 'k-coin')}${open ? fabBtn('effectEnd', 'check', '효과 끝', 'k-fx on') : fabBtn('effect', 'hand', '효과 쓰기', 'k-fx')}</div>
     <div class="rbtns hi">${fabBtn('more', 'more', '더 보기', 'k-more')}</div><div class="rbtns lo">${log}</div>
     ${myTurn ? `<button class="fab wide endturn" data-t="endTurn">${FAB_FX}${FAB_ICON.flag}<span>차례<br>끝내기</span></button>` : ''}`;
 }
@@ -687,6 +690,7 @@ function coinAnim(txt) {
 }
 function draw(newLines) {
   const v = G.view; if (!v) return;
+  if (G.rw) { G.rw.dirty = true; return; } // 상대 턴 다시 보는 중: 끝나면 그때 그림
   const prev = app.querySelector('.mat') ? snapRects() : null;
   const prevView = G.prev;
   const me = meSeat();
@@ -748,14 +752,34 @@ function groupsHtml() {
     return `<div class="grp"><div class="t">✋ 사람 판정 · ${esc(v.p[g.who].name)}: ${esc(g.title)} ${g.status === 'open' ? '<span class="chip">진행 중</span>' : g.status === 'disputed' ? '<span class="chip warn">이의</span>' : '<span class="chip">확인 전</span>'}</div>${g.note ? `<div class="small">${esc(g.note)}</div>` : ''}${g.disputes.length ? `<div class="small">이의: ${g.disputes.map(esc).join(' / ')}</div>` : ''}<div class="bar">${btn}</div></div>`;
   }).join('');
 }
+// 기록을 차례마다 덩어리로: 머리(몇 번째 차례 · 누구 · 뽑은 카드) + 그 차례의 줄들. 줄마다 이름 대신 색 띠(나 파랑, 상대 빨강)
+function logBlocks(lines, lineHtml) {
+  const v = G.view, names = [v.p[0].name, v.p[1].name], bs = bottomSeat();
+  const seatOf = n => names[0] === n ? 0 : names[1] === n ? 1 : null;
+  const side = p => p == null ? 'sys' : p === bs ? 'me' : 'op';
+  const blocks = []; let cur = null;
+  for (const l of lines) {
+    if (l.turn) { const m = l.txt.match(/(\d+)번째 차례: (.+) \(/); cur = { owner: m ? seatOf(m[2]) : null, head: { no: m ? m[1] : '?', nm: m ? m[2] : '', own: l.own, k: l.k, l } }; blocks.push(cur); cur.items = []; continue; }
+    if (!cur) { cur = { owner: null, head: null, items: [] }; blocks.push(cur); }
+    cur.items.push(l);
+  }
+  const actorOf = l => { if (l.who != null && l.k >= 0) return l.who; const m = l.txt.match(/^(?:\S+ )?([^:]+): /); return m ? seatOf(m[1]) : null; };
+  const strip = (txt, p) => { if (p == null) return txt; const n = names[p]; return txt.replace(new RegExp(`^((?:\\S+ )?)${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: `), '$1'); };
+  return blocks.map(b => {
+    const h = b.head;
+    const head = h ? `<div class="th" ${h.l ? lineHtml(h.l, null, true) : ''}><span class="tno">${esc(h.no)}번째 차례</span><span class="tnm">${esc(h.nm)}</span><span class="tdr">1장 뽑음${h.own ? ` · <span class="own">${esc(h.own)}</span>` : ''}</span></div>` : '<div class="th"><span class="tno">준비</span><span class="tnm">대전 준비</span></div>';
+    return `<section class="tblk ${side(b.owner)}">${head}${b.items.map(l => { const a = actorOf(l); return lineHtml(l, { cls: 'a-' + side(a) + (a != null && a === b.owner ? ' ow' : ''), txt: strip(l.txt, a) }); }).join('')}</section>`;
+  }).join('');
+}
 function logHtml() {
   const gs = Object.fromEntries(G.view.groups.map(g => [g.gid, g]));
-  return G.lines.map(l => {
+  return logBlocks(G.lines, (l, o, headAttr) => {
+    if (headAttr) return '';
     const g = l.gid && gs[l.gid];
     const jc = g ? `<span class="chip ${g.status === 'ok' ? 'ok' : g.status === 'disputed' ? 'warn' : 'judge'}">${g.status === 'ok' ? '동의함' : g.status === 'disputed' ? '이의' : '사람 판정'}</span> ` : (l.gid ? '<span class="chip judge">사람 판정</span> ' : '');
-    if (l.chat) return `<div class="ln chat ${l.rw ? 'rw' : ''} ${l.who === G.view.me ? 'mine' : ''}"><b>${esc(G.view.p[l.who]?.name)}</b> ${esc(l.txt)}</div>`;
-    return `<div class="ln ${l.turn ? 'turn' : ''} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}">${jc}${esc(l.txt)}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}</div>`;
-  }).join('');
+    if (l.chat) return `<div class="ln chat ${o.cls} ${l.rw ? 'rw' : ''}">${esc(l.txt)}</div>`;
+    return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}">${jc}${esc(o.txt)}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}</div>`;
+  });
 }
 function drawSide(target) {
   const el = target || $('#side'); if (!el) return;
@@ -942,6 +966,7 @@ function bindBoard() {
   app.querySelectorAll('[data-t]').forEach(el => el.onclick = async () => {
     const t = el.dataset.t;
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
+    if (t === 'rewatch') return startRewatch();
     if (t === 'shuffleMine') return send({ type: 'shuffle', p: me });
     if (t === 'log') { openSheet('<button class="x sm" data-close>닫기</button><div class="panel insheet"></div>', el2 => drawSide(el2.querySelector('.panel'))); return; }
     if (t === 'coin') { const f = await ask('코인 던지기', '<label class="h">몇 번?</label><input name="n" type="number" min="1" max="20" value="1"><label class="h">무엇 때문에? (선택)</label><input name="why" maxlength="60" style="width:100%">', '던지기'); if (f) send({ type: 'coin', n: +f.n, why: f.why }); return; }
@@ -952,6 +977,117 @@ function bindBoard() {
   });
 }
 
+
+// ---------- 상대 직전 턴 다시 보기 ----------
+// 상대가 마지막으로 한 차례를 처음부터 한 단계씩 천천히 다시 그림. 움직인 카드에 강조 틀, 위에 무엇을 했는지 한 줄.
+function lastOppTurn() {
+  const v = G.view, me = meSeat(); if (me == null || v.phase === 'setup') return null;
+  const on = v.p[1 - me].name;
+  const ts = G.lines.filter(l => l.turn && l.k >= 0).map(l => ({ k: l.k, who: (l.txt.match(/차례: (.+) \(/) || [])[1] }));
+  for (let i = ts.length - 1; i >= 0; i--) if (ts[i].who === on) return { k0: ts[i].k, k1: i + 1 < ts.length ? ts[i + 1].k + 1 : v.n };
+  return null;
+}
+const rwKey = t => `rw:${G.id}:${t.k0}:${t.k1}`;
+function rwSeen(t) { try { return localStorage.getItem(rwKey(t)) === '1'; } catch { return false; } }
+async function startRewatch() {
+  const t = lastOppTurn(); if (!t) return toast('다시 볼 상대 차례가 없어요.');
+  const ks = []; for (let k = t.k0; k <= t.k1; k++) ks.push(k);
+  let rs; try { rs = await Promise.all(ks.map(k => api(`/api/games/${G.id}/at?k=${k}`))); } catch (e) { return toast(e.message || '불러오지 못했어요.'); }
+  const views = {}; rs.forEach((r, i) => views[ks[i]] = { ...r.view, me: G.view.me, n: r.n, deadline: null, cfg: G.view.cfg });
+  try { localStorage.setItem(rwKey(t), '1'); } catch {}
+  G.rw = { ...t, k: t.k0, views, playing: true, timer: null, prev: null, dirty: false };
+  drawRw(false);
+  rwPlan();
+}
+function rwPlan() { // 자동 재생: 한 단계마다 천천히
+  const rw = G.rw; if (!rw) return; clearTimeout(rw.timer);
+  if (rw.playing && rw.k < rw.k1) rw.timer = setTimeout(() => rwStep(1), rw.k === rw.k0 ? 1100 : 2000);
+  else if (rw.k >= rw.k1) { rw.playing = false; }
+}
+function rwStep(d) {
+  const rw = G.rw; if (!rw) return; const nk = rw.k + d;
+  if (nk < rw.k0 || nk > rw.k1) return;
+  rw.k = nk; drawRw(d > 0); rwPlan();
+}
+function endRewatch() { const rw = G.rw; if (!rw) return; clearTimeout(rw.timer); G.rw = null; draw([]); }
+const stripWho = (txt, name) => txt.startsWith(name + ': ') ? txt.slice(name.length + 2) : txt;
+function rwLoc(v) { // 카드 번호 → 있는 곳
+  const m = new Map();
+  for (const p of [0, 1]) {
+    const P = v.p[p];
+    (P.hand || []).forEach(x => m.set(x.i, `hand:${p}`)); P.discard.forEach(x => m.set(x.i, `disc:${p}`)); P.lost.forEach(x => m.set(x.i, `lost:${p}`));
+    (P.prizes || []).forEach(x => x && m.set(x.i, `prz:${p}`));
+    for (const sl of [P.active, ...P.bench]) if (sl && !sl.hidden) [...sl.cards, ...sl.en, ...sl.tl].forEach(x => m.set(x.i, `slot:${sl.sid}`));
+  }
+  if (v.stadium) m.set(v.stadium.i, 'stad');
+  return m;
+}
+function rwTargets(a, b) { // 두 장면 사이에 바뀐 곳 (화면 요소 선택자)
+  const A = rwLoc(a), B = rwLoc(b), out = [], add = s => { if (!out.includes(s)) out.push(s); };
+  const sel = (loc, i) => { const [z, p] = loc.split(':');
+    if (z === 'slot') return `.mat [data-sid="${p}"]`; if (z === 'disc') return `.pile.disc[data-p="${p}"]`; if (z === 'lost') return `.lostc[data-p="${p}"]`;
+    if (z === 'prz') return `.prizes[data-p="${p}"]`; if (z === 'stad') return '.stadium';
+    if (z === 'hand') return +p === bottomSeat() ? `.handbar [data-k="${i}"]` : '.ohand'; return null; };
+  for (const [i, loc] of B) if (A.get(i) !== loc) { const s2 = sel(loc, i); if (s2) add(s2); }
+  const st = v => { const o = {}; for (const p of [0, 1]) [v.p[p].active, ...v.p[p].bench].forEach((sl, j) => { if (sl && !sl.hidden) o[sl.sid] = `${sl.dmg}|${JSON.stringify(sl.cond || {})}|${p}:${j ? 'b' : 'a'}`; }); return o; };
+  const sa = st(a), sb = st(b);
+  for (const sid in sb) if (sa[sid] != null && sa[sid] !== sb[sid]) add(`.mat [data-sid="${sid}"]`);
+  for (const p of [0, 1]) {
+    if (a.p[p].deck.n !== b.p[p].deck.n) add(`.pile.deck[data-p="${p}"]`);
+    if (!b.p[p].hand && a.p[p].handN !== b.p[p].handN) add('.ohand');
+    if (a.p[p].prizesN !== b.p[p].prizesN) add(`.prizes[data-p="${p}"]`);
+  }
+  return out.slice(0, 5);
+}
+function hlFrame(w, h) { // 강조 틀: 가는 선 하나, 왼쪽 위·오른쪽 아래 모서리만 비스듬히 (링크 님이 고른 모양으로 바꿀 자리)
+  const o = 2, c = Math.max(6, Math.min(12, Math.min(w, h) * .14)), f = n => n.toFixed(1);
+  const d = `M${f(o + c)} ${f(o)}H${f(w - o)}V${f(h - o - c)}L${f(w - o - c)} ${f(h - o)}H${f(o)}V${f(o + c)}Z`;
+  return `<svg viewBox="0 0 ${f(w)} ${f(h)}" aria-hidden="true"><path class="hd" pathLength="1" d="${d}" fill="none" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+}
+function rwHighlight(sels) {
+  const layer = app.querySelector('.hl-layer'), tb = app.querySelector('.table'); if (!layer || !tb) return;
+  sels.forEach(s => app.querySelectorAll(s).forEach(el => el.classList.add('rwon')));
+  setTimeout(() => { // 카드가 다 움직인 뒤에 틀을 그림
+    if (!layer.isConnected) return;
+    const T = tb.getBoundingClientRect(), m = 6;
+    layer.innerHTML = sels.flatMap(s => [...app.querySelectorAll(s)].slice(0, 1)).map(el => {
+      const r = el.getBoundingClientRect(); if (!r.width) return '';
+      const w = r.width + m * 2, h = Math.min(r.height, T.bottom - r.top) + m * 2;
+      return `<div class="hlf" style="left:${(r.left - T.left - m).toFixed(1)}px;top:${(r.top - T.top - m).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px">${hlFrame(w, h)}</div>`;
+    }).join('');
+  }, reduceMotion() ? 0 : 520);
+}
+function drawRw(forward) {
+  const rw = G.rw, live = G.view, liveLines = G.lines, me = meSeat(), on = live.p[1 - me].name;
+  const prevRects = app.querySelector('.mat') ? snapRects() : null;
+  const cur = rw.views[rw.k], before = rw.k > rw.k0 ? rw.views[rw.k - 1] : null;
+  const stepLines = before ? liveLines.filter(l => l.k === rw.k - 1) : [];
+  const caps = stepLines.filter(l => l.txt && !l.turn).map(l => esc(stripWho(l.txt, on)) + (l.own ? ` <span class="muted">(${esc(l.own)})</span>` : ''));
+  const turnL = stepLines.find(l => l.turn);
+  const cap = rw.k === rw.k0 ? '처음부터 한 단계씩 보여 드릴게요.' : caps.length ? caps.join('<br>') : turnL ? esc(turnL.txt.replace(/─/g, '').trim()) : '차례를 넘겼어요.';
+  const total = rw.k1 - rw.k0, at = rw.k - rw.k0, end = rw.k >= rw.k1;
+  G.view = cur; G.lines = liveLines.filter(l => l.k < rw.k);
+  app.innerHTML = `<div class="arena rwmode"><div class="table">${matHtml(true)}<div class="hl-layer"></div>
+    <div class="rwcap"><b class="rwh">${esc(on)} 님 차례 다시 보기</b><span class="rwt">${cap}</span></div>
+    <div class="rwbar"><button class="sm" data-rw="close">✕ 그만 보기</button><button class="sm" data-rw="prev" aria-label="이전" ${at ? '' : 'disabled'}>◀</button>
+      ${end ? '<button class="sm primary" data-rw="close">판으로 돌아가기</button>' : `<button class="sm ${rw.playing ? '' : 'primary'}" data-rw="play">${rw.playing ? '⏸ 멈춤' : '▶ 재생'}</button>`}
+      <button class="sm" data-rw="next" aria-label="다음" ${end ? 'disabled' : ''}>▶</button><span class="pill">${at} / ${total}</span></div></div></div>`;
+  app.querySelectorAll('[data-rw]').forEach(b => b.onclick = () => {
+    const k = b.dataset.rw;
+    if (k === 'close') return endRewatch();
+    if (k === 'play') { rw.playing = !rw.playing; drawRw(false); rwPlan(); return; }
+    rw.playing = false; rwStep(k === 'next' ? 1 : -1);
+  });
+  flip(prevRects);
+  if (before) {
+    if (forward && rw.prev) { effects(rw.prev, stepLines); gameSounds(rw.prev, stepLines); }
+    const sels = rwTargets(before, cur);
+    sels.forEach(s => { if (s.startsWith('.handbar')) app.querySelector(s)?.classList.add('rwlift'); });
+    rwHighlight(sels);
+  }
+  rw.prev = JSON.parse(JSON.stringify(cur));
+  G.view = live; G.lines = liveLines;
+}
 
 // ---------- 기보 다시 보기 ----------
 async function renderReplay(id, k0) {
@@ -967,7 +1103,8 @@ async function renderReplay(id, k0) {
     const r = await api(`/api/games/${id}/at?k=${RG.k}`);
     const prev = app.querySelector('.mat') ? snapRects() : null;
     G = { id, view: { ...r.view, me: info.me, n: r.n, deadline: null }, lines: info.lines.filter(l => l.k < RG.k), cards: info.cards, specs: [], ui: {} };
-    const lines = info.lines.map(l => `<div class="ln ${l.turn ? 'turn' : ''} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''} ${l.k === RG.k - 1 ? 'cur' : l.k >= RG.k ? 'later' : ''}" data-k2="${l.k + 1}">${l.gid ? '<span class="chip judge">사람 판정</span> ' : ''}${l.chat ? `<b>${esc(info.players[l.who])}</b> ` : ''}${esc(l.txt)}${l.own ? ` <span class="own">(${esc(l.own)})</span>` : ''}</div>`).join('');
+    const pos = l => `${l.k === RG.k - 1 ? 'cur' : l.k >= RG.k ? 'later' : ''}" data-k2="${l.k + 1}`;
+    const lines = logBlocks(info.lines, (l, o, head) => head ? `class="${pos(l)}"` : `<div class="ln ${o.cls} ${l.chat ? 'chat' : ''} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''} ${pos(l)}">${l.gid ? '<span class="chip judge">사람 판정</span> ' : ''}${esc(l.chat ? l.txt : o.txt)}${l.own ? ` <span class="own">(${esc(l.own)})</span>` : ''}</div>`);
     app.innerHTML = `<div class="arena replay"><div class="table">
         <div class="replaybar"><span class="pill">${info.over ? '끝난 판 · 모두 공개' : '진행 중 · 내가 볼 수 있는 것만'}</span>
           <button class="rb" data-j="turnPrev">⏮</button><button class="rb" data-j="prev">◀</button><button class="rb" data-j="play">${RG.timer ? '⏸' : '▶ 재생'}</button><button class="rb" data-j="next">▶</button><button class="rb" data-j="turnNext">⏭</button>
@@ -992,4 +1129,11 @@ async function renderReplay(id, k0) {
 }
 
 document.addEventListener('error', e => { const im = e.target; if (im.tagName === 'IMG' && !im.dataset.f) { im.dataset.f = 1; const d = document.createElement('div'); d.className = 'ph'; d.textContent = im.alt || '카드'; d.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.72rem;padding:2px;word-break:keep-all;aspect-ratio:63/88'; im.replaceWith(d); } }, true);
+// 잔잔한 배경: 천천히 흐르는 구름 몇 겹, 아주 느리게 도는 햇살, 아래에서 떠오르는 빛 알갱이 (움직임 줄이기 설정이면 멈춤)
+(function ambient() {
+  let seed = 7; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const clouds = Array.from({ length: 6 }, (_, i) => `<i class="cl" style="--w:${Math.round(90 + r() * 120)}px;--y:${Math.round(6 + r() * 58)}vh;--o:${(.5 + r() * .4).toFixed(2)};--d:${Math.round(110 + r() * 90)}s;--dl:${-Math.round(r() * 200)}s"></i>`).join('');
+  const motes = Array.from({ length: 16 }, () => `<i class="mo" style="--x:${Math.round(r() * 100)}vw;--s:${Math.round(4 + r() * 7)}px;--o:${(.35 + r() * .45).toFixed(2)};--sw:${Math.round(-40 + r() * 80)}px;--d:${Math.round(16 + r() * 14)}s;--dl:${-Math.round(r() * 30)}s"></i>`).join('');
+  document.body.insertAdjacentHTML('afterbegin', `<div id="amb" aria-hidden="true"><i class="rays"></i><i class="sun"></i>${clouds}${motes}</div>`);
+})();
 route();
