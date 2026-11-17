@@ -68,16 +68,19 @@ def pk_key_kr(c):
     wk = (c.get('weakness') or {}).get('type')
     return (c.get('hp'), at, (TY.get(wk, wk),) if wk else (), c.get('retreat') or 0)
 
+NORMAL = {None, 'C', 'U', 'R', 'RR', 'ACE'}
+def tier(k):
+    """일반 판(C·U·R·RR) 먼저, AR, 그다음 SR·SAR·UR 등 특별 판."""
+    r = k.get('rarity')
+    return 0 if r in NORMAL else 1 if r == 'AR' else 2
 def pick(cid, cands):
-    """같은 카드 여러 판 중 그림이 같은 판을 고른다: 그림 지문 > 작가 > 레어도."""
-    meta = en_meta.get(cid, {}); art, rar = meta.get('artist', ''), meta.get('rar', '')
+    """같은 카드 여러 판 중 일반 판을 먼저, 그 안에서 그림이 닮은 판(그림 지문·작가), 그다음 낮은 번호."""
+    meta = en_meta.get(cid, {}); art = meta.get('artist', '')
     def score(k):
         s = -min(hd(cid, k['code']), 200)
         if art and (k.get('illustrator') or '').strip().lower() == art: s += 40
-        if rar and k.get('rarity') == rar: s += 20
-        if not rar and k.get('rarity') in ('C', 'U', 'R', None): s += 5
         return -s
-    return sorted(cands, key=lambda k: (score(k), k.get('code') or ''))[0]
+    return sorted(cands, key=lambda k: (tier(k), score(k), k.get('code') or ''))[0]
 
 kr_pk = collections.defaultdict(list)
 kr_tr = collections.defaultdict(list)      # (종류, 레귤레이션) → 카드
