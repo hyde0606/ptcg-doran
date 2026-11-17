@@ -138,8 +138,12 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 /* 선택 창: 흰 둥근 창, 위에 링 색 띠 */
 .sheet { position: fixed; inset: 0; background: rgba(30, 60, 90, .32); z-index: 90; display: flex; align-items: center; justify-content: center; animation: fade .18s; backdrop-filter: blur(3px); padding: 12px; }
 @keyframes fade { from { opacity: 0; } }
-.sheet > .in { background: linear-gradient(90deg, var(--r1), var(--r2)) top / 100% 6px no-repeat, #fff; width: min(640px, 100%); max-height: 88vh; overflow: auto; border-radius: 28px; padding: 22px 20px 20px; animation: pop .26s cubic-bezier(.2, .9, .3, 1.25); box-shadow: 0 20px 50px rgba(30, 60, 90, .3); }
+.sheet > .in { background: #fff; width: min(640px, 100%); max-height: 88vh; overflow: auto; border-radius: 28px; padding: 22px 20px 20px; animation: pop .26s cubic-bezier(.2, .9, .3, 1.25); box-shadow: 0 20px 50px rgba(30, 60, 90, .3); }
 @keyframes pop { from { transform: scale(.88); opacity: 0; } }
+/* 위쪽 색 띠는 내용이 아래로 지나가도 덮이지 않게 붙어 있음 (sticky) + 밑에 흰 번짐 */
+.sheet > .in::before, .dockin::before { content: ''; display: block; position: sticky; top: 0; z-index: 6; height: 16px; margin: -22px -20px 6px; pointer-events: none;
+  background: linear-gradient(90deg, var(--r1), var(--r2)) 0 0 / 100% 6px no-repeat, linear-gradient(#fff, rgba(255, 255, 255, 0)) 0 6px / 100% 10px no-repeat; }
+.dockin::before { margin: -12px -14px -10px; grid-column: 1 / -1; }
 @media (max-width: 600px) { .sheet { align-items: flex-end; padding: 0; } .sheet > .in { border-radius: 28px 28px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); animation-name: up; } }
 @keyframes up { from { transform: translateY(60px); opacity: .4; } }
 .sheet .acts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
@@ -617,7 +621,7 @@ body.mat-night .hlf.soft svg, body.mat-dark .hlf.soft svg { filter: drop-shadow(
 .dock { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100% - 24px)); max-height: 64%; z-index: 30; display: flex; flex-direction: column; }
 .dock.enter { animation: dockin .3s cubic-bezier(.2,.9,.3,1.2); }
 @keyframes dockin { from { transform: translate(-50%, -44%) scale(.92); opacity: 0; } }
-.dockin { overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 10px; padding: 12px 14px 14px; border-radius: 28px; background: linear-gradient(90deg, var(--r1), var(--r2)) top / 100% 6px no-repeat, #fff; color: var(--text); box-shadow: 0 20px 50px rgba(30, 60, 90, .3); }
+.dockin { overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 10px; padding: 12px 14px 14px; border-radius: 28px; background: #fff; color: var(--text); box-shadow: 0 20px 50px rgba(30, 60, 90, .3); }
 .dockh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 2px 0; }
 .dockh .dtt { font-family: var(--fh); font-weight: 400; font-size: 1.12rem; color: var(--head); display: inline-flex; align-items: center; gap: 7px; }
 .dockh .dtt::before { content: ''; width: 1.05em; height: 1.05em; border-radius: 50%; background: radial-gradient(circle, #fff 0 17%, var(--band) 18% 30%, transparent 31%), linear-gradient(#fff 0 45%, var(--band) 45% 55%, #fff 55%); box-shadow: inset 0 0 0 2.5px var(--r2); }
