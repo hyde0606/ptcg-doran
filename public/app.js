@@ -230,13 +230,18 @@ function cardInfoHtml(c) {
 
 // ---------- 대전 ----------
 let G = null; // { id, view, lines, cards, ws, pend:{}, specs, ui }
-function cinfo(cid) { return (G && G.cards[cid]) || (IDX && IDX.byId[cid]) || { n: '?' }; }
+function cinfo(cid) { // 판에 저장된 카드 정보 + 지금 카드 자료의 한글 이름·그림·문장
+  const base = (G && G.cards[cid]) || (IDX && IDX.byId[cid]) || { n: '?' };
+  const cur = IDX && IDX.byId[cid];
+  return cur && cur.kn && !base.kn ? { ...base, kn: cur.kn, kimg: cur.kimg, kab: cur.kab, kat: cur.kat, kr: cur.kr } : base;
+}
 const nmOf = x => x ? cname(cinfo(x.c)) : '?';
 const topOf = sl => sl.cards[sl.cards.length - 1];
 
 const TYPE_CH = { Grass: '풀', Fire: '불', Water: '물', Lightning: '번', Psychic: '초', Fighting: '격', Darkness: '악', Metal: '강', Dragon: '드', Colorless: '무' };
 
 function renderGame(id) {
+  loadCards().then(() => { if (G && G.view && G.id === id) draw([]); }).catch(() => {});
   G = { id, view: null, lines: [], cards: {}, pend: {}, seq: 1, specs: [], ui: { tab: 'log', dockOpen: true }, prev: null };
   app.innerHTML = '<div class="arena-loading"><div class="spin-ball"></div><p>판에 연결하는 중…</p></div>';
   document.body.classList.add('in-game');
@@ -707,6 +712,7 @@ async function renderReplay(id, k0) {
   app.innerHTML = '<div class="arena-loading"><div class="spin-ball"></div><p>기보를 불러오는 중…</p></div>';
   document.body.classList.add('in-game');
   leaveGame = () => document.body.classList.remove('in-game');
+  loadCards().catch(() => {});
   let info; try { info = await api(`/api/games/${id}/info`); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
   const RG = { id, cards: info.cards, n: info.n, lines: info.lines, k: k0 >= 0 ? Math.min(k0, info.n) : info.n, timer: null };
   const turns = info.lines.filter(l => l.turn && l.k >= 0).map(l => l.k);

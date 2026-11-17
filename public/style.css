@@ -209,7 +209,7 @@ label.h { display: block; color: var(--head); margin: 12px 0 4px; }
 /* 손패 (아래에 겹쳐서) */
 .handbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 21; pointer-events: none; }
 .fan { display: flex; justify-content: center; align-items: flex-end; padding: 0 90px 0 10px; height: calc(var(--cw) * 1.05); pointer-events: none; }
-.pc.inhand { pointer-events: auto; width: calc(var(--cw) * 1.25); margin-left: calc(var(--cw) * -.42 - var(--n) * 1px); transform: translateY(calc(var(--cw) * .62)) rotate(calc((var(--i) - var(--m)) * 3deg)) translateY(calc((var(--i) - var(--m)) * (var(--i) - var(--m)) * .8px)); transform-origin: 50% 130%; cursor: pointer; transition: transform .2s cubic-bezier(.2,.8,.2,1.2), margin .2s; box-shadow: 0 6px 14px rgba(20, 50, 40, .4); border: 2px solid #fff; }
+.pc.inhand { pointer-events: auto; width: calc(var(--cw) * 1.25); margin-left: calc(var(--cw) * -.42 - var(--n) * 1px); transform: translateY(calc(var(--cw) * .42)) rotate(calc((var(--i) - var(--m)) * 3deg)) translateY(calc((var(--i) - var(--m)) * (var(--i) - var(--m)) * .8px)); transform-origin: 50% 130%; cursor: pointer; transition: transform .2s cubic-bezier(.2,.8,.2,1.2), margin .2s; box-shadow: 0 6px 14px rgba(20, 50, 40, .4); border: 2px solid #fff; }
 .pc.inhand:first-child { margin-left: 0; }
 .pc.inhand:hover, .pc.inhand:focus { transform: translateY(calc(var(--cw) * -.15)) scale(1.18); z-index: 10; margin-right: calc(var(--cw) * .3); }
 .handbar.peek .pc.inhand { cursor: default; }
@@ -292,7 +292,10 @@ label.h { display: block; color: var(--head); margin: 12px 0 4px; }
   .topbar .pill { font-size: .78rem; padding: 2px 10px; }
   .topbar .pill.ghost { display: none; }
   .hud.opp { max-width: 58%; }
-  .matwrap { padding-top: 60px; }
+  .matwrap { padding-top: 66px; }
+  .handbar { bottom: 0; }
+  .pc.inhand { transform: translateY(calc(var(--cw) * .3)) rotate(calc((var(--i) - var(--m)) * 3deg)); }
+  .fabs { bottom: calc(var(--cw) * 1.25 + 14px); }
   .ticker { display: none; }
   .arena.replay { grid-template-columns: minmax(0, 1fr); } .arena.replay .panel { display: none; }
 }
