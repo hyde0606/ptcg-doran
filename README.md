@@ -18,6 +18,7 @@
 | `src/worker.js` | Cloudflare Worker + Durable Objects (로비: 회원·덱·방 / 판마다 하나: 행동 기록, 숨긴 정보, 실시간 연결, 기한 알람) |
 | `public/app.js` | 화면 |
 | `tools/build-cards.py` | 카드 자료에서 `public/cards.json` 만들기 (저장소에는 넣지 않음) |
+| `tools/build-cards-kr.py` | `public/cards.json`에 한글 이름·문장·그림 덧붙이기 (방법은 `tools/KR_CARDS.md`) |
 
 카드 문장·그림 주소가 든 `public/cards.json`은 저작권 때문에 저장소에 올리지 않고 배포할 때 만들어요.
 
@@ -47,4 +48,4 @@ npx wrangler deploy
 - 카카오 로그인 (지금은 이름 + 모임 입장 코드)
 - 실시간 판의 플레이어별 남은 시간, 웹 푸시·카톡 알림
 - 다면기 방, 3판 2선승 시간 종료 처리, 대회 대진 연결, 전적·랭킹 반영
-- 한글 카드 문장 (카드 자료 작업이 끝나면 반영)
+- 한글 짝을 못 찾은 카드 53장 (영문 이름으로 나옴)
