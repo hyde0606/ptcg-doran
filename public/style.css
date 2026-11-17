@@ -585,7 +585,7 @@ body.mat-night .hlf svg, body.mat-dark .hlf svg { filter: drop-shadow(0 0 .6px r
   .arena.rwmode .handbar { bottom: var(--rwph, 116px); } .arena.rwmode .matwrap { padding-bottom: calc(var(--cw) * .9 + var(--rwph, 116px)); }
   .rwpanel { left: max(6px, env(safe-area-inset-left, 0px)); right: max(6px, env(safe-area-inset-right, 0px)); width: auto; top: auto; bottom: 6px; gap: 6px; padding: 8px 10px; border-radius: 18px; }
   .rwpanel .rwcap { display: block; min-height: calc(1.45em * 3); font-size: .8rem; line-height: 1.45; } .rwpanel .rwcap.long { font-size: .74rem; }
-  .rwpanel .rwh { display: inline; font-size: .72rem; padding: 1px 9px; margin-right: 6px; } .rwpanel .rwt { font-size: inherit; line-height: inherit; }
+  .rwpanel .rwh { display: inline; font-size: .72rem; line-height: 1.45; padding: 0 9px; margin-right: 6px; } .rwpanel .rwt { font-size: inherit; line-height: inherit; }
   .rwbar { justify-content: center; gap: 4px; } .rwbar > button:first-child { flex-basis: auto; }
   .rwbar button { min-height: 36px; padding: 2px 10px; } .rwbar .rwgo { flex: 0 1 auto; } .rwbar .pill { padding: 0 8px; }
   @media (max-width: 340px) { .rwbar button { padding: 2px 7px; } .rwpanel { padding: 8px 6px; } }

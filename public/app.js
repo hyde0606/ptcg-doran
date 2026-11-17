@@ -619,7 +619,8 @@ function flip(prev) {
     if (!o) { el.animate([{ transform: 'scale(.6)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1.2)' }); return; }
     const dx = o.left - r.left, dy = o.top - r.top, sx = o.width / (r.width || 1);
     if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
-    el.animate([{ transform: `translate(${dx}px,${dy}px) scale(${sx})`, zIndex: 30 }, { transform: 'none', zIndex: 30 }], { duration: 480, easing: 'cubic-bezier(.25,.8,.25,1)' });
+    const base = getComputedStyle(el).transform, b = base && base !== 'none' ? base : ''; // 손패처럼 원래 내려가 있는 카드는 그 자리로 돌아오게
+    el.animate([{ transform: `translate(${dx}px,${dy}px) ${b} scale(${sx})`, zIndex: 30 }, { transform: b || 'none', zIndex: 30 }], { duration: 480, easing: 'cubic-bezier(.25,.8,.25,1)' });
   });
 }
 function effects(prevView, newLines) {
