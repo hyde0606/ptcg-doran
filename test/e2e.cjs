@@ -16,6 +16,7 @@ const OUT = __dirname + '/out/';
   const b = await chromium.launch();
   const mk = async (name, w = 390, h = 844) => {
     const ctx = await b.newContext({ viewport: { width: w, height: h } });
+    await ctx.route(/images\.pokemontcg\.io/, r => { const u = r.request().url(); let h = 0; for (const ch of u) h = (h * 31 + ch.charCodeAt(0)) % 360; r.fulfill({ contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 63 88"><rect width="63" height="88" rx="3" fill="#f5d142"/><rect x="3" y="3" width="57" height="82" rx="2" fill="hsl(${h},55%,62%)"/><rect x="6" y="12" width="51" height="34" fill="hsl(${(h+40)%360},60%,80%)"/><circle cx="31" cy="29" r="11" fill="hsl(${(h+180)%360},50%,45%)"/><rect x="6" y="52" width="51" height="4" fill="#fff8"/><rect x="6" y="60" width="40" height="3" fill="#fff8"/><rect x="6" y="66" width="46" height="3" fill="#fff8"/></svg>` }); });
     const p = await ctx.newPage();
     p.on('pageerror', e => errs.push(name + ': ' + e.message));
     p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errs.push(name + ' console: ' + m.text()); });
@@ -42,10 +43,10 @@ const OUT = __dirname + '/out/';
   await A.waitForTimeout(400);
   await B.goto(BASE + '/#lobby'); await B.waitForSelector('[data-tab=open]'); await B.click('[data-tab=open]');
   await B.click('[data-join]'); await B.click('.sheet [data-i="0"]');
-  await B.waitForSelector('.half.me');
+  await B.waitForSelector('.area.bottom');
   const gameUrl = B.url();
-  await A.goto(gameUrl); await A.waitForSelector('.half.me');
-  const S = await mk('관전자'); await S.goto(gameUrl); await S.waitForSelector('.half');
+  await A.goto(gameUrl); await A.waitForSelector('.area.bottom');
+  const S = await mk('관전자'); await S.goto(gameUrl); await S.waitForSelector('.area');
   for (const p of [A, B]) { const o = await p.$('[data-order="1"]'); if (o) await o.click(); }
   await A.waitForTimeout(300);
   for (const p of [A, B]) {
@@ -64,12 +65,12 @@ const OUT = __dirname + '/out/';
     await p.click('[data-t=setupDone]'); await p.waitForTimeout(300);
     const warn = await p.$('.sheet [data-ok]'); if (warn) { await warn.click(); await p.waitForTimeout(300); }
   }
-  await A.waitForSelector('.center .chip.turn'); await A.waitForTimeout(300);
-  console.log('차례:', await A.textContent('.center .chip.turn'));
+  await A.waitForSelector('.midline .turnchip'); await A.waitForTimeout(300);
+  console.log('차례:', await A.textContent('.midline .turnchip'));
   if ((await S.$$('[data-hand]')).length) errs.push('관전자에게 손패가 보임');
   await S.screenshot({ path: OUT + 'spec.png' });
-  const cur = (await A.$('.half.me.now')) ? A : B, oth = cur === A ? B : A;
-  const energies = async () => { const out = []; for (const h of await cur.$$('[data-hand]')) { if (/Energy|에너지/.test(await h.textContent())) out.push(h); } return out; };
+  const cur = (await A.$('.area.bottom.now')) ? A : B, oth = cur === A ? B : A;
+  const energies = async () => { const out = []; for (const h of await cur.$$('[data-hand]')) { if (/Energy|에너지/.test(await h.innerHTML())) out.push(h); } return out; };
   let en = await energies();
   if (en.length >= 2) {
     await en[0].click(); await cur.click('.sheet .acts button.primary'); await cur.click('.sheet .acts button'); await cur.waitForTimeout(300);
@@ -77,25 +78,25 @@ const OUT = __dirname + '/out/';
     const w = await cur.textContent('.sheet .in'); if (!/이미 에너지/.test(w)) errs.push('에너지 2번째 경고 없음: ' + w.slice(0, 60));
     await cur.fill('.sheet input[name=note]', '시험: 특성 효과'); await cur.click('.sheet [data-ok]'); await cur.waitForTimeout(400);
     await oth.waitForSelector('.grp [data-dispute]');
-    await oth.screenshot({ path: OUT + 'judge.png', fullPage: true });
+    await oth.waitForTimeout(1500); await oth.screenshot({ path: OUT + 'judge.png', fullPage: true });
     await oth.click('.grp [data-dispute]'); await oth.fill('.sheet input[name=t]', '에너지는 한 번만'); await oth.click('.sheet [data-ok]'); await oth.waitForTimeout(300);
     await oth.click('[data-rwask]'); await oth.waitForTimeout(300);
     await cur.waitForSelector('[data-rwok]'); await cur.click('[data-rwok]'); await cur.click('.sheet [data-ok]'); await cur.waitForTimeout(600);
-    if (!/되돌렸어요/.test(await cur.textContent('#log'))) errs.push('되돌리기 기록 없음');
+    if (!/되돌렸어요/.test(await cur.textContent('.panel .log'))) errs.push('되돌리기 기록 없음');
   } else console.log('에너지 부족, 경고 시험 건너뜀');
-  await cur.screenshot({ path: OUT + 'game-cur.png', fullPage: true });
+  await cur.waitForTimeout(1500); await cur.screenshot({ path: OUT + 'game-cur.png', fullPage: true });
   await oth.screenshot({ path: OUT + 'game-oth.png', fullPage: true });
   await cur.click('[data-t=endTurn]'); await cur.waitForTimeout(500);
-  console.log('다음:', await oth.textContent('.center .chip.turn'));
+  console.log('다음:', await oth.textContent('.midline .turnchip'));
   await A.goto(gameUrl.replace('#game', '#replay')); await A.waitForSelector('#rk');
   await A.click('[data-j=prev]'); await A.waitForTimeout(300); await A.click('[data-j=turnPrev]'); await A.waitForTimeout(400);
   await A.screenshot({ path: OUT + 'replay.png', fullPage: true });
-  await B.goto(gameUrl); await B.waitForSelector('.half.me');
+  await B.goto(gameUrl); await B.waitForSelector('.area.bottom');
   for (const w of [260, 360, 390, 768, 1280]) {
     await B.setViewportSize({ width: w, height: 800 }); await B.waitForTimeout(150);
     const sw = await B.evaluate(() => document.documentElement.scrollWidth); if (sw > w + 1) errs.push(`판 폭 ${w}: 가로 넘침 ${sw}`);
   }
-  await B.screenshot({ path: OUT + 'game-1280.png', fullPage: true });
+  await B.setViewportSize({ width: 1280, height: 860 }); await B.waitForTimeout(1500); await B.screenshot({ path: OUT + 'game-1280.png' }); await B.setViewportSize({ width: 390, height: 844 }); await B.click('[data-dock]').catch(()=>{}); await B.waitForTimeout(800); await B.screenshot({ path: OUT + 'game-390.png' });
   await B.goto(BASE + '/#lobby'); await B.waitForSelector('.tabs');
   for (const w of [260, 360]) { await B.setViewportSize({ width: w, height: 800 }); await B.waitForTimeout(150); const sw = await B.evaluate(() => document.documentElement.scrollWidth); if (sw > w + 1) errs.push(`로비 폭 ${w}: 넘침 ${sw}`); }
   await B.screenshot({ path: OUT + 'lobby-360.png' });
