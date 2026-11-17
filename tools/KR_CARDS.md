@@ -17,7 +17,8 @@ node tools/kr-art-hash.cjs "F:\AI\17_포켓몬 카드" public/cards.json card-sr
 python tools/build-cards-kr.py "F:\AI\17_포켓몬 카드\data\kr\cards_kr.json" --en card-src/cards_en.json --hash card-src/art_hash.json --match card-src/kr_match.json -v
 ```
 
-- `--match` (선택): 자동으로 못 맞춘 카드를 손으로 정한 표. `{"영문 id": "한글 code"}` 꼴이고 `_`로 시작하는 키는 메모로 본다. 트레이너스는 한 판만 적어도 같은 영문 이름의 다른 판이 모두 그 한글 카드를 쓴다.
+- `--match` (선택): 자동으로 못 맞춘 카드를 손으로 정한 표. `{"영문 id": "한글 code"}` 꼴이고 `_`로 시작하는 키는 메모로 본다. 트레이너스는 한 판만 적어도 같은 영문 이름의 다른 판이 모두 그 한글 카드를 쓴다. 한글 code는 레귤레이션과 상관없이 찾으므로 한글판이 G 마크뿐인 카드(부스트 에너지 고대 등)도 짝지을 수 있다.
+  - `"fix:<한글 code>": {"hp": 70}`처럼 적으면 한글 원본에 빠진 칸을 채운 뒤 짝짓는다.
 - 다시 돌려도 된다. 지난번에 넣은 한국판 카드(`kro`)는 지우고 새로 만든다.
 - 카드 자료를 바꾼 뒤에는 `wrangler dev`를 껐다 켜야 서버의 덱 검사도 새 카드를 안다.
 

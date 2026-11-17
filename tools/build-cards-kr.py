@@ -4,6 +4,8 @@
 # - --en          : (선택) 영문 원본. 그림 작가·레어도로 같은 그림의 한글판을 고르는 데 쓴다.
 # - --hash        : (선택) tools/kr-art-hash.cjs 가 만든 그림 지문. 트레이너스 짝짓기와 같은 그림 고르기에 쓴다.
 # - --match       : (선택) 손으로 정한 짝 {"영문 id": "한글 code"}. 자동 짝짓기보다 먼저 쓴다. "_" 로 시작하는 키는 메모.
+#                   한글 code 는 레귤레이션과 상관없이 찾는다(G 마크뿐인 한글판도 쓸 수 있음).
+#                   "fix:<한글 code>": {"hp": 70} 처럼 적으면 한글 원본에 빠진 칸을 채운다.
 # 덧붙이는 칸: kn, kimg, kab, kat, kr, kset, kno  (n 등 기존 칸은 그대로 둔다)
 # 새로 넣는 한국판 카드: id 는 "kr-<한글 code>", kro=1, 이름·기술·문장은 한글 그대로
 import json, sys, re, collections
@@ -43,7 +45,11 @@ if EN_SRC:
         en_meta[c['id']] = {'artist': (c.get('artist') or '').strip().lower(), 'rar': RAR.get(c.get('rarity') or '', '')}
 H = json.load(open(HASH_SRC, encoding='utf-8')) if HASH_SRC else {'en': {}, 'kr': {}}
 HI = {k: {i: int(h, 16) for i, h in H[k].items()} for k in ('en', 'kr')}
-MANUAL = {k: v for k, v in json.load(open(MATCH_SRC, encoding='utf-8')).items() if not k.startswith('_')} if MATCH_SRC else {}
+MATCH = json.load(open(MATCH_SRC, encoding='utf-8')) if MATCH_SRC else {}
+MANUAL = {k: v for k, v in MATCH.items() if not k.startswith(('_', 'fix:'))}
+FIX = {k[4:]: v for k, v in MATCH.items() if k.startswith('fix:')}
+for k in kr_all:
+    if k.get('code') in FIX: k.update(FIX[k['code']])
 def hd(en_id, kr_code):
     a, b = HI['en'].get(en_id), HI['kr'].get(kr_code)
     return bin(a ^ b).count('1') if a is not None and b is not None else 999
@@ -59,7 +65,8 @@ def kr_basic_energy(c):
     return BASIC_E.fullmatch(c.get('name') or '') is not None and '특수' not in (c.get('card_kind') or '')
 def kr_std(c): return c.get('regulation_mark') in ('H', 'I', 'J') or kr_basic_energy(c)
 kr = [c for c in kr_all if kr_std(c)]
-by_code = {k['code']: k for k in kr}
+by_code = {k['code']: k for k in kr_all}  # 손으로 정한 짝은 표준 밖 판(G 등)도 찾는다
+is_pk = lambda k: k.get('tab') == '포켓몬' or bool(k.get('hp'))  # HP 가 빠진 포켓몬도 포켓몬으로
 
 def kr_kind(c):
     k = c.get('card_kind') or ''
@@ -154,7 +161,7 @@ trans.update({key: cnt.most_common(1)[0][0] for key, cnt in votes.items()})
 manual_names = {}  # 손으로 정한 트레이너스 짝: 같은 영문 이름의 다른 판도 같은 한글 카드로
 for c in cards:
     k = by_code.get(MANUAL.get(c['id']))
-    if k and c['st'] != 'P' and en_kind(c): manual_names[c['n']] = [x for x in kr if sp(x['name']) == sp(k['name']) and not x.get('hp')]
+    if k and c['st'] != 'P' and en_kind(c): manual_names[c['n']] = [x for x in kr_all if sp(x['name']) == sp(k['name']) and not is_pk(x)]
 
 def kr_rules(k, pokemon):
     rules = [a.get('text') for a in k.get('attacks') or [] if is_rule(a) and a.get('text')]
@@ -183,7 +190,7 @@ def overlay(c, k):
 def ident(k):
     """같은 카드(다른 판 포함)를 가리키는 열쇠."""
     if kr_basic_energy(k): return ('E', sp(k['name']))
-    if k.get('hp'): return ('P', sp(k['name']), pk_key_kr(k))
+    if is_pk(k): return ('P', sp(k['name']), pk_key_kr(k))
     return ('T', kr_kind(k), sp(k['name']))
 
 stat = collections.Counter(); far = 0; how = collections.Counter(); covered = set()
@@ -217,7 +224,7 @@ def kr_sub(k):
     parts = [p.strip() for p in ck.split('|')]
     s = []
     if kr_basic_energy(k): return ['Basic']
-    if k.get('hp'):
+    if is_pk(k):
         s.append(next((en for ko, en in STAGE if parts[0].startswith(ko)), 'Basic'))
         if '메가진화' in ck: s.append('MEGA')
         if any((a.get('name') or '').strip() == '테라스탈' for a in k.get('attacks') or []): s.append('Tera')
@@ -227,10 +234,10 @@ def kr_sub(k):
         s += [en for en, ko in KIND.items() if kind.startswith(ko)] or (['Special'] if '특수 에너지' in kind else [])
     if '고대' in parts: s.append('Ancient')
     if '미래' in parts: s.append('Future')
-    if not k.get('hp') and (k.get('rarity') == 'ACE' or 'ACE SPEC' in (k.get('text') or '')): s.append('ACE SPEC')
+    if not is_pk(k) and (k.get('rarity') == 'ACE' or 'ACE SPEC' in (k.get('text') or '')): s.append('ACE SPEC')
     return s
 def kr_card(k):
-    pokemon = bool(k.get('hp'))
+    pokemon = is_pk(k)
     st = 'P' if pokemon else 'E' if (kr_basic_energy(k) or '에너지' in (k.get('card_kind') or '')) else 'T'
     name = (k.get('name') or '').strip()
     c = {'id': 'kr-' + k['code'], 'kro': 1, 'n': name, 'kn': name, 'st': st, 'sub': kr_sub(k),
@@ -239,7 +246,7 @@ def kr_card(k):
     if kr_basic_energy(k):
         c['n'] = 'Basic ' + TY.get(BASIC_E.fullmatch(name).group(1), 'Colorless') + ' Energy'  # 판에서 에너지 타입을 이 이름으로 읽는다
     if pokemon:
-        c['hp'] = k['hp']
+        c['hp'] = k.get('hp')
         if k.get('type'): c['ty'] = [TY.get(k['type'], k['type'])]
         c['ab'] = [{'n': a.get('name') or '', 't': a.get('text') or ''} for a in k.get('abilities') or []]
         c['at'] = [{'n': a.get('name') or '', 'c': [TY.get(x, x) for x in a.get('cost') or []], 'd': str(a.get('damage') or ''), 't': a.get('text') or ''} for a in kr_attacks(k)]
@@ -267,7 +274,7 @@ print(json.dumps({
     'matched_by': dict(how), 'manual_pairs': len(MANUAL),
     'picked_print_art_differs': far,
     'kr_std_cards': len(kr), 'kr_kinds': kr_kinds, 'kr_kinds_linked': kr_kinds - len(groups),
-    'kr_only_added': len(added), 'kr_only_by_type': dict(collections.Counter(c['st'] for c in added)),
+    'kr_only_added': len(added), 'kr_only_no_hp': [c['id'] for c in added if c['st'] == 'P' and not c.get('hp')], 'kr_only_by_type': dict(collections.Counter(c['st'] for c in added)),
     'trainer_names_translated': len(trans),
 }, ensure_ascii=False))
 if VERBOSE:
