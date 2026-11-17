@@ -18,7 +18,9 @@ async function api(path, body, method) {
 }
 function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
 async function loadCards() { if (!ALL) { ALL = await (await fetch('/cards.json')).json(); IDX = indexCards(ALL); } return ALL; }
-const cname = c => { if (!c) return '?'; if (!c.ko) return c.n; let k = c.ko; if (/^Mega /.test(c.n)) k = '메가' + k; if (/ ex$/.test(c.n)) k += ' ex'; return k; };
+const cimg = c => c && (c.kimg || c.img);
+const bigImg = c => c ? (c.kimg || (c.img ? c.img.replace(/\.png$/, '_hires.png') : null)) : null;
+const cname = c => { if (!c) return '?'; if (c.kn) return c.kn; if (!c.ko) return c.n; let k = c.ko; if (/^Mega /.test(c.n)) k = '메가' + k; if (/ ex$/.test(c.n)) k += ' ex'; return k; };
 
 // ---------- 선택 창 (뒤로 가기로 닫힘) ----------
 const sheetStack = [];
@@ -178,7 +180,7 @@ function deckEditor(deck) {
       <div id="res" class="cardgrid"></div></div>
     <div class="side"><div class="card-box"><h3>덱 리스트 <span id="cnt" class="chip"></span></h3><div id="lst" class="cardgrid"></div></div>
       <div class="card-box"><h3>리스트 붙여 넣기</h3><p class="small muted">PTCGL에서 내보낸 덱 리스트를 붙여 넣으면 지금 리스트를 바꿔요.</p><textarea id="paste" placeholder="4 Pikachu ex SVP 106&#10;..."></textarea><button id="imp" class="blue" style="margin-top:6px">불러오기</button><div id="bad" class="small"></div></div></div></div>`;
-  const card = (c, n, on) => `<div class="c ${on ? 'on' : ''}" data-id="${c.id}">${c.img ? `<img loading="lazy" referrerpolicy="no-referrer" src="${c.img}" alt="${esc(cname(c))}">` : `<div class="ph">${esc(cname(c))}</div>`}${n ? `<span class="n">${n}</span>` : ''}<div>${esc(cname(c))}</div><div class="muted">${esc(c.set || '')} ${esc(c.no || '')}</div></div>`;
+  const card = (c, n, on) => `<div class="c ${on ? 'on' : ''}" data-id="${c.id}">${cimg(c) ? `<img loading="lazy" referrerpolicy="no-referrer" src="${cimg(c)}" alt="${esc(cname(c))}">` : `<div class="ph">${esc(cname(c))}</div>`}${n ? `<span class="n">${n}</span>` : ''}<div>${esc(cname(c))}</div><div class="muted">${esc(c.set || '')} ${esc(c.no || '')}</div></div>`;
   const drawList = () => {
     const ch = checkDeck(list, IDX);
     $('#cnt').textContent = count() + ' / 60';
@@ -217,24 +219,29 @@ function deckEditor(deck) {
 function cardInfoHtml(c) {
   if (!c) return '<p>카드 정보가 없어요.</p>';
   const cost = cs => (cs || []).map(t => `<i title="${TYPE_KO[t] || t}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${TYPE_COLOR[t] || '#ccc'};border:1px solid rgba(0,0,0,.3)"></i>`).join('');
-  return `<div class="cardinfo">${c.img ? `<div class="big"><img src="${c.img.replace(/\.png$/, '_hires.png')}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" onerror="if(!this.dataset.s){this.dataset.s=1;this.src='${c.img}'}"></div>` : ''}<div class="txt"><h3>${esc(cname(c))}</h3><div class="small muted">${esc(c.n)} · ${esc(c.set || '')} ${esc(c.no || '')} · 레귤레이션 ${esc(c.rm || '—')}</div>
+  return `<div class="cardinfo">${cimg(c) ? `<div class="big"><img src="${bigImg(c)}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" onerror="if(!this.dataset.s){this.dataset.s=1;this.src='${cimg(c)}'}"></div>` : ''}<div class="txt"><h3>${esc(cname(c))}</h3><div class="small muted">${esc(c.n)} · ${esc(c.set || '')} ${esc(c.no || '')} · 레귤레이션 ${esc(c.rm || '—')}</div>
     <div class="row" style="margin:4px 0">${(c.sub || []).map(s => `<span class="chip">${esc(s)}</span>`).join('')}${c.hp ? `<span class="chip">HP ${c.hp}</span>` : ''}${(c.ty || []).map(t => `<span class="chip">${TYPE_KO[t] || t}</span>`).join('')}</div>
-    ${(c.ab || []).map(a => `<div class="atk"><b>특성 ${esc(a.n)}</b><div>${esc(a.t)}</div></div>`).join('')}
-    ${(c.at || []).map(a => `<div class="atk"><b>${cost(a.c)} ${esc(a.n)} ${esc(a.d || '')}</b><div>${esc(a.t || '')}</div></div>`).join('')}
-    ${(c.r || []).map(t => `<div class="small muted atk">${esc(t)}</div>`).join('')}
+    ${(c.ab || []).map((a, i) => { const k = (c.kab || [])[i] || a; return `<div class="atk"><b>특성 ${esc(k.n)}</b><div>${esc(k.t)}</div></div>`; }).join('')}
+    ${(c.at || []).map((a, i) => { const k = (c.kat || [])[i] || a; return `<div class="atk"><b>${cost(a.c)} ${esc(k.n)} ${esc(a.d || '')}</b><div>${esc(k.t || '')}</div></div>`; }).join('')}
+    ${(c.kr || c.r || []).map(t => `<div class="small muted atk">${esc(t)}</div>`).join('')}
     ${c.st === 'P' ? `<div class="small atk">약점 ${(c.wk || []).map(t => TYPE_KO[t]).join(', ') || '—'} · 저항력 ${(c.rs || []).map(r => TYPE_KO[r[0]] + ' ' + r[1]).join(', ') || '—'} · 후퇴 ${c.rt || 0}</div>` : ''}
-    <div class="small muted atk">카드 문장은 영문 자료예요. 한글 카드 자료가 모이면 바뀌어요.</div></div></div>`;
+    ${c.kn ? '' : '<div class="small muted atk">이 카드는 아직 한글 자료와 연결되지 않아 영문으로 보여요.</div>'}</div></div>`;
 }
 
 // ---------- 대전 ----------
 let G = null; // { id, view, lines, cards, ws, pend:{}, specs, ui }
-function cinfo(cid) { return (G && G.cards[cid]) || (IDX && IDX.byId[cid]) || { n: '?' }; }
+function cinfo(cid) { // 판에 저장된 카드 정보 + 지금 카드 자료의 한글 이름·그림·문장
+  const base = (G && G.cards[cid]) || (IDX && IDX.byId[cid]) || { n: '?' };
+  const cur = IDX && IDX.byId[cid];
+  return cur && cur.kn && !base.kn ? { ...base, kn: cur.kn, kimg: cur.kimg, kab: cur.kab, kat: cur.kat, kr: cur.kr } : base;
+}
 const nmOf = x => x ? cname(cinfo(x.c)) : '?';
 const topOf = sl => sl.cards[sl.cards.length - 1];
-const bigImg = c => c && c.img ? c.img.replace(/\.png$/, '_hires.png') : null;
+
 const TYPE_CH = { Grass: '풀', Fire: '불', Water: '물', Lightning: '번', Psychic: '초', Fighting: '격', Darkness: '악', Metal: '강', Dragon: '드', Colorless: '무' };
 
 function renderGame(id) {
+  loadCards().then(() => { if (G && G.view && G.id === id) draw([]); }).catch(() => {});
   G = { id, view: null, lines: [], cards: {}, pend: {}, seq: 1, specs: [], ui: { tab: 'log', dockOpen: true }, prev: null };
   app.innerHTML = '<div class="arena-loading"><div class="spin-ball"></div><p>판에 연결하는 중…</p></div>';
   document.body.classList.add('in-game');
@@ -278,60 +285,63 @@ const bottomSeat = () => G.view.me == null ? 0 : G.view.me;
 // ----- 카드 한 장 -----
 function cardFace(x, cls = '', extra = '') {
   const c = cinfo(x.c);
-  return `<div class="pc ${cls}" data-k="${x.i}" ${extra}>${c.img ? `<img src="${c.img}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" loading="lazy" draggable="false">` : `<div class="ph">${esc(cname(c))}</div>`}</div>`;
+  return `<div class="pc ${cls}" data-k="${x.i}" ${extra}>${cimg(c) ? `<img src="${cimg(c)}" alt="${esc(cname(c))}" referrerpolicy="no-referrer" loading="lazy" draggable="false">` : `<div class="ph">${esc(cname(c))}</div>`}</div>`;
 }
 const cardBack = (cls = '', extra = '') => `<div class="pc back ${cls}" ${extra}><div class="cb"></div></div>`;
-function energyDots(sl) {
-  return sl.en.map(x => { const e = cinfo(x.c); const ty = (e.n.match(/Basic (\w+) Energy/) || [])[1]; return `<i class="en-dot" data-k="${x.i}" style="--ec:${TYPE_COLOR[ty] || '#fff'}" title="${esc(cname(e))}">${ty ? TYPE_CH[ty] : '★'}</i>`; }).join('');
+const TYPE_ICON = { Grass: '🌿', Fire: '🔥', Water: '💧', Lightning: '⚡', Psychic: '🔮', Fighting: '👊', Darkness: '🌙', Metal: '⚙️', Dragon: '🐉', Colorless: '⭐' };
+function energyTabs(sl) { // 실물처럼 포켓몬 밑에 깔린 에너지 카드
+  const n = sl.en.length; if (!n) return '';
+  return `<div class="entabs" style="--n:${n}">${sl.en.map((x, i) => { const e = cinfo(x.c); const ty = (e.n.match(/Basic (\w+) Energy/) || [])[1]; return `<span class="entab" data-k="${x.i}" style="--i:${i};--ec:${TYPE_COLOR[ty] || '#c9b3ff'}" title="${esc(cname(e))}"><i>${ty ? TYPE_ICON[ty] : '✦'}</i></span>`; }).join('')}</div>`;
 }
 function slotHtml(sl, opt = {}) {
   const size = opt.active ? 'act' : 'bn';
-  if (!sl) return `<div class="spot ${size} empty"><span>${opt.active ? '배틀' : ''}</span></div>`;
+  if (!sl) return `<div class="spot ${size} empty">${opt.active ? '<span>배틀 필드</span>' : ''}</div>`;
   if (sl.hidden) return `<div class="spot ${size}">${cardBack('flipin')}</div>`;
   const t = topOf(sl), c = cinfo(t.c);
   const cd = sl.cond || {};
   const rot = cd.asleep ? 'r-sleep' : cd.paralyzed ? 'r-para' : cd.confused ? 'r-conf' : '';
   const hpLeft = c.hp ? Math.max(0, c.hp - sl.dmg) : null;
-  const pct = c.hp ? Math.max(0, Math.min(100, hpLeft / c.hp * 100)) : 100;
-  const marks = [cd.poisoned ? '<b class="mk poison" title="독">독</b>' : '', cd.burned ? '<b class="mk burn" title="화상">화상</b>' : '', cd.asleep ? '<b class="mk sleep">잠듦</b>' : '', cd.paralyzed ? '<b class="mk para">마비</b>' : '', cd.confused ? '<b class="mk conf">혼란</b>' : ''].join('');
-  const under = sl.cards.length > 1 ? `<span class="evo" title="진화 단계">${sl.cards.length}단</span>` : '';
+  const pct = c.hp ? hpLeft / c.hp * 100 : 100;
+  const marks = [cd.poisoned ? '<b class="mk poison">독</b>' : '', cd.burned ? '<b class="mk burn">화상</b>' : '', cd.asleep ? '<b class="mk sleep">잠듦</b>' : '', cd.paralyzed ? '<b class="mk para">마비</b>' : '', cd.confused ? '<b class="mk conf">혼란</b>' : ''].join('');
+  const under = sl.cards.length > 1 ? sl.cards.slice(0, -1).map((x, i) => `<div class="pc under" data-k="${x.i}" style="--u:${sl.cards.length - 1 - i}"></div>`).join('') : '';
   return `<div class="spot ${size} filled" data-sid="${sl.sid}">
-    <div class="rotwrap ${rot}">${cardFace(t, 'onfield')}${sl.dmg ? `<span class="dmg" data-dmg="${sl.sid}">${sl.dmg}</span>` : ''}</div>
-    ${marks ? `<div class="marks">${marks}</div>` : ''}${under}
-    ${sl.tl.length ? `<div class="tools">${sl.tl.map(x => `<span data-k="${x.i}">${esc(nmOf(x))}</span>`).join('')}</div>` : ''}
-    <div class="plate"><span class="pn">${esc(cname(c))}</span>${c.hp ? `<span class="hp"><i style="width:${pct}%" class="${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}"></i></span><span class="hpn">${hpLeft}/${c.hp}</span>` : ''}</div>
-    ${sl.en.length ? `<div class="ens">${energyDots(sl)}</div>` : ''}</div>`;
+    <div class="rotwrap ${rot}">${energyTabs(sl)}${under}${cardFace(t, 'onfield')}
+      ${sl.dmg ? `<span class="dmg" data-dmg="${sl.sid}">${sl.dmg}</span>` : ''}
+      ${c.hp ? `<span class="hpb ${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}">${hpLeft}</span>` : ''}
+      ${sl.tl.length ? `<div class="tools">${sl.tl.map(x => `<span data-k="${x.i}">🔧 ${esc(nmOf(x))}</span>`).join('')}</div>` : ''}
+    </div>
+    ${marks ? `<div class="marks">${marks}</div>` : ''}</div>`;
 }
 function pilesHtml(p) {
   const P = G.view.p[p];
   const topD = P.discard[P.discard.length - 1];
-  const deck = `<div class="pile deck" data-zone="deck" data-p="${p}" data-deck="${p}">${P.deck.n ? `<div class="stack" style="--n:${Math.min(6, Math.ceil(P.deck.n / 10))}">${cardBack()}</div>` : '<div class="spot bn empty"></div>'}<span class="cnt">덱 ${P.deck.n}</span></div>`;
-  const disc = `<div class="pile disc" data-zone="discard" data-p="${p}">${topD ? cardFace(topD, 'dim') : '<div class="spot bn empty"></div>'}<span class="cnt">트래시 ${P.discard.length}</span></div>`;
-  const lost = P.lost.length ? `<div class="pile lost" data-zone="lost" data-p="${p}">${cardFace(P.lost[P.lost.length - 1], 'dim')}<span class="cnt">로스트 ${P.lost.length}</span></div>` : '';
+  const deck = `<div class="pile deck" data-zone="deck" data-p="${p}" data-deck="${p}">${P.deck.n ? `<div class="stack" style="--t:${Math.min(8, Math.ceil(P.deck.n / 7))}">${cardBack()}</div>` : '<div class="zone-mark">덱</div>'}<span class="cnt">${P.deck.n}</span></div>`;
+  const disc = `<div class="pile disc" data-zone="discard" data-p="${p}">${topD ? cardFace(topD, 'tilt') : '<div class="zone-mark">트래시</div>'}<span class="cnt">${P.discard.length}</span></div>`;
+  const lost = P.lost.length ? `<div class="pile lost" data-zone="lost" data-p="${p}">${cardFace(P.lost[P.lost.length - 1], 'tilt')}<span class="cnt">로스트 ${P.lost.length}</span></div>` : '';
   return `<div class="piles">${deck}${disc}${lost}</div>`;
 }
 function prizesHtml(p) {
   const P = G.view.p[p]; const n = P.prizesN;
-  const cells = Array.from({ length: 6 }, (_, k) => k < n ? (P.prizes ? cardFace(P.prizes[k], 'pz') : cardBack('pz', `data-pzk="${k}"`)) : '<div class="pc pz gone"></div>').join('');
-  return `<div class="prizes" data-zone="prizes" data-p="${p}"><div class="pzgrid">${cells}</div><span class="cnt">프라이즈 ${n}</span></div>`;
+  const cells = Array.from({ length: 6 }, (_, k) => k < n ? (P.prizes ? cardFace(P.prizes[k], 'pz', `style="--k:${k}"`) : cardBack('pz', `style="--k:${k}"`)) : `<div class="pc pz gone" style="--k:${k}"></div>`).join('');
+  return `<div class="prizes" data-zone="prizes" data-p="${p}"><div class="pzgrid">${cells}</div><span class="cnt">사이드 ${n}</span></div>`;
 }
-function plateHtml(p, isBottom) {
+function hudHtml(p, isBottom) {
   const v = G.view, P = v.p[p];
   const now = v.phase === 'play' && v.current === p;
-  const used = isBottom && now && v.me === p ? [['energy', '에너지'], ['supporter', '서포트'], ['retreat', '후퇴'], ['attack', '기술']].map(([k, l]) => `<span class="use ${P.used[k] ? 'done' : ''}">${P.used[k] ? '✓' : '·'} ${l}</span>`).join('') : '';
-  const oppHand = !isBottom || v.me == null ? `<div class="ohand" data-zone="hand" data-p="${p}">${Array.from({ length: Math.min(P.handN, 10) }, (_, k) => `<span class="mini" style="--k:${k};--n:${Math.min(P.handN, 10)}"></span>`).join('')}<b>${P.handN}</b></div>` : '';
-  return `<div class="plateP ${now ? 'now' : ''}"><span class="av">${esc(P.name.slice(0, 1))}</span><span class="who">${esc(P.name)}</span>${now ? '<span class="tag turn">차례</span>' : ''}${v.phase === 'setup' ? `<span class="tag ${P.ready ? 'ok' : ''}">${P.ready ? '준비 완료' : '준비 중'}</span>` : ''}${P.mull ? `<span class="tag">멀리건 ${P.mull}</span>` : ''}${used ? `<span class="uses">${used}</span>` : ''}${oppHand}</div>`;
+  const used = isBottom && now && v.me === p ? [['energy', '⚡', '에너지'], ['supporter', '👤', '서포트'], ['retreat', '↩', '후퇴'], ['attack', '⚔', '기술']].map(([k, ic, l]) => `<span class="use ${P.used[k] ? 'done' : ''}" title="${l}">${ic} ${l}</span>`).join('') : '';
+  const handN = (!isBottom || v.me == null) ? `<span class="hchip" data-zone="hand" data-p="${p}">손패 ${P.handN}</span>` : '';
+  const state = v.phase === 'setup' ? `<span class="hchip ${P.ready ? 'ok' : ''}">${P.ready ? '준비 완료' : '준비 중'}</span>` : now ? '<span class="hchip turn">차례</span>' : '';
+  return `<div class="hud ${isBottom ? 'me' : 'opp'} ${now ? 'now' : ''}"><span class="av">${esc(P.name.slice(0, 1))}</span><span class="nm">${esc(P.name)}</span>${state}${P.mull ? `<span class="hchip">멀리건 ${P.mull}</span>` : ''}${handN}${used ? `<span class="uses">${used}</span>` : ''}</div>`;
 }
 function areaHtml(p, isBottom) {
   const P = G.view.p[p];
   const bench = `<div class="benchrow">${P.bench.map(b => slotHtml(b)).join('')}${Array.from({ length: Math.max(0, 5 - P.bench.length) }, () => slotHtml(null)).join('')}</div>`;
   return `<section class="area ${isBottom ? 'bottom' : 'top'} ${G.view.phase === 'play' && G.view.current === p ? 'now' : ''}" data-area="${p}">
-    ${plateHtml(p, isBottom)}
     <div class="grid">
       <div class="g-pz">${prizesHtml(p)}</div>
       <div class="g-act">${slotHtml(P.active, { active: true })}</div>
       <div class="g-pile">${pilesHtml(p)}</div>
-      <div class="g-bench">${bench}</div>
+      <div class="g-bench"><span class="zlabel">벤치</span>${bench}</div>
     </div></section>`;
 }
 function handHtml(p) {
@@ -340,25 +350,35 @@ function handHtml(p) {
   return `<div class="handbar ${mine ? '' : 'peek'}"><div class="fan" style="--n:${n}">${P.hand.map((x, i) => cardFace(x, 'inhand', `${mine ? `data-hand="${x.i}"` : ''} style="--i:${i};--m:${(n - 1) / 2}"`)).join('') || '<span class="nohand">손패 없음</span>'}</div></div>`;
 }
 function midHtml(readOnly) {
-  const v = G.view, me = meSeat();
-  const myTurn = v.phase === 'play' && v.current === me;
-  const stadium = v.stadium ? `<div class="stadium" data-stadium="1">${cardFace(v.stadium, 'stad')}<span>스타디움</span></div>` : '<div class="stadium none" title="스타디움 없음"><span>🏟</span></div>';
-  const turnInfo = v.phase === 'setup' ? '<span class="turnchip">준비 단계</span>' : v.phase === 'over' ? `<span class="turnchip win">🏆 ${esc(v.p[v.winner]?.name || '')} 승리</span>` : `<span class="turnchip">${v.turn}번째 차례 · ${esc(v.p[v.current].name)}</span>`;
-  const dl = v.deadline ? `<span class="turnchip warn">⏳ ${fmtLeft(v.deadline - Date.now())}</span>` : '';
-  const open = me != null && v.openGroup[me];
-  const pend = me != null ? v.groups.filter(g => g.who !== me && g.status !== 'ok').length : 0;
-  const tools = readOnly || me == null || v.phase === 'over' ? '' : `<div class="gbtns">
-      ${open ? `<button class="gb judge" data-t="effectEnd">✋ 효과 끝</button>` : `<button class="gb judge" data-t="effect">✋ 효과 쓰기</button>`}
-      <button class="gb" data-t="coin">🪙 코인</button>
-      <button class="gb" data-t="log">📜 기록${pend ? `<i class="badge">${pend}</i>` : ''}</button>
-      <button class="gb" data-t="more">⋯</button>
-      ${myTurn ? `<button class="gb end" data-t="endTurn">차례 끝 ▶</button>` : ''}</div>`;
+  const v = G.view;
+  const stadium = v.stadium ? `<div class="stadium" data-stadium="1">${cardFace(v.stadium, 'stad')}</div>` : '<div class="stadium none" title="스타디움 없음"><span>스타디움</span></div>';
   const last = [...G.lines].reverse().find(l => !l.chat && l.txt);
-  return `<div class="midline">${stadium}<div class="midinfo"><div class="row">${turnInfo}${dl}${readOnly ? '' : '<span class="turnchip ghost" id="specs"></span>'}</div>${last && !readOnly ? `<div class="ticker">${esc(last.txt)}</div>` : ''}</div>${tools}</div>`;
+  return `<div class="fieldline">${stadium}<div class="centerball"></div>${last && !readOnly ? `<div class="ticker">${esc(last.txt)}</div>` : ''}</div>`;
+}
+function topBarHtml(readOnly) {
+  const v = G.view;
+  const turnInfo = v.phase === 'setup' ? '준비 단계' : v.phase === 'over' ? `🏆 ${esc(v.p[v.winner]?.name || '')} 승리` : `${v.turn}번째 차례`;
+  const dl = v.deadline ? `<span class="pill warn">⏳ ${fmtLeft(v.deadline - Date.now())}</span>` : '';
+  return `<div class="topbar"><span class="pill main">${turnInfo}</span>${dl}${readOnly ? '' : '<span class="pill ghost" id="specs"></span>'}</div>`;
+}
+function fabHtml() {
+  const v = G.view, me = meSeat();
+  if (me == null || v.phase === 'over') return `<div class="fabs"><button class="fab" data-t="log"><span class="ic">📜</span><span class="fl">기록</span></button></div>`;
+  const myTurn = v.phase === 'play' && v.current === me;
+  const open = v.openGroup[me];
+  const pend = v.groups.filter(g => g.who !== me && g.status !== 'ok').length;
+  const fab = (t, ic, l, cls = '', badge = '') => `<button class="fab ${cls}" data-t="${t}"><span class="ic">${ic}</span><span class="fl">${l}</span>${badge}</button>`;
+  return `<div class="fabs">
+    ${fab('log', '📜', '기록', '', pend ? `<i class="badge">${pend}</i>` : '')}
+    ${fab('coin', '🪙', '코인')}
+    ${open ? fab('effectEnd', '✋', '효과 끝', 'judge') : fab('effect', '✋', '효과 쓰기', 'judge')}
+    ${fab('more', '⋯', '더 보기')}
+    ${myTurn ? `<button class="fab big" data-t="endTurn"><span class="ic">▶</span><span class="fl">차례 끝</span></button>` : ''}
+  </div>`;
 }
 function matHtml(readOnly = false) {
   const bs = bottomSeat(), os = 1 - bs;
-  return `<div class="mat ${readOnly ? 'ro' : ''}">${areaHtml(os, false)}${midHtml(readOnly)}${areaHtml(bs, true)}</div>${handHtml(bs)}`;
+  return `${topBarHtml(readOnly)}${hudHtml(os, false)}<div class="matwrap"><div class="mat ${readOnly ? 'ro' : ''}">${areaHtml(os, false)}${midHtml(readOnly)}${areaHtml(bs, true)}</div></div>${hudHtml(bs, true)}${handHtml(bs)}`;
 }
 
 // ----- 그리기 + 애니메이션 -----
@@ -428,7 +448,7 @@ function draw(newLines) {
   const waitingMe = me != null && v.waiting.includes(me);
   document.title = (waitingMe ? '● 내 차례 · ' : '') + '도란 카드 대전';
   const dock = setupHtml() + promptsHtml() + lookHtml() + groupsHtml();
-  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}
+  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${fabHtml()}
       ${dock ? `<div class="dock ${G.ui.dockOpen ? '' : 'shut'}"><button class="dockt" data-dock>${G.ui.dockOpen ? '접기 ▾' : '확인할 것 ▴'}</button><div class="dockin">${dock}</div></div>` : ''}
     </div><aside class="panel" id="side"></aside></div>`;
   drawSpecs(); drawSide(); bindBoard();
@@ -561,10 +581,10 @@ async function onSlot(sid) {
   if (me != null && v.phase === 'setup' && mine) opts.push({ label: '손패로 되돌리기', value: ['setupReturn'] });
   if (me != null && v.phase === 'play') {
     if (mine && f.where === 'active') {
-      (c.at || []).forEach((a, k) => opts.push({ label: `⚔ ${esc(a.n)} ${esc(a.d || '')}`, value: ['attack', k], cls: 'primary' }));
+      (c.at || []).forEach((a, k) => opts.push({ label: `⚔ ${esc((c.kat || [])[k]?.n || a.n)} ${esc(a.d || '')}`, value: ['attack', k], cls: 'primary' }));
       if (v.p[me].bench.length) opts.push({ label: '후퇴', value: ['retreat'], cls: 'blue' });
     }
-    if (mine) (c.ab || []).forEach((a, k) => opts.push({ label: `✨ 특성 ${esc(a.n)}`, value: ['ability', k], cls: 'blue' }));
+    if (mine) (c.ab || []).forEach((a, k) => opts.push({ label: `✨ 특성 ${esc((c.kab || [])[k]?.n || a.n)}`, value: ['ability', k], cls: 'blue' }));
     if (f.where === 'bench') opts.push({ label: '배틀 포켓몬과 바꾸기 (효과)', value: ['switch'], cls: 'judge' });
     opts.push({ label: '데미지 +10', value: ['dmg', 10], cls: 'judge' }, { label: '데미지 −10', value: ['dmg', -10], cls: 'judge' }, { label: '데미지 직접 넣기', value: ['dmgN'], cls: 'judge' });
     if (f.where === 'active') opts.push({ label: '특수상태', value: ['cond'], cls: 'judge' });
@@ -577,7 +597,7 @@ async function onSlot(sid) {
       if (k === 'setupReturn') return send({ type: 'setupReturn', sid });
       if (k === 'attack') {
         const a = c.at[arg]; const sug = suggest(arg);
-        const fm = await ask(`기술 ${a.n}`, `<p>${esc(a.t || '추가 효과 없음')}</p><p>사이트 계산: <b>${sug.dmg}</b>${sug.parts.length ? ' (' + esc(sug.parts.join(', ')) + ')' : ''}</p><label class="h">상대 배틀 포켓몬에게 줄 데미지</label><input name="dmg" type="number" step="10" min="0" value="${sug.dmg}"><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">${a.t ? '<p class="small muted">추가 효과(벤치 데미지, 상태 이상 등)는 기술을 쓴 뒤 도구로 처리하고 「효과 끝」을 눌러요.</p>' : ''}`, '기술 쓰기');
+        const ka = (c.kat || [])[arg] || a; const fm = await ask(`기술 ${ka.n}`, `<p>${esc(ka.t || '추가 효과 없음')}</p><p>사이트 계산: <b>${sug.dmg}</b>${sug.parts.length ? ' (' + esc(sug.parts.join(', ')) + ')' : ''}</p><label class="h">상대 배틀 포켓몬에게 줄 데미지</label><input name="dmg" type="number" step="10" min="0" value="${sug.dmg}"><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">${a.t ? '<p class="small muted">추가 효과(벤치 데미지, 상태 이상 등)는 기술을 쓴 뒤 도구로 처리하고 「효과 끝」을 눌러요.</p>' : ''}`, '기술 쓰기');
         if (!fm) return; const d = +fm.dmg; return send({ type: 'attack', k: arg, dmg: d === sug.dmg ? undefined : d, note: fm.note || undefined });
       }
       if (k === 'retreat') {
@@ -630,7 +650,7 @@ async function onZone(z, p) {
   const v = G.view, me = meSeat(), P = v.p[p], mine = p === me;
   if (z === 'discard' || z === 'lost') {
     const cards = P[z];
-    openSheet(`<button class="x sm" data-close>닫기</button><h3>${mine ? '내' : esc(P.name) + ' 님'} ${z === 'discard' ? '트래시' : '로스트존'} (${cards.length}장)</h3><div class="cardgrid">${cards.map(x => { const c = cinfo(x.c); return `<div class="c" data-i="${x.i}">${c.img ? `<img src="${c.img}" alt="${esc(cname(c))}">` : `<div class="ph">${esc(cname(c))}</div>`}<div>${esc(cname(c))}</div></div>`; }).join('') || '<p class="muted">비어 있어요.</p>'}</div>`, el => {
+    openSheet(`<button class="x sm" data-close>닫기</button><h3>${mine ? '내' : esc(P.name) + ' 님'} ${z === 'discard' ? '트래시' : '로스트존'} (${cards.length}장)</h3><div class="cardgrid">${cards.map(x => { const c = cinfo(x.c); return `<div class="c" data-i="${x.i}">${cimg(c) ? `<img src="${cimg(c)}" referrerpolicy="no-referrer" alt="${esc(cname(c))}">` : `<div class="ph">${esc(cname(c))}</div>`}<div>${esc(cname(c))}</div></div>`; }).join('') || '<p class="muted">비어 있어요.</p>'}</div>`, el => {
       el.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => { const i = b.dataset.i; closeSheet(); await new Promise(r => setTimeout(r, 30)); if (me == null) return; if (mine) moveMenu([i], cname(cinfo(cards.find(x => x.i === i).c))); else { const to = await pick('상대 카드 옮기기', [{ label: '상대 덱 위로', value: { z: 'deck', p, pos: 'top' } }, { label: '상대 손패로', value: { z: 'hand', p } }, { label: '상대 로스트존으로', value: { z: 'lost', p } }]); if (to) send({ type: 'move', iids: [i], to }); } });
     });
     return;
@@ -692,6 +712,7 @@ async function renderReplay(id, k0) {
   app.innerHTML = '<div class="arena-loading"><div class="spin-ball"></div><p>기보를 불러오는 중…</p></div>';
   document.body.classList.add('in-game');
   leaveGame = () => document.body.classList.remove('in-game');
+  loadCards().catch(() => {});
   let info; try { info = await api(`/api/games/${id}/info`); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
   const RG = { id, cards: info.cards, n: info.n, lines: info.lines, k: k0 >= 0 ? Math.min(k0, info.n) : info.n, timer: null };
   const turns = info.lines.filter(l => l.turn && l.k >= 0).map(l => l.k);
@@ -701,10 +722,10 @@ async function renderReplay(id, k0) {
     const prev = app.querySelector('.mat') ? snapRects() : null;
     G = { id, view: { ...r.view, me: info.me, n: r.n, deadline: null }, lines: info.lines.filter(l => l.k < RG.k), cards: info.cards, specs: [], ui: {} };
     const lines = info.lines.map(l => `<div class="ln ${l.turn ? 'turn' : ''} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''} ${l.k === RG.k - 1 ? 'cur' : l.k >= RG.k ? 'later' : ''}" data-k2="${l.k + 1}">${l.gid ? '<span class="chip judge">사람 판정</span> ' : ''}${l.chat ? `<b>${esc(info.players[l.who])}</b> ` : ''}${esc(l.txt)}${l.own ? ` <span class="own">(${esc(l.own)})</span>` : ''}</div>`).join('');
-    app.innerHTML = `<div class="arena"><div class="table">
-        <div class="replaybar"><span class="turnchip">${info.over ? '끝난 판 · 모두 공개' : '진행 중 · 내가 볼 수 있는 것만'}</span>
-          <button class="gb" data-j="turnPrev">⏮</button><button class="gb" data-j="prev">◀</button><button class="gb" data-j="play">${RG.timer ? '⏸' : '▶ 재생'}</button><button class="gb" data-j="next">▶</button><button class="gb" data-j="turnNext">⏭</button>
-          <input type="range" min="0" max="${RG.n}" value="${RG.k}" id="rk"><span class="turnchip">${RG.k} / ${RG.n}수</span>${info.over ? '' : `<a class="gb end" href="#game/${id}">판으로</a>`}</div>
+    app.innerHTML = `<div class="arena replay"><div class="table">
+        <div class="replaybar"><span class="pill">${info.over ? '끝난 판 · 모두 공개' : '진행 중 · 내가 볼 수 있는 것만'}</span>
+          <button class="rb" data-j="turnPrev">⏮</button><button class="rb" data-j="prev">◀</button><button class="rb" data-j="play">${RG.timer ? '⏸' : '▶ 재생'}</button><button class="rb" data-j="next">▶</button><button class="rb" data-j="turnNext">⏭</button>
+          <input type="range" min="0" max="${RG.n}" value="${RG.k}" id="rk"><span class="pill">${RG.k} / ${RG.n}수</span>${info.over ? '' : `<a class="rb primary" href="#game/${id}">판으로</a>`}</div>
         ${matHtml(true)}</div>
       <aside class="panel"><div class="tabs"><span class="tab on">기보</span></div><div class="log" id="rlog">${lines}</div></aside></div>`;
     app.querySelectorAll('[data-j]').forEach(b => b.onclick = () => {
