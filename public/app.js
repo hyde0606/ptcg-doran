@@ -233,7 +233,7 @@ let G = null; // { id, view, lines, cards, ws, pend:{}, specs, ui }
 function cinfo(cid) { // 판에 저장된 카드 정보 + 지금 카드 자료의 한글 이름·그림·문장
   const base = (G && G.cards[cid]) || (IDX && IDX.byId[cid]) || { n: '?' };
   const cur = IDX && IDX.byId[cid];
-  return cur && cur.kn && !base.kn ? { ...base, kn: cur.kn, kimg: cur.kimg, kab: cur.kab, kat: cur.kat, kr: cur.kr } : base;
+  return cur && cur.kn ? { ...base, kn: cur.kn, kimg: cur.kimg, kab: cur.kab, kat: cur.kat, kr: cur.kr } : base; // 한글은 항상 지금 자료 우선
 }
 const nmOf = x => x ? cname(cinfo(x.c)) : '?';
 const topOf = sl => sl.cards[sl.cards.length - 1];
