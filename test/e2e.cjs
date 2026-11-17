@@ -79,9 +79,9 @@ const OUT = __dirname + '/out/';
     en = await energies(); await en[0].click({ position: { x: 8, y: 12 } }); await cur.click('.sheet .acts button.primary'); await cur.click('.sheet .acts button'); await cur.waitForTimeout(300);
     const w = await cur.textContent('.sheet .in'); if (!/이미 에너지/.test(w)) errs.push('에너지 2번째 경고 없음: ' + w.slice(0, 60));
     await cur.fill('.sheet input[name=note]', '시험: 특성 효과'); await cur.click('.sheet [data-ok]'); await cur.waitForTimeout(400);
-    await oth.waitForSelector('.grp [data-dispute]');
+    await oth.waitForSelector('[data-dock=open]'); await oth.click('[data-dock=open]'); await oth.waitForSelector('.drow [data-dispute]'); // 상대 판정은 작은 알약으로 접혀 있다가 눌러서 펼쳐요
     await oth.waitForTimeout(1500); await oth.screenshot({ path: OUT + 'judge.png', fullPage: true });
-    await oth.click('.grp [data-dispute]'); await oth.fill('.sheet input[name=t]', '에너지는 한 번만'); await oth.click('.sheet [data-ok]'); await oth.waitForTimeout(300);
+    await oth.click('.drow [data-dispute]'); await oth.fill('.sheet input[name=t]', '에너지는 한 번만'); await oth.click('.sheet [data-ok]'); await oth.waitForTimeout(300);
     await oth.click('[data-rwask]'); await oth.waitForTimeout(300);
     await cur.waitForSelector('[data-rwok]'); await cur.click('[data-rwok]'); await cur.click('.sheet [data-ok]'); await cur.waitForTimeout(600);
     if (!/되돌렸어요/.test(await cur.textContent('.panel .log'))) errs.push('되돌리기 기록 없음');

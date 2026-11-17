@@ -34,6 +34,21 @@ const ICON = {
   minus: svg('<path d="M5 12h14"/>'),
   star: svg('<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>'),
   paste: svg('<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h4"/>'),
+  judge: svg('<path d="M8.5 12.5V5.2a1.5 1.5 0 0 1 3 0V11M11.5 10.5V3.8a1.5 1.5 0 0 1 3 0v6.7M14.5 10.5V5.6a1.5 1.5 0 0 1 3 0V14c0 4.2-2.6 7-6.4 7-2.5 0-4.1-1.3-5.4-3.4l-2.4-3.9a1.5 1.5 0 0 1 2.5-1.6l1.7 2.4"/>'),
+  coin: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.8l1.3 2.7 2.9.4-2.1 2 .5 2.9-2.6-1.4-2.6 1.4.5-2.9-2.1-2 2.9-.4z"/>'),
+  search: svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>'),
+  rewind: svg('<path d="M11 6.5 4.5 12l6.5 5.5zM19.5 6.5 13 12l6.5 5.5z"/>'),
+  retreat: svg('<path d="M9 6.5 4 11.5l5 5"/><path d="M4.5 11.5H14a5.5 5.5 0 0 1 0 11h-1.5"/>'),
+  spark: svg('<path d="M12 3.2l1.9 5.3 5.4 1.9-5.4 1.9L12 17.6l-1.9-5.3-5.4-1.9 5.4-1.9z"/><path d="M19 15.5l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/>'),
+  prev: svg('<path d="M15 5.5 8.5 12l6.5 6.5"/>'),
+  next: svg('<path d="M9 5.5 15.5 12 9 18.5"/>'),
+  first: svg('<path d="M17 5.5 10.5 12l6.5 6.5M7 5.5v13"/>'),
+  last: svg('<path d="M7 5.5 13.5 12 7 18.5M17 5.5v13"/>'),
+  pause: svg('<path d="M8.5 5v14M15.5 5v14"/>'),
+  x: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
+  up: svg('<path d="M6 15l6-6 6 6"/>'),
+  down: svg('<path d="M6 9l6 6 6-6"/>'),
+  chat: svg('<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/>'),
 };
 const ringIcon = (ic, k = '', ping = false) => `<span class="ring ${k} ${ping ? 'ping' : ''}"><i>${ICON[ic]}</i></span>`;
 
@@ -563,7 +578,7 @@ const TYPE_CH = { Grass: '풀', Fire: '불', Water: '물', Lightning: '번', Psy
 
 function renderGame(id) {
   loadCards().then(() => { if (G && G.view && G.id === id) draw([]); }).catch(() => {});
-  G = { id, view: null, lines: [], cards: {}, pend: {}, seq: 1, specs: [], ui: { tab: 'log', dockOpen: true }, prev: null };
+  G = { id, view: null, lines: [], cards: {}, pend: {}, seq: 1, specs: [], ui: { tab: 'log', dockMode: 'auto', dockSig: '' }, prev: null };
   app.innerHTML = '<div class="arena-loading"><div class="spin-ball"></div><p>판에 연결하는 중…</p></div>';
   document.body.classList.add('in-game');
   let closed = false, retry = 0;
@@ -721,6 +736,7 @@ const FAB_ICON = {
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="2.3" fill="currentColor"/><circle cx="12" cy="12" r="2.3" fill="currentColor"/><circle cx="18.5" cy="12" r="2.3" fill="currentColor"/></svg>',
   flag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 2.5h1.8v19H5v-19Zm2.8 1h11.4l-2.6 4.4 2.6 4.4H7.8V3.5Z"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.4c-4 0-7 2.9-7 7v4.2l-1.8 3.1v1.4h17.6v-1.4L19 13.6V9.4c0-4.1-3-7-7-7Zm-2.7 17.2a2.8 2.8 0 0 0 5.4 0Z"/></svg>',
   rewatch: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M4.6 12a7.4 7.4 0 1 0 2.3-5.4"/><path fill="currentColor" d="M3.4 3.4v6h6z"/><path fill="currentColor" d="M10.2 8.4v7.2l5.8-3.6z"/></svg>',
 };
 const FAB_FX = '<i class="fx f1"></i><i class="fx f3"></i><i class="fx f4"></i>';
@@ -849,61 +865,81 @@ function draw(newLines) {
   const me = meSeat();
   const waitingMe = me != null && v.waiting.includes(me);
   document.title = (waitingMe ? '● 내 차례 · ' : '') + '도란 카드 대전';
-  const dock = setupHtml() + promptsHtml() + lookHtml() + groupsHtml();
-  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}
-      ${dock ? `<div class="dock ${G.ui.dockOpen ? '' : 'shut'}"><button class="dockt" data-dock>${G.ui.dockOpen ? '접기 ▾' : '확인할 것 ▴'}</button><div class="dockin">${dock}</div></div>` : ''}
-    </div><aside class="panel" id="side"></aside></div>`;
+  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${dockHtml()}</div><aside class="panel" id="side"></aside></div>`;
   drawSpecs(); drawSide(); bindBoard();
-  const dt = app.querySelector('[data-dock]'); if (dt) dt.onclick = () => { G.ui.dockOpen = !G.ui.dockOpen; draw([]); };
+  app.querySelectorAll('[data-dock]').forEach(b => b.onclick = () => { G.ui.dockMode = b.dataset.dock; draw([]); });
   flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); }
   G.prev = JSON.parse(JSON.stringify(v));
 }
 function drawSpecs() { const el = $('#specs'); if (el) el.textContent = G.specs.length ? `👀 관전 ${G.specs.length}` : ''; }
-function setupHtml() {
-  const v = G.view, me = meSeat(); if (v.phase !== 'setup' || me == null) return '';
-  const P = v.p[me], O = v.p[1 - me]; const parts = [];
-  if (v.first == null && v.coinWinner === me) parts.push(`<div class="prompt"><div class="q">🪙 코인에서 이겼어요! 선공·후공을 골라 주세요.</div><div class="bar"><button class="primary" data-order="1">선공</button><button data-order="0">후공</button></div></div>`);
-  if (v.first == null && v.coinWinner !== me) parts.push(`<div class="prompt soft"><div class="q">상대가 선공·후공을 고르는 중이에요.</div></div>`);
-  if (!P.ready) {
-    parts.push(`<div class="prompt"><div class="q">손패의 기본 포켓몬을 눌러 배틀 포켓몬 1장과 벤치(최대 5장)를 놓아 주세요. 상대에게는 뒷면으로 보여요.</div>
-      ${O.mull && !P.mullDrawn ? `<div class="row">상대가 멀리건을 ${O.mull}번 했어요. 추가로 몇 장 뽑을까요? ${Array.from({ length: O.mull + 1 }, (_, n) => `<button class="sm" data-mull="${n}">${n}장</button>`).join('')}</div>` : ''}
-      <div class="bar"><button class="primary" data-t="setupDone" ${P.active ? '' : 'disabled'}>준비 완료</button></div></div>`);
-  } else parts.push(`<div class="prompt soft"><div class="q">상대 준비를 기다리는 중이에요.</div></div>`);
-  return parts.join('');
-}
-function promptsHtml() {
-  const v = G.view, me = meSeat();
-  return v.prompts.map(q => {
-    const mine = q.to === me;
-    let btn = '';
-    if (me != null) {
-      if (q.type === 'prize') btn = q.p === me ? `<div class="pzpick">${Array.from({ length: v.p[me].prizesN }, (_, k) => cardBack('pick', `data-prize="${q.id}" data-k="${k}"`)).join('')}</div>` : '';
-      else if (q.type === 'promote') btn = q.p === me ? `<div class="bar">${v.p[me].bench.map(b => `<button class="primary sm" data-promote="${q.id}" data-sid="${b.sid}">${esc(nmOf(topOf(b)))}</button>`).join('')}</div>` : '';
-      else btn = `<div class="bar"><button class="primary sm" data-confirm="${q.id}">이대로 확정</button><button class="judge sm" data-dismiss="${q.id}">다르게 처리</button></div>`;
-    }
-    const who = q.to != null ? `<span class="chip">${esc(v.p[q.to].name)} 님 확인</span>` : '';
-    return `<div class="prompt ${mine ? '' : 'soft'}"><div class="q">${esc(q.text)} ${who}</div>${btn}</div>`;
-  }).join('');
-}
-function lookHtml() {
-  const v = G.view, me = meSeat(); if (me == null) return '';
-  const lk = v.p[me].look; if (!lk) return '';
-  const P = v.p[lk.p];
-  const cards = lk.z === 'deck' ? P.deck.cards : lk.z === 'hand' ? P.hand : P.prizes;
-  return `<div class="prompt look"><div class="row"><div class="q grow">🔍 ${lk.p === me ? '내' : '상대'} ${({ deck: '덱', hand: '손패', prizes: '프라이즈' })[lk.z]} 보는 중 (${(cards || []).length}장) · 카드를 눌러 옮겨요</div><button class="sm" data-t="lookEnd">닫기</button>${lk.z === 'deck' ? '<button class="sm" data-t="shuffleMine">섞고 닫기</button>' : ''}</div>
-    <div class="lookrow">${(cards || []).map(x => cardFace(x, 'lk', `data-pile="${x.i}"`)).join('')}</div></div>`;
-}
-function groupsHtml() {
-  const v = G.view, me = meSeat(); if (me == null) return '';
-  return v.groups.filter(g => g.status !== 'ok' && (g.who !== me || g.status === 'disputed' || g.rewindBy != null)).filter(g => g.status !== 'open' || g.who !== me).map(g => {
+// ----- 확인할 것 -----
+// 내가 지금 답해야 하는 것(급함)만 판 위에 크게 열고, 상대 판정 동의·상대 확인 대기 같은 건 한 줄씩 작게. 기다리는 중 안내는 작은 알약으로.
+const qIcon = (ic, k = '') => `<i class="qi ${k}">${ICON[ic]}</i>`;
+const Q_ICON = { ko: 'warn', prize: 'star', promote: 'user', checkup: 'check', next: 'next', win: 'trophy', deckout: 'trophy' };
+function dockItems() {
+  const v = G.view, me = meSeat(); if (me == null) return [];
+  const out = [], nm = p => esc(v.p[p].name);
+  if (v.phase === 'setup') {
+    const P = v.p[me], O = v.p[1 - me];
+    if (v.first == null && v.coinWinner === me) out.push({ k: 'order', u: 1, h: `<div class="prompt"><div class="q">${qIcon('coin', 'gold')}코인에서 이겼어요! 선공·후공을 골라 주세요.</div><div class="bar"><button class="primary" data-order="1">선공</button><button data-order="0">후공</button></div></div>` });
+    if (v.first == null && v.coinWinner !== me) out.push({ k: 'order-wait', info: '상대가 선공·후공을 고르는 중' });
+    if (!P.ready) out.push({ k: 'place', u: 1, h: `<div class="prompt"><div class="q">${qIcon('user')}배틀 포켓몬과 벤치를 놓아 주세요</div>
+      <p class="pq">손패의 기본 포켓몬을 눌러 배틀 포켓몬 1장과 벤치(최대 5장)를 놓아요. 상대에게는 뒷면으로 보여요.</p>
+      ${O.mull && !P.mullDrawn ? `<div class="row mullr"><span>상대가 멀리건을 ${O.mull}번 했어요. 추가로 몇 장 뽑을까요?</span> ${Array.from({ length: O.mull + 1 }, (_, n) => `<button class="sm" data-mull="${n}">${n}장</button>`).join('')}</div>` : ''}
+      <div class="bar"><button class="primary" data-t="setupDone" ${P.active ? '' : 'disabled'}>준비 완료</button></div></div>` });
+    else out.push({ k: 'ready-wait', info: '상대 준비를 기다리는 중' });
+  }
+  for (const q of v.prompts) {
+    const ic = qIcon(Q_ICON[q.type] || 'check', q.type === 'ko' ? 'warn' : q.type === 'win' || q.type === 'deckout' ? 'gold' : '');
+    if (q.to === me) {
+      let btn;
+      if (q.type === 'prize') btn = `<div class="pzpick">${Array.from({ length: v.p[me].prizesN }, (_, k) => cardBack('pick', `data-prize="${q.id}" data-k="${k}"`)).join('')}</div>`;
+      else if (q.type === 'promote') btn = `<div class="bar">${v.p[me].bench.map(b => `<button class="primary sm" data-promote="${q.id}" data-sid="${b.sid}">${esc(nmOf(topOf(b)))}</button>`).join('')}</div>`;
+      else btn = `<div class="bar"><button class="primary sm" data-confirm="${q.id}">${ICON.check}이대로 확정</button><button class="judge sm" data-dismiss="${q.id}">다르게 처리</button></div>`;
+      out.push({ k: 'q' + q.id, u: 1, h: `<div class="prompt"><div class="q">${ic}${esc(q.text)}</div>${btn}</div>` });
+    } else if (q.type === 'prize' || q.type === 'promote') out.push({ k: 'q' + q.id, info: `${nm(q.to)} 님이 ${q.type === 'prize' ? '프라이즈를' : '새 배틀 포켓몬을'} 고르는 중` });
+    else out.push({ k: 'q' + q.id, row: `<div class="drow">${ic}<div class="dtx">${esc(q.text)} <span class="chip">${nm(q.to)} 님 확인</span></div><div class="dbt"><button class="primary xs" data-confirm="${q.id}">확정</button><button class="judge xs" data-dismiss="${q.id}">다르게</button></div></div>` });
+  }
+  const lk = v.p[me].look;
+  if (lk) {
+    const P = v.p[lk.p], cards = (lk.z === 'deck' ? P.deck.cards : lk.z === 'hand' ? P.hand : P.prizes) || [];
+    out.push({ k: 'look', u: 1, h: `<div class="prompt look"><div class="row"><div class="q grow">${qIcon('search', 'judge')}${lk.p === me ? '내' : '상대'} ${({ deck: '덱', hand: '손패', prizes: '프라이즈' })[lk.z]} 보는 중 <span class="chip">${cards.length}장</span></div><button class="sm" data-t="lookEnd">닫기</button>${lk.z === 'deck' ? '<button class="sm" data-t="shuffleMine">섞고 닫기</button>' : ''}</div>
+      <p class="pq">카드를 눌러 옮겨요.</p><div class="lookrow">${cards.map(x => cardFace(x, 'lk', `data-pile="${x.i}"`)).join('')}</div></div>` });
+  }
+  for (const g of v.groups) {
+    if (g.status === 'ok') continue;
     const theirs = g.who !== me;
-    let btn = '';
-    if (g.rewindBy != null && g.rewindBy !== me) btn = `<button class="bad sm" data-rwok="${g.start}">되돌리기 동의</button><button class="sm" data-rwno="${g.gid}">거절</button>`;
-    else if (g.rewindBy === me) btn = '<span class="chip">상대 동의를 기다리는 중</span>';
-    else if (g.status === 'disputed') btn = `<button class="bad sm" data-rwask="${g.gid}">이 판정 전으로 되돌리자</button>${theirs ? `<button class="good sm" data-agree="${g.gid}">그냥 동의</button>` : ''}`;
-    else if (theirs) btn = `<button class="good sm" data-agree="${g.gid}">동의</button><button class="bad sm" data-dispute="${g.gid}">이의 있음</button>`;
-    return `<div class="grp"><div class="t">✋ 사람 판정 · ${esc(v.p[g.who].name)}: ${esc(g.title)} ${g.status === 'open' ? '<span class="chip">진행 중</span>' : g.status === 'disputed' ? '<span class="chip warn">이의</span>' : '<span class="chip">확인 전</span>'}</div>${g.note ? `<div class="small">${esc(g.note)}</div>` : ''}${g.disputes.length ? `<div class="small">이의: ${g.disputes.map(esc).join(' / ')}</div>` : ''}<div class="bar">${btn}</div></div>`;
-  }).join('');
+    const extra = `${g.note ? `<small>${esc(g.note)}</small>` : ''}${g.disputes.length ? `<small class="dsp">이의: ${g.disputes.map(esc).join(' / ')}</small>` : ''}`;
+    const stc = g.status === 'open' ? '<span class="chip">진행 중</span>' : g.status === 'disputed' ? '<span class="chip warn">이의</span>' : '<span class="chip">확인 전</span>';
+    const head = `<span class="dwho">${nm(g.who)}</span>${esc(g.title)} ${stc}`;
+    if (g.rewindBy != null && g.rewindBy !== me) out.push({ k: 'rw' + g.gid, u: 1, h: `<div class="prompt grp"><div class="q">${qIcon('rewind', 'warn')}${nm(g.rewindBy)} 님이 「${esc(g.title)}」 전으로 되돌리자고 해요</div>${extra}<div class="bar"><button class="bad sm" data-rwok="${g.start}">${ICON.rewind}되돌리기 동의</button><button class="sm" data-rwno="${g.gid}">거절</button></div></div>` });
+    else if (g.rewindBy === me) out.push({ k: 'rwme' + g.gid, info: '되돌리기: 상대 동의를 기다리는 중' });
+    else if (g.status === 'disputed' && !theirs) out.push({ k: 'dsp' + g.gid + '-' + g.disputes.length, u: 1, h: `<div class="prompt grp"><div class="q">${qIcon('judge', 'judge')}내 판정 「${esc(g.title)}」에 이의가 있어요</div>${extra}<div class="bar"><button class="bad sm" data-rwask="${g.gid}">${ICON.rewind}이 판정 전으로 되돌리자</button></div></div>` });
+    else if (g.status === 'disputed') out.push({ k: 'g' + g.gid, row: `<div class="drow">${qIcon('judge', 'judge')}<div class="dtx">${head}${extra}</div><div class="dbt"><button class="bad xs" data-rwask="${g.gid}">${ICON.rewind}되돌리자</button><button class="good xs" data-agree="${g.gid}">그냥 동의</button></div></div>` });
+    else if (theirs) out.push({ k: 'g' + g.gid, agree: g.status !== 'open' ? g.gid : null, row: `<div class="drow">${qIcon('judge', 'judge')}<div class="dtx">${head}${extra}</div><div class="dbt"><button class="good xs" data-agree="${g.gid}">${ICON.check}동의</button><button class="bad xs" data-dispute="${g.gid}">이의</button></div></div>` });
+  }
+  return out;
+}
+function dockHtml() {
+  const items = dockItems(); if (!items.length) { G.ui.dockWas = ''; G.ui.dockRows = 0; return ''; }
+  const urg = items.filter(x => x.u), rows = items.filter(x => x.row), info = items.filter(x => x.info);
+  const sig = urg.map(x => x.k).join(',');
+  if (sig !== G.ui.dockSig) { G.ui.dockSig = sig; G.ui.dockMode = 'auto'; }
+  const open = (urg.length || rows.length) && (G.ui.dockMode === 'open' || (G.ui.dockMode === 'auto' && urg.length > 0));
+  const infos = info.map(x => `<span class="dinfo">${ICON.wait}${esc(x.info)}</span>`).join('');
+  const bump = rows.length > (G.ui.dockRows || 0) ? ' bump' : ''; G.ui.dockRows = rows.length;
+  const enter = G.ui.dockWas !== (open ? 'open' : 'shut') ? ' enter' : ''; G.ui.dockWas = open ? 'open' : 'shut'; // 처음 나타날 때만 움직임
+  if (!open) { // 접힌 상태: 다른 둥근 버튼과 같은 모양 (급함 = 주황 종, 판정 확인 = 보라 손) + 기다리는 중 알약
+    const n = urg.length + rows.length, l = urg.length ? '답할 것' : '확인할 것';
+    const fab = n ? `<div class="dockfab${enter}"><div class="fabw"><button class="fab k-dock ${urg.length ? 'on nudge' : 'j' + bump}" data-dock="open" aria-label="${l} ${n}개 펼치기">${FAB_FX}<span class="core">${FAB_ICON[urg.length ? 'bell' : 'hand']}</span><i class="badge">${n}</i></button><span class="fl">${l}</span></div></div>` : '';
+    return fab + (infos ? `<div class="dinfos">${infos}</div>` : '');
+  }
+  const ag = rows.filter(x => x.agree).map(x => x.agree);
+  return `<div class="dock${enter}"><div class="dockin">
+    <div class="dockh"><b class="dtt">${urg.length ? '지금 답할 것' : '확인할 것'}</b>${infos}<button class="dockx sm" data-dock="shut">${ICON.down}접기</button></div>
+    ${urg.map(x => x.h).join('')}
+    ${rows.length ? `<div class="drows">${urg.length || ag.length >= 2 ? `<div class="drh"><span>${urg.length ? '그 밖에 확인할 것' : '상대 판정'} ${rows.length}</span>${ag.length >= 2 ? `<button class="good xs" data-agreeall="${ag.join(',')}">${ICON.check}모두 동의</button>` : ''}</div>` : ''}${rows.map(x => x.row).join('')}</div>` : ''}
+  </div></div>`;
 }
 // 기록을 차례마다 덩어리로: 머리(몇 번째 차례 · 누구 · 뽑은 카드) + 그 차례의 줄들. 줄마다 이름 대신 색 띠(나 파랑, 상대 빨강)
 function logBlocks(lines, lineHtml) {
@@ -1111,6 +1147,7 @@ function bindBoard() {
   app.querySelectorAll('[data-prize]').forEach(el => el.onclick = () => send({ type: 'confirm', pid: el.dataset.prize, k: +el.dataset.k }));
   app.querySelectorAll('[data-promote]').forEach(el => el.onclick = () => send({ type: 'confirm', pid: el.dataset.promote, sid: el.dataset.sid }));
   app.querySelectorAll('[data-agree]').forEach(el => el.onclick = () => send({ type: 'agree', gid: el.dataset.agree }));
+  app.querySelectorAll('[data-agreeall]').forEach(el => el.onclick = async () => { el.disabled = true; for (const gid of el.dataset.agreeall.split(',')) if (!(await send({ type: 'agree', gid }))) break; });
   app.querySelectorAll('[data-dispute]').forEach(el => el.onclick = async () => { const f = await ask('어떤 점이 이상한가요?', '<input name="t" maxlength="200" style="width:100%" placeholder="예: 이 서포트는 벤치에서만 가져와요">', '이의 보내기', 'bad'); if (f) send({ type: 'dispute', gid: el.dataset.dispute, text: f.t }); });
   app.querySelectorAll('[data-rwask]').forEach(el => el.onclick = () => send({ type: 'rewindAsk', gid: el.dataset.rwask }));
   app.querySelectorAll('[data-rwno]').forEach(el => el.onclick = () => send({ type: 'rewindNo', gid: el.dataset.rwno }));
