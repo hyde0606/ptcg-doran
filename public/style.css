@@ -1378,3 +1378,68 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
   .sstep button { width: 28px; height: 28px; min-height: 28px; }
   .shead .sbtns { margin-left: 0; width: 100%; } .shead .sbtns button { flex: 1; }
 }
+/* ---------- 덱 창: 여러 장 고르기 · 카드 효과 도우미 · 남은 카드 (11/18) ---------- */
+.zvsheet > .zvtools { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 0 4px 8px; }
+.zvsheet > .zvtools:empty { display: none; }
+.zvfx { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; border-radius: 14px; background: color-mix(in srgb, var(--judge) 10%, var(--panel)); border: 1.5px solid color-mix(in srgb, var(--judge) 38%, transparent); }
+.zvfx .qi { font-size: 1.05rem; }
+.zvfxt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; }
+.zvfxn { align-self: flex-start; padding: 0; min-height: 0; border: 0; background: none; box-shadow: none; font-family: var(--fh); font-size: 1.05rem; color: var(--head); text-decoration: underline dotted color-mix(in srgb, var(--head) 45%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.zvfxt > span { font-size: .9rem; line-height: 1.4; color: var(--text); }
+.zvfx [data-fxoff] { flex: none; }
+.zvrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.zvq { flex: 1 1 220px; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 12px; min-height: 40px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--pw); color: var(--muted); }
+.zvq input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; padding: 6px 0; font: inherit; font-size: 16px; color: var(--text); }
+.zvq:focus-within { border-color: var(--r2); }
+.zvonly[aria-pressed="true"], .zvshuf[aria-pressed="true"] { background: color-mix(in srgb, var(--teal) 16%, var(--pw)); border-color: var(--teal); color: var(--teal2); }
+.zvonly b { font-family: var(--fb); font-size: .85em; color: var(--muted); margin-left: 2px; }
+.zvgrid .zc { position: relative; }
+.zvgrid .zc .zsel { position: absolute; top: 5px; right: 5px; z-index: 2; width: 34px; height: 34px; min-height: 0; padding: 0; border-radius: 50%; display: grid; place-items: center; border: 2.5px solid #fff; background: rgba(20, 40, 60, .38); box-shadow: 0 2px 6px rgba(0, 0, 0, .35); color: #fff; font-family: var(--fh); font-size: 1.05rem; cursor: pointer; }
+.zvgrid .zc .zsel::before { content: ''; position: absolute; inset: -9px; border-radius: 50%; } /* 누르는 곳 넓게 */
+.zvgrid .zc .zsel:hover { background: rgba(20, 40, 60, .55); }
+.zvgrid .zc.on .zsel { background: var(--teal); }
+.zvgrid .zc.on .pc.zpc { outline: 3px solid var(--teal); outline-offset: 2px; transform: translateY(-4px); }
+.zvgrid .zc.dim .pc.zpc { filter: grayscale(.75) brightness(.8); opacity: .5; }
+.zvgrid .zc.dim small { opacity: .55; }
+@media (max-width: 600px) { .zvgrid .zc .zsel { width: 30px; height: 30px; top: 3px; right: 3px; font-size: .95rem; } }
+.zvsheet > .zvbar { flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 4px; padding: 10px 4px 2px; border-top: 1.5px dashed var(--line); }
+.zvbh { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 14px; }
+.zvn { font-family: var(--fh); color: var(--text); text-align: center; }
+.zvn b { font-size: 1.15rem; color: var(--teal2); }
+.zvn.over, .zvn.over b { color: var(--bad); }
+.zvsheet .zvbar .acts { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 8px; width: 100%; max-width: calc(var(--n) * 220px); margin: 0 auto; }
+.zvsheet .zvbar .acts.fxa { grid-template-columns: minmax(0, 1fr) auto; max-width: 620px; }
+.zvsheet .zvbar .acts button { width: 100%; min-height: 42px; padding: 6px 14px; line-height: 1.25; white-space: normal; word-break: keep-all; }
+.zvsheet .zvbar .acts.fxa button:not(.primary) { width: auto; }
+@media (max-width: 600px) { .zvsheet .zvbar .acts { grid-template-columns: repeat(var(--np), minmax(0, 1fr)); } .zvsheet .zvbar .acts button { min-height: 40px; padding: 5px 10px; font-size: .95rem; } }
+.zvrest { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 12px; }
+.zvrest .acts { flex: 1 1 420px; }
+.zvrn { font-family: var(--fh); white-space: nowrap; color: var(--muted); }
+.zvrn b { color: var(--text); }
+.zsel1 { margin: 10px 0 4px; }
+/* 특성 사용 표시 */
+.mk.abu { background: var(--blue); display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.mk.abu .ic { width: 1em; height: 1em; stroke-width: 3; }
+button.blue.used { opacity: .82; }
+/* 상대가 보여준 카드 (화면 가운데, 누르면 닫힘) */
+.revlayer { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; padding: 16px; background: rgba(4, 18, 31, .55); backdrop-filter: blur(3px); animation: fade .18s; cursor: pointer; }
+.revbox { width: min(940px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 16px 18px 18px; border-radius: 22px; background: var(--panel); box-shadow: var(--shadow); text-align: center; animation: pop .22s ease-out; }
+.revbox h3 { justify-content: center; margin: 0 0 2px; }
+.revt { margin: 0 0 12px; color: var(--muted); font-size: .9rem; }
+.revcards { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-bottom: 14px; }
+.revc { --cw: clamp(96px, calc((min(940px, 100vw) - 120px) / var(--rn, 3)), 190px); width: var(--cw); min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+.revc .pc.revpc { --cw: inherit; width: 100%; }
+.revc small { font-family: var(--fh); font-size: .85rem; line-height: 1.25; color: var(--text); }
+.revok { min-width: 140px; }
+/* 기록: 보여준 카드 작은 그림 */
+.lshow { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.lsc { --cw: 40px; width: 40px; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; cursor: pointer; }
+.lsc .pc.lspc { --cw: 40px; width: 40px; }
+.zvcats { display: flex; flex-wrap: wrap; gap: 6px; }
+.zvcat { min-height: 32px; padding: 2px 11px; border-radius: 999px; font-size: .84rem; border: 1.5px solid var(--line); background: var(--pw); color: var(--text); box-shadow: none; white-space: nowrap; }
+.zvcat b { font-family: var(--fb); font-size: .8em; color: var(--muted); }
+.zvcat[aria-pressed="true"] { background: var(--r2); border-color: var(--r2); color: #fff; }
+.zvcat[aria-pressed="true"] b { color: rgba(255, 255, 255, .85); }
+@media (max-width: 600px) { .zvcat { min-height: 30px; padding: 1px 9px; font-size: .8rem; } .zvcats { gap: 5px; } }
+.zvbar .b2 { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.2; }
+.zvbar .b2 small { font-family: var(--fb); font-size: .8em; opacity: .92; }

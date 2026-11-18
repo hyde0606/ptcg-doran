@@ -117,4 +117,49 @@ assert.deepEqual(R2.s.p[0].deck, st2.s.p[0].deck);
   assert.ok(viewFor(R.s, 0).stop === null);
   console.log('stop ok');
 }
+// 덱 보기·여러 장 옮기기·보여주기·섞기 (11/18 카드 효과 도우미)
+{
+  const L3 = log.slice(0, 12); const S = replay(init, L3).s; const me = S.current;
+  const ap = (a, ok = true) => { const r = apply(S, me, a, L3.length); if (r.ok) L3.push({ who: me, a }); assert.equal(!!r.ok, ok, JSON.stringify(r)); return r; };
+  // 위에서 4장 보기: 한 장을 손패로 옮겨도 5번째 카드가 새로 보이지 않음
+  ap({ type: 'look', p: me, z: 'deck', n: 4 });
+  const top4 = S.p[me].deck.slice(0, 4), fifth = S.p[me].deck[4];
+  assert.deepEqual(viewFor(S, me).p[me].deck.cards.map(x => x.i), top4);
+  ap({ type: 'move', iids: [top4[0]], to: { z: 'hand', p: me } });
+  const seen = viewFor(S, me).p[me].deck.cards.map(x => x.i);
+  assert.deepEqual(seen, top4.slice(1), '본 카드 3장만'); assert.ok(!seen.includes(fifth));
+  // 남은 3장을 섞어서 덱 아래로 → 보기 끝, 덱 맨 아래 3장이 그 카드들
+  const r = ap({ type: 'move', iids: top4.slice(1), to: { z: 'deck', p: me, pos: 'bottom' }, mix: true });
+  assert.equal(S.p[me].look, null, '다 옮기면 보기 끝');
+  assert.deepEqual([...S.p[me].deck.slice(-3)].sort(), [...top4.slice(1)].sort());
+  assert.ok(/섞어서 덱 아래/.test(r.ev[0].pub), r.ev[0].pub);
+  // 덱 전체 보기 → 두 장을 보여주고 손패로 + 덱 섞기: 이름이 모두에게, 보여준 카드 번호가 기록에, 보기 끝
+  ap({ type: 'look', p: me, z: 'deck' });
+  const two = S.p[me].deck.slice(5, 7);
+  const r2 = ap({ type: 'move', iids: two, to: { z: 'hand', p: me }, show: true, shuffle: true });
+  assert.ok(r2.ev[0].show && r2.ev[0].show.length === 2, '보여준 카드');
+  assert.ok(!r2.ev[0].own && /보여주고 손패/.test(r2.ev[0].pub), r2.ev[0].pub);
+  assert.ok(r2.ev.some(e => /자기 덱을 섞었어요/.test(e.pub))); assert.equal(S.p[me].look, null);
+  assert.ok(two.every(i => S.p[me].hand.includes(i)));
+  // 보지 않는 덱 카드는 고를 수 없음
+  ap({ type: 'move', iids: [S.p[me].deck[0]], to: { z: 'hand', p: me } }, false);
+  // 벤치 자리 수: 여러 장을 한 번에 낼 때도 5장까지
+  const free = 5 - S.p[me].bench.length; ap({ type: 'look', p: me, z: 'deck' });
+  ap({ type: 'move', iids: S.p[me].deck.slice(0, free + 1), to: { z: 'bench', p: me } }, false);
+  console.log('deck look/move ok');
+}
+// 특성 사용 표시: 쓰면 used.ab에 남고, '차례에 1번' 특성을 또 쓰면 경고, 차례가 바뀌면 지워짐
+{
+  const Sx = replay(init, log.slice(0, 12)).s, me = Sx.current;
+  const sl = Sx.p[me].active; const cid = Sx.inst[sl.cards[0]];
+  Sx.cards[cid] = { ...Sx.cards[cid], ab: [{ n: 'Test', t: 'Once during your turn, you may draw a card.' }], kab: [{ n: '시험', t: '자신의 차례에 1번 사용할 수 있다.' }] };
+  const r1 = apply(Sx, me, { type: 'ability', sid: sl.sid, k: 0 }); assert.ok(r1.ok);
+  assert.deepEqual(Sx.p[me].used.ab, [`${sl.sid}:0`]);
+  const r2 = apply(Sx, me, { type: 'ability', sid: sl.sid, k: 0 }); assert.ok(r2.warn && /이미 쓴 특성/.test(r2.warn[0]), JSON.stringify(r2));
+  assert.ok(apply(Sx, me, { type: 'ability', sid: sl.sid, k: 0, force: true }).ok);
+  apply(Sx, me, { type: 'endTurn', force: true });
+  if (Sx.current !== me) { const r3 = apply(Sx, Sx.current, { type: 'endTurn', force: true }); }
+  if (Sx.current === me) assert.ok(!(Sx.p[me].used.ab || []).length, '차례가 바뀌면 지워짐');
+  console.log('ability mark ok');
+}
 console.log('waiting', waitingOn(state), 'log', log.length, 'OK');
