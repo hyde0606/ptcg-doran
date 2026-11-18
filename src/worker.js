@@ -126,6 +126,17 @@ export default {
       return json({ room: await startGame(env, req, lobby, room) });
     }
     if ((m = path.match(/^\/api\/rooms\/(\w+)\/close$/)) && req.method === 'POST') return json({ ok: await lobby.closeRoom(uid, m[1]) });
+    if ((m = path.match(/^\/api\/admin\/rooms\/(\w+)\/(end|delete)$/)) && req.method === 'POST') { // 관리자: 진행 중·끝난 판 끝내기 / 지우기
+      if (!await isAdmin(env, lobby, me)) return err('관리자만 할 수 있어요.', 403);
+      const room = await lobby.room(m[1]); if (!room) return err('방을 찾을 수 없어요.', 404);
+      if (m[2] === 'end') {
+        const last = room.games[room.games.length - 1];
+        if (last && room.status === 'playing') await env.GAME.get(env.GAME.idFromName(last)).adminEnd(me.name);
+        return json({ ok: await lobby.adminEnd(room.id) });
+      }
+      for (const gid of room.games) await env.GAME.get(env.GAME.idFromName(gid)).wipe();
+      return json({ ok: await lobby.adminDelete(room.id) });
+    }
     if ((m = path.match(/^\/api\/games\/([\w-]+)\/(at|info)$/))) {
       const g = env.GAME.get(env.GAME.idFromName(m[1]));
       const r = await g.history(uid, m[2] === 'at' ? +url.searchParams.get('k') : -1);
@@ -230,6 +241,8 @@ export class Lobby extends DurableObject {
   }
   gameStarted(id, gameId) { const r = this.room(id); r.games.push(gameId); r.status = 'playing'; return this.saveRoom(r); }
   closeRoom(uid, id) { const r = this.room(id); if (!r || r.host !== uid || r.status !== 'open') return false; this.sql.exec('DELETE FROM rooms WHERE id=?', id); return true; }
+  adminEnd(id) { const r = this.room(id); if (!r) return false; if (r.status === 'open') { this.sql.exec('DELETE FROM rooms WHERE id=?', id); return true; } r.status = 'done'; r.waiting = []; r.deadline = 0; this.saveRoom(r); return true; }
+  adminDelete(id) { this.sql.exec('DELETE FROM rooms WHERE id=?', id); return true; }
   // 대전 DO 가 판 상태를 알려 줌
   gameUpdate(roomId, gameId, u) {
     const r = this.room(roomId); if (!r || r.games[r.games.length - 1] !== gameId) return;
@@ -253,10 +266,22 @@ export class Lobby extends DurableObject {
 // ---------------- 대전 한 판 ----------------
 export class Game extends DurableObject {
   constructor(ctx, env) {
-    super(ctx, env); this.sql = ctx.storage.sql;
-    this.sql.exec(`CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
-      CREATE TABLE IF NOT EXISTS log(k INTEGER PRIMARY KEY, who INTEGER, a TEXT, t INTEGER);`);
+    super(ctx, env); this.sql = ctx.storage.sql; this.mk();
     this.cache = null;
+  }
+  mk() { this.sql.exec(`CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
+      CREATE TABLE IF NOT EXISTS log(k INTEGER PRIMARY KEY, who INTEGER, a TEXT, t INTEGER);`); }
+  async adminEnd(by) { // 관리자가 판 끝내기 (승자 없음). 보고 있는 사람에게 바로 보냄
+    const G = this.load(); if (!G || G.s.phase === 'over') return false;
+    const a = { type: 'adminEnd', by: String(by || '').slice(0, 20) }, t = Date.now();
+    const r = apply(G.s, 0, a, G.log.length); if (!r.ok) { this.cache = null; return false; }
+    G.log.push({ who: 0, a, t }); G.steps.push({ ok: true, ev: r.ev });
+    this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length - 1, 0, JSON.stringify(a), t);
+    this.push(G, false, G.log.length - 1); await this.report(G); return true;
+  }
+  async wipe() { // 관리자가 지우기: 기록을 모두 지우고 보고 있던 사람은 로비로
+    for (const w of this.ctx.getWebSockets()) { try { w.send('{"t":"gone"}'); w.close(1000, 'deleted'); } catch {} }
+    await this.ctx.storage.deleteAlarm(); await this.ctx.storage.deleteAll(); this.mk(); this.cache = null; return true;
   }
   meta(k) { const r = this.sql.exec('SELECT v FROM meta WHERE k=?', k).toArray()[0]; return r ? JSON.parse(r.v) : null; }
   setMeta(k, v) { this.sql.exec('INSERT OR REPLACE INTO meta VALUES(?,?)', k, JSON.stringify(v)); }
@@ -275,8 +300,9 @@ export class Game extends DurableObject {
     this.cache = null; const G = this.load(); await this.report(G);
   }
   seatOf(G, uid) { const k = G.init.players.findIndex(p => p.uid === uid); return k < 0 ? null : k; }
+  specAll(G, seat) { return seat == null && G.init.cfg.spectate !== 'no'; } // 관전자는 모두 봄 (11/18 링크 님)
   lines(G, seat, from = 0) { // 사람마다 보이는 기록 줄
-    const over = G.s.phase === 'over';
+    const over = G.s.phase === 'over' || this.specAll(G, seat);
     const out = [];
     const push = (e, k, step) => {
       if (e.quiet && seat !== e.ownBy && !over) return;
@@ -287,8 +313,7 @@ export class Game extends DurableObject {
     return out;
   }
   view(G, seat) {
-    const s = G.s, v = viewFor(s, seat == null ? 'spec' : seat);
-    if (seat == null && G.init.cfg.spectate === 'open') for (const p of [0, 1]) v.p[p].hand = s.p[p].hand.map(i => ({ i, c: s.inst[i] }));
+    const s = G.s, v = viewFor(s, this.specAll(G, seat) ? 'all' : seat == null ? 'spec' : seat);
     return { ...v, id: G.id, me: seat, n: G.log.length, deadline: this.deadline(G), cfg: G.init.cfg };
   }
   deadline(G) {
@@ -357,7 +382,7 @@ export class Game extends DurableObject {
       this.cache = null; const G2 = this.load();
       this.push(G2, true); await this.report(G2); return { ok: true };
     }
-    if (a.type === 'timeout') return { ok: false, err: '서버만 할 수 있어요.' };
+    if (a.type === 'timeout' || a.type === 'adminEnd') return { ok: false, err: '서버만 할 수 있어요.' };
     const r = apply(G.s, seat, a, G.log.length);
     if (!r.ok) { if (r.err || r.warn) { this.cache = null; } return { ok: false, err: r.err, warn: r.warn }; }
     // apply 가 실패하면 상태가 반쯤 바뀌었을 수 있어 캐시를 버린다 (위). 성공하면 기록.
@@ -398,7 +423,7 @@ export class Game extends DurableObject {
     if (k < 0) return { n: G.log.length, lines: this.lines(G, seat), cards: G.init.cards, players: G.init.players.map(p => p.name), over, me: seat };
     k = Math.max(0, Math.min(G.log.length, k | 0));
     const R = replay(G.init, G.log, k);
-    const v = viewFor(R.s, over ? 'all' : seat == null ? 'spec' : seat);
+    const v = viewFor(R.s, over || this.specAll(G, seat) ? 'all' : seat == null ? 'spec' : seat);
     return { k, n: G.log.length, view: v };
   }
 }

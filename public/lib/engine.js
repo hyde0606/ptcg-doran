@@ -196,7 +196,7 @@ export function apply(s, who, a, idx = 0) {
   const say = (pub, own) => ev.push(own ? { pub, own, ownBy: who } : { pub });
   if (s.phase === 'over' && !['chat', 'agree', 'dispute'].includes(a.type)) return fail('끝난 판이에요.');
   // 잠깐 멈춘 동안에는 채팅·대답·항복만 (지적을 정리해야 판이 다시 움직임)
-  if (s.stop && !['chat', 'stopEnd', 'concede', 'agree', 'dispute', 'rewindAsk', 'rewindNo', 'lookEnd'].includes(a.type)) return fail('잠깐 멈춘 상태예요. 지적을 먼저 정리해 주세요.');
+  if (s.stop && !['chat', 'stopEnd', 'concede', 'agree', 'dispute', 'rewindAsk', 'rewindNo', 'lookEnd', 'adminEnd'].includes(a.type)) return fail('잠깐 멈춘 상태예요. 지적을 먼저 정리해 주세요.');
 
   let gid = null; // 이 행동이 속한 사람 판정 묶음
   const judged = (title) => { // 사람 판정 묶음에 넣기 (없으면 새로)
@@ -558,6 +558,11 @@ export function apply(s, who, a, idx = 0) {
     case 'concede': {
       s.phase = 'over'; s.winner = other(who); s.winReason = `${me} 님이 항복했어요`; s.prompts = [];
       say(`🏆 ${s.players[other(who)].name} 님 승리 — ${s.winReason}`);
+      break;
+    }
+    case 'adminEnd': { // 서버가 보냄 (관리자가 판을 끝냄, 승자 없음)
+      s.phase = 'over'; s.winner = null; s.winReason = `관리자 ${a.by || ''} 님이 판을 끝냈어요`; s.prompts = []; s.stop = null;
+      say(`⏹ ${s.winReason}`);
       break;
     }
     case 'timeout': { // 서버가 보냄 (기한 초과)
