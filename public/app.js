@@ -1,7 +1,8 @@
 import KS from '/lib/ks.js';
 import { indexCards, parseDeckList, checkDeck, exportDeckList, koName, cardNo, sideEn } from '/lib/deck.js';
 import Sound from '/lib/sound.js';
-import { parseSearch, parseTop, parseCost, searchLabel, toLabel, REST_KO } from '/lib/fxhelp.js';
+import { parseSearch, parseTop, parseCost, searchLabel, toLabel, eachFit, REST_KO } from '/lib/fxhelp.js';
+import { stadRules, abLost, ruinsHits, evoOk, evoName, coinSpec, coinSpecLabel, extraDmg, targetDmg, statusOf, lockOf, abilityConds, parseReset, resetCount, parseDraw, basicEnergyType, benchImmune, LOCK_KO } from '/lib/fxrules.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -183,8 +184,10 @@ const altName = c => D.dtext === 'both' && c && !c.kro && c.n !== cnameKo(c) ? c
 
 // ---------- 선택 창 (뒤로 가기로 닫힘) ----------
 const sheetStack = [];
-function openSheet(html, onMount) {
+let sheetOnClose = null; // 창이 닫히면 (닫기·뒤로 가기·바깥 누르기·다른 창으로 바뀜) 한 번 부름: 고르기 물음이 멈춰 있지 않게
+function openSheet(html, onMount, onClose) {
   const sh = $('#sheet');
+  const prevClose = sheetOnClose; sheetOnClose = null; if (prevClose) try { prevClose(); } catch {}
   sh.innerHTML = `<div class="in">${html}</div>`; sh.hidden = false; Sound.sfx('open');
   if (!sheetStack.length) history.pushState({ sheet: 1 }, '');
   sheetStack.push(1);
@@ -192,6 +195,7 @@ function openSheet(html, onMount) {
   // 닫기 단추는 창 바깥 오른쪽 위로 (창 안 내용이 한쪽으로 밀리지 않고 가운데에 오게)
   const inn = sh.firstElementChild, x = inn.querySelector(':scope > .x[data-close]');
   if (x) { x.className = 'xo'; x.innerHTML = ICON.x; x.setAttribute('aria-label', '닫기'); sh.appendChild(x); inn.classList.add('hasxo'); }
+  sheetOnClose = onClose || null;
   onMount && onMount(inn);
   if (x) { placeX(); const h = e => { if (e.target !== inn) return; inn.removeEventListener('animationend', h); placeX(); }; inn.addEventListener('animationend', h); setTimeout(placeX, 360); }
 }
@@ -204,8 +208,10 @@ window.addEventListener('resize', () => requestAnimationFrame(placeX));
 function closeSheet(fromPop) {
   const sh = $('#sheet'); if (sh.hidden) return;
   const sub = SUBVIEW ? 1 : 0; SUBVIEW = null;
+  const oc = sheetOnClose; sheetOnClose = null;
   sh.hidden = true; sh.innerHTML = ''; sheetStack.length = 0; ZV = null; if (typeof ZMENU !== 'undefined' && ZMENU) zvMenuClose();
   if (!fromPop) { popSkip++; history.go(-1 - sub); }
+  if (oc) try { oc(); } catch {}
 }
 // ---------- 뒤로 가기 ----------
 // 순서: 창 안의 자세히 보기 → 선택 창 → 리플레이 → 페이지. 대전·리플레이·덱 고치기는 두 번 눌러야 나감 (첫 번째엔 안내, 덱을 고쳤으면 저장할지 물음)
@@ -218,6 +224,7 @@ function leavePage(fallback) { // 화면의 '닫기'로 나갈 때: 지킴 칸�
 }
 window.addEventListener('popstate', () => {
   if (popSkip) { popSkip--; return; }
+  if (BP) { bpEnd(null, true); return; } // 판 위에서 고르는 중이면 고르기부터 취소
   if (REVEAL) { closeReveal(true); return; } // 상대가 보여준 카드 창부터
   if (ZMENU) { const live = ZMENU.m.isConnected; zvMenuClose(); if (live) { history.pushState({ sheet: 1 }, ''); return; } } // 분류 목록만 닫고 창은 그대로
   if (SUBVIEW) { SUBVIEW(); return; }
@@ -240,12 +247,13 @@ function balCols(labels, W = Math.min(innerWidth, 640) - 40) {
 }
 const actsHtml = (opts, cls = '', W) => opts.length ? `<div class="acts bal ${cls}" style="--cols:${balCols(opts.map(o => o.label), W)}">${opts.map(o => `<button class="${o.cls || ''}" data-i="${o.i}">${o.label}</button>`).join('')}</div>` : '';
 const FX = '<small class="fx">효과</small>'; // 카드 효과로 하는 일 표시 (줄바꿈 없이 작은 꼬리표)
-function pick(title, options) { // options: [{label, value, cls}]
+function pick(title, options, desc = '') { // options: [{label, value, cls}]. 고르지 않고 닫으면 null
   return new Promise(res => {
-    openSheet(`<button class="x sm" data-close>닫기</button><h3>${esc(title)}</h3>${actsHtml(options.map((o, i) => ({ ...o, i })), '', Math.min(innerWidth, 520) - 40)}`, el => {
+    let done = false;
+    openSheet(`<button class="x sm" data-close>닫기</button><h3>${esc(title)}</h3>${desc ? `<p class="small muted pkd">${desc}</p>` : ''}${actsHtml(options.map((o, i) => ({ ...o, i })), '', Math.min(innerWidth, 520) - 40)}`, el => {
       el.classList.add('picksheet');
-      el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { const o = options[+b.dataset.i]; closeSheet(); setTimeout(() => res(o.value), 30); });
-    });
+      el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { if (b.disabled) return; const o = options[+b.dataset.i]; done = true; closeSheet(); setTimeout(() => res(o.value), 30); });
+    }, () => { if (!done) { done = true; res(null); } });
   });
 }
 // 숫자 고르기는 키보드 대신 ▼▲ 단추: stepHtml(이름, 값, { min, max, by, unit })
@@ -259,13 +267,14 @@ function bindSteps(root, onChange) {
     set(+inp.value);
   });
 }
-function ask(title, html, okLabel = '확인', cls = 'primary') {
+function ask(title, html, okLabel = '확인', cls = 'primary', onMount = null) { // 취소·닫기·뒤로 가기면 null
   return new Promise(res => {
+    let done = false;
     openSheet(`<h3>${esc(title)}</h3>${html}<div class="row askr" style="margin-top:12px"><button class="${cls}" data-ok>${okLabel}</button><button data-close>취소</button></div>`, el => {
       bindSteps(el);
-      el.querySelector('[data-ok]').onclick = () => { const f = {}; el.querySelectorAll('[name]').forEach(x => { if ((x.type === 'checkbox' || x.type === 'radio') && !x.checked) return; f[x.name] = x.value; }); closeSheet(); setTimeout(() => res(f), 30); };
-      el.querySelector('[data-close]').addEventListener('click', () => res(null));
-    });
+      el.querySelector('[data-ok]').onclick = () => { if (el.querySelector('[data-ok]').disabled) return; const f = {}; el.querySelectorAll('[name]').forEach(x => { if ((x.type === 'checkbox' || x.type === 'radio') && !x.checked) return; f[x.name] = x.value; }); done = true; closeSheet(); setTimeout(() => res(f), 30); };
+      onMount && onMount(el);
+    }, () => { if (!done) { done = true; res(null); } });
   });
 }
 
@@ -1261,30 +1270,62 @@ function renderGame(id) {
   connect();
   document.addEventListener('visibilitychange', sendVis);
   const dockOut = e => { // 판정 창 바깥을 누르면 창만 접음 (누른 곳의 동작은 하지 않음). 손패는 그대로 눌림 (준비 때 '손패를 눌러 놓아 주세요' 안내가 떠 있으므로)
+    if (BP) return; // 판 위에서 고르는 중 (bpClick이 받음)
     const d = document.querySelector('.arena .dock'); if (!d || !$('#sheet').hidden || e.target.closest('.dock, .dockfab, #sheet, #toast, .handbar')) return;
     e.preventDefault(); e.stopPropagation(); G.ui.dockMode = 'shut'; draw([]);
   };
-  app.addEventListener('click', dockOut, true);
+  app.addEventListener('click', dockOut, true); app.addEventListener('click', bpClick, true);
   guardPage('한 번 더 누르면 대전에서 나가요. 대전은 그대로 이어져요');
   const ping = setInterval(() => { try { G.ws.readyState === 1 && G.ws.send('{"t":"ping"}'); } catch {} }, 25000);
-  leaveGame = () => { closed = true; clearInterval(ping); document.removeEventListener('visibilitychange', sendVis); app.removeEventListener('click', dockOut, true); if (G.rw) { clearTimeout(G.rw.timer); G.rw = null; } try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
+  leaveGame = () => { closed = true; clearInterval(ping); document.removeEventListener('visibilitychange', sendVis); app.removeEventListener('click', dockOut, true); app.removeEventListener('click', bpClick, true); bpReset(); if (G.rw) { clearTimeout(G.rw.timer); G.rw = null; } try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
 }
 function send(a) {
   const pre = a.force ? null : fxPrep(a); // 카드 효과 도우미: 쓰기 직전 카드 글 (경고 뒤 '그대로 진행'이면 그때 시작)
+  const bpre = a.force ? null : benchPrep(a); // 벤치에 낸 포켓몬: 위험한 폐허·'패에서 벤치로 냈을 때' 특성
+  const after = () => { if (pre) setTimeout(() => fxAfter(pre), 0); if (bpre) setTimeout(() => benchAfter(bpre), 0); };
   return new Promise(res => {
     const id = G.seq++; G.pend[id] = res;
     G.ws.send(JSON.stringify({ t: 'act', id, a }));
   }).then(async r => {
-    if (r.ok) { if (pre) setTimeout(() => fxAfter(pre), 0); return true; }
+    if (r.ok) { after(); return true; }
     if (r.warn) {
       const f = await ask('이렇게 할까요?', `<p>기본 룰과 다른 점이 있어요.</p><ul>${r.warn.map(w => `<li>${esc(w)}</li>`).join('')}</ul><p class="small muted">카드 효과 때문이라면 그대로 진행하세요. 기록에 <span class="chip judge">사람 판정</span>으로 남고 상대가 확인해요.</p><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%" placeholder="예: 특성으로 에너지 한 장 더">`, '그대로 진행', 'judge');
       if (!f) return false;
       const ok = await send({ ...a, force: true, note: f.note || a.note });
-      if (ok && pre) setTimeout(() => fxAfter(pre), 0);
+      if (ok) after();
       return ok;
     }
     toast(r.err || '할 수 없어요.'); return false;
   });
+}
+function benchPrep(a) { // 벤치에 내기 전: 지금 있는 포켓몬과 손패
+  const v = G.view, me = meSeat(); if (!v || me == null || v.phase !== 'play') return null;
+  if (!(a.type === 'bench' || (a.type === 'move' && a.to && a.to.z === 'bench' && (a.to.p ?? me) === me))) return null;
+  const hand = new Set((v.p[me].hand || []).map(x => x.i));
+  return { before: new Set(allSlots(me).map(x => x.sid)), hand: (a.type === 'bench' ? [a.iid] : a.iids || []).filter(i => hand.has(i)) };
+}
+const stadShort = c => cname(c).replace(/ \((좌측|우측)\)$/, '').replace(/^(전설의|로켓단의) /, '');
+const josaRo = w => { const ch = String(w).slice(-1).charCodeAt(0) - 0xac00; return ch >= 0 && ch < 11172 && ch % 28 && ch % 28 !== 8 ? '으로' : '로'; };
+function benchAfter(bp) {
+  const v = G.view, me = meSeat(); if (!v || me == null || v.phase !== 'play') return;
+  const fresh = bench(me).filter(sl => !bp.before.has(sl.sid)); if (!fresh.length) return;
+  const st = v.stadium ? stadRules(cinfo(v.stadium.c)) : null, sc = v.stadium && v.stadium.c;
+  if (st && st.ruins && v.current === me) { // 위험한 폐허: 올릴지 물어봄 (내 차례에 기본 포켓몬(악 제외)을 벤치로 낼 때마다)
+    const hit = fresh.filter(sl => ruinsHits(st, cinfo(topOf(sl).c))), done = new Set();
+    if (hit.length) fxStep({ title: stadShort(cinfo(sc)), cid: sc, alive: () => !!(G.view.stadium && G.view.stadium.c === sc),
+      desc: `벤치로 낸 기본 포켓몬에게 데미지 카운터 ${st.ruins}개: ${hit.map(sl => esc(nmOf(topOf(sl)))).join(', ')}`,
+      items: [{ label: `카운터 ${st.ruins}개${hit.length > 1 ? `씩 올리기 (${hit.length}마리)` : ' 올리기'}`, run: async () => {
+        for (const sl of hit) { if (done.has(sl.sid) || !findSlot(sl.sid)) continue; if (!(await send({ type: 'damage', sid: sl.sid, n: st.ruins * 10, why: stadShort(cinfo(sc)) }))) return false; done.add(sl.sid); }
+        return true; } }] });
+  }
+  for (const sl of fresh) { // 나옹 ex '비장의 수단 캐치' 같은 '패에서 벤치로 내보냈을 때' 특성
+    const t = topOf(sl); if (!bp.hand.includes(t.i)) continue;
+    const c = cinfo(t.c);
+    (c.ab || []).forEach((ab0, k) => {
+      const ab = (c.kab || [])[k] || ab0; if (!abilityConds(ab.t).some(q => q.k === 'benched')) return;
+      fxStep({ title: `${cname(c)} · 특성 ${ab.n}`, cid: t.c, sid: sl.sid, alive: () => !abUsedOf(sl.sid, k), desc: '패에서 벤치로 낸 이번 차례에만 쓸 수 있어요.', items: [{ label: `${ICON.spark}특성 쓰기`, cls: 'blue', run: () => send({ type: 'ability', sid: sl.sid, k }) }] });
+    });
+  }
 }
 const meSeat = () => G.view.me;
 const oppSeat = () => G.view.me == null ? 1 : 1 - G.view.me;
@@ -1370,7 +1411,9 @@ function areaHtml(p, isBottom) {
   const now = v.phase === 'play' && v.current === p;
   const state = v.phase === 'setup' ? `<b class="zst ${P.ready ? 'ok' : ''}">${P.ready ? '준비 완료' : '준비 중'}</b>` : '';
   // 이름표와 '이번 차례에 쓴 것'은 벤치 칸 테두리에 걸쳐서 (가로 화면은 이름표 왼쪽·쓴 것 오른쪽, 세로 화면은 나란히)
-  const tag = `<div class="ztags"><span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><span class="zn">${esc(P.name)}</span></span>${state}${v.phase === 'setup' && P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}</div>`; // 이름만 꾸민 상자에, 준비 상태는 옆에 따로
+  const lk = P.lock || {}, locks = v.phase === 'play' ? Object.keys(LOCK_KO).filter(k => lk[k] != null && v.turn <= lk[k]) : []; // 꼬몽울 '근질근질 꽃가루' 등: 그 사람의 다음 차례 끝까지
+  const lockT = locks.map(k => `<b class="zst lock" title="${esc(lk[k + 'By'] ? `「${lk[k + 'By']}」 효과` : '상대 기술 효과')}: ${v.turn < lk[k] ? '다음' : '이번'} 차례에 손패의 ${LOCK_KO[k]}을(를) 쓸 수 없어요">${ICON.warn}${LOCK_KO[k]} 금지</b>`).join('');
+  const tag = `<div class="ztags"><span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><span class="zn">${esc(P.name)}</span></span>${state}${lockT}${v.phase === 'setup' && P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}</div>`; // 이름만 꾸민 상자에, 준비 상태는 옆에 따로
   return `<section class="area ${isBottom ? 'bottom' : 'top'} ${now ? 'now' : ''}" data-area="${p}">
       <div class="g-pz zone">${prizesHtml(p)}</div>
       <div class="g-act">${slotHtml(P.active, { active: true })}</div>
@@ -1562,15 +1605,16 @@ function draw(newLines) {
   const me = meSeat();
   const waitingMe = me != null && v.waiting.includes(me);
   document.title = (waitingMe ? '● 내 차례 · ' : '') + '닌포케카';
-  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${dockHtml()}</div>${lobbyBtn()}</div>`;
+  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${BP ? '' : dockHtml()}</div>${lobbyBtn()}</div>`; // 판 위에서 고르는 중엔 판정 창을 숨김
   drawSpecs(); drawSide(); bindBoard();
   app.querySelectorAll('[data-dock]').forEach(b => b.onclick = () => { G.ui.dockMode = b.dataset.dock; draw([]); });
   flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); if (prevView) revealShow(newLines); }
   G.prev = JSON.parse(JSON.stringify(v));
   const lk = me != null && v.p[me].look, lkKey = lk ? `${lk.p}-${lk.z}-${lk.n}-${lk.bottom ? 'b' : 't'}` : '';
   if (ZV && !ZV.v) { const el = $('#sheet .zvsheet'); if (el) zvFill(el); else ZV = null; }
-  if (lkKey && lkKey !== G.ui.lookKey && !$('#sheet:not([hidden]) .in')) openZoneView({ look: 1 }); // 덱·손패·프라이즈를 보기 시작하면 바로 크게
+  if (lkKey && lkKey !== G.ui.lookKey && !$('#sheet:not([hidden]) .in') && !BP) openZoneView({ look: 1 }); // 덱·손패·프라이즈를 보기 시작하면 바로 크게
   G.ui.lookKey = lkKey;
+  bpApply();
 }
 function drawSpecs() { const el = $('#specs'); if (el) el.innerHTML = G.specs.length ? `${ICON.eye}관전 ${G.specs.length}` : ''; }
 // ----- 확인할 것 -----
@@ -1586,6 +1630,11 @@ function dockItems() {
     const chat = `<button class="sm" data-t="log">${ICON.chat}채팅</button>`;
     out.push(mine ? { k: 'stopme', u: 1, hd: `잠깐 멈춤 · ${nm(1 - me)} 님 대답을 기다려요`, h: `<div class="prompt stopq"><div class="q">${qIcon('pause', 'warn')}판을 잠깐 멈추고 지적했어요</div>${what}${why}<p class="pq small muted">상대가 되돌리기·직접 고치기·이대로 계속 중에서 골라요. 멈춘 동안에는 둘 다 카드를 움직일 수 없어요.</p><div class="bar"><button class="sm" data-stopend="drop">${ICON.play}지적 거두고 계속</button>${chat}</div></div>` }
       : { k: 'stop' + st.at, u: 1, hd: `${nm(st.by)} 님이 판을 잠깐 멈췄어요`, h: `<div class="prompt stopq"><div class="q">${qIcon('pause', 'warn')}${nm(st.by)} 님이 지적했어요</div>${what}${why}<div class="bar">${st.to != null ? `<button class="bad sm" data-stopundo>${ICON.rewind}그 행동 전으로 되돌리기</button>` : ''}<button class="judge sm" data-stopend="fix">직접 고치고 계속</button><button class="sm" data-stopend="keep">이대로 계속</button>${chat}</div></div>` });
+  }
+  for (const st of fxSteps()) { // 카드 효과 다음 단계 (내가 누를 것)
+    const btns = st.items.map((it, k) => `<button class="${it.cls || (k ? 'judge' : 'primary')} sm" data-fxs="${st.id}:${k}" ${st.busy ? 'disabled' : ''}>${typeof it.label === 'function' ? it.label() : it.label}</button>`).join('');
+    const body = `${st.desc ? `<p class="pq">${st.desc}</p>` : ''}<div class="bar">${btns}<button class="sm" data-fxx="${st.id}" ${st.busy ? 'disabled' : ''}>안 함</button></div>`;
+    out.push({ k: 'fx' + st.id, u: 1, hd: `<span class="fxsh">${esc(st.title)}</span>`, hb: `<div class="prompt fxstep">${body}</div>`, h: `<div class="prompt fxstep"><div class="q">${qIcon('spark', 'judge')}${esc(st.title)}</div>${body}</div>` });
   }
   if (v.phase === 'setup') {
     const P = v.p[me], O = v.p[1 - me];
@@ -1824,6 +1873,83 @@ async function pickSlot(title, ps = [meSeat()]) {
   if (!opts.length) { toast('고를 포켓몬이 없어요.'); return null; }
   return pick(title, opts);
 }
+// ----- 판 위에서 포켓몬 고르기: 고를 수 있는 포켓몬만 빛나고 나머지는 흐리게. 누르면 바로 골라짐 -----
+// 위 안내 줄의 '목록에서 고르기'(작은 화면용)·'취소', 바깥을 누르거나 뒤로 가기면 취소(null)
+let BP = null; // { title, sids, o, res }
+const slotLabel = sid => { const f = findSlot(sid); return f ? `${f.p === meSeat() ? '' : '상대 '}${f.where === 'active' ? '배틀' : '벤치'}: ${esc(nmOf(topOf(f.sl)))}` : '?'; };
+function boardPick(title, sids, o = {}) { // o: { hint, none(고를 게 없을 때 안내), dim(흐린 것을 눌렀을 때 안내), list(목록에서 고를 때 보일 포켓몬: 기본은 빛나는 것만) }
+  sids = [...new Set(sids)].filter(sid => findSlot(sid));
+  if (!sids.length) { toast(o.none || '고를 포켓몬이 없어요.', 2600); return Promise.resolve(null); }
+  if (BP) bpEnd(null);
+  return new Promise(async res => {
+    if (!$('#sheet').hidden) { closeSheet(); await new Promise(r => setTimeout(r, 40)); }
+    if (!G || !G.view || G.rw) return res(null);
+    BP = { title, sids, o, res };
+    history.pushState({ bp: 1 }, '');
+    draw([]); Sound.sfx('open');
+  });
+}
+function bpEnd(sid, fromPop = false) {
+  const b = BP; if (!b) return; BP = null;
+  if (!fromPop) { popSkip++; history.back(); }
+  if (G && G.view && !G.rw) draw([]);
+  setTimeout(() => b.res(sid), 40); // 뒤로 가기가 끝난 뒤 다음 창을 염
+}
+function bpReset() { const b = BP; BP = null; if (b) b.res(null); } // 판을 떠날 때 (뒤로 가기 칸은 페이지 이동이 정리)
+function bpApply() { // draw() 끝에: 고르는 중이면 빛내기 + 위 안내 줄
+  const ar = app.querySelector('.arena'); if (!BP || !ar) return;
+  BP.sids = BP.sids.filter(sid => findSlot(sid));
+  if (!BP.sids.length) { toast('고를 포켓몬이 없어졌어요.'); bpEnd(null); return; }
+  ar.classList.add('picking');
+  app.querySelectorAll('.mat [data-sid]').forEach(el => el.classList.add(BP.sids.includes(el.dataset.sid) ? 'bpick' : 'bdim'));
+  const bar = document.createElement('div'); bar.className = 'bpbar'; bar.setAttribute('role', 'status');
+  bar.innerHTML = `<div class="bpt"><b>${esc(BP.title)}</b>${BP.o.hint ? `<span>${esc(BP.o.hint)}</span>` : ''}</div><div class="bpb"><button type="button" class="sm" data-bplist>목록에서 고르기</button><button type="button" class="sm" data-bpx>취소</button></div>`;
+  ar.appendChild(bar);
+}
+async function bpList() { // 작은 화면에서 누르기 어려우면 목록 창으로
+  const b = BP; if (!b) return; BP = null; popSkip++; history.back(); draw([]);
+  await new Promise(r => setTimeout(r, 40));
+  const ls = (b.o.list || b.sids).filter(sid => findSlot(sid)); // o.list: 빛나지 않는 포켓몬도 고를 수 있게 (카드 효과로 예외일 때)
+  b.res(await pick(b.title, ls.map(sid => ({ label: slotLabel(sid), value: sid, cls: b.sids.includes(sid) ? 'primary' : '' }))));
+}
+function bpClick(e) { // 판 위 누르기를 가로챔 (고르는 중에만)
+  if (!BP) return;
+  const t = e.target; if (t.closest('#sheet, #toast')) return;
+  e.preventDefault(); e.stopPropagation();
+  if (t.closest('.bpbar')) { if (t.closest('[data-bpx]')) bpEnd(null); else if (t.closest('[data-bplist]')) bpList(); return; }
+  const el = t.closest('.mat [data-sid]');
+  if (el && BP.sids.includes(el.dataset.sid)) { Sound.sfx('tap'); bpEnd(el.dataset.sid); return; }
+  if (el) { toast(BP.o.dim || '빛나는 포켓몬 중에서 골라 주세요.', 2200); return; }
+  bpEnd(null); toast('고르기를 그만뒀어요. 판정 창의 단추로 다시 할 수 있어요.', 2400);
+}
+
+// ----- 카드 효과 다음 단계: 판정 창 맨 위에 단추로. 누르면 사이트가 한 번에 처리 (안 하려면 '안 함') -----
+// st: { title, desc, cid, gid(그 효과가 끝나면 사라짐), sid(그 포켓몬이 없어지면 사라짐), alive(), items: [{ label, cls, run: async () => 끝났으면 true }], auto(바로 실행할 단추 번호), then(끝난 뒤) }
+let STEPN = 0;
+function fxStep(st) {
+  const v = G.view, me = meSeat(); if (!v || me == null || v.phase !== 'play') return null;
+  st.id = ++STEPN; st.turn = v.turn;
+  (G.ui.steps ||= []).push(st);
+  draw([]);
+  if (st.auto != null) setTimeout(() => fxStepRun(st.id, st.auto), 80);
+  return st;
+}
+function fxSteps() { // 지난 단계는 지움: 효과가 끝났거나, 차례가 바뀌었거나, 그 포켓몬이 없어짐
+  const v = G.view, me = meSeat(); if (!G.ui.steps || !G.ui.steps.length || me == null) return [];
+  G.ui.steps = G.ui.steps.filter(st => v.phase === 'play' && st.turn === v.turn && (!st.gid || v.openGroup?.[me] === st.gid) && (!st.sid || findSlot(st.sid)) && (!st.alive || st.alive()));
+  return G.ui.steps;
+}
+async function fxStepRun(id, k) {
+  const st = (G.ui.steps || []).find(x => x.id === id); if (!st || st.busy) return;
+  const it = st.items[k]; if (!it) return;
+  st.busy = true; draw([]);
+  let ok = false;
+  try { ok = await it.run(); } catch (e) { toast((e && e.message) || '처리하지 못했어요.'); }
+  st.busy = false;
+  if (ok) { G.ui.steps = (G.ui.steps || []).filter(x => x !== st); if (st.then) setTimeout(st.then, 60); }
+  if (G && G.view && !G.rw) draw([]);
+}
+const fxDrop = id => { G.ui.steps = (G.ui.steps || []).filter(x => x.id !== +id); draw([]); };
 const moveOpts = me => [
   { label: '손패로', value: { z: 'hand', p: me }, cls: 'primary' }, { label: '트래시로', value: { z: 'discard', p: me } },
   { label: '덱 위로', value: { z: 'deck', p: me, pos: 'top' } }, { label: '덱 아래로', value: { z: 'deck', p: me, pos: 'bottom' } },
@@ -1853,6 +1979,11 @@ addEventListener('wheel', e => {
     }
   }
 }, { passive: false });
+function evoTargets(c) { const ms = allSlots(meSeat()), ok = ms.filter(sl => evoOk(c, cinfo(topOf(sl).c)) !== false); return ok.length ? ok : ms; } // 진화 전 이름이 맞는 포켓몬 (모르면 모두)
+function evoPick(c) {
+  const ms = allSlots(meSeat()), ok = evoTargets(c), name = evoName(c), nm = cname(c);
+  return boardPick(`${nm}${josaRo(nm)} 진화시킬 포켓몬`, sidsOf(ok), { hint: name && ok.length < ms.length ? `${name}에서 진화해요` : '', none: '진화시킬 포켓몬이 없어요.', dim: `${name || '다른 포켓몬'}에서 진화하는 카드예요. 카드 효과로 다른 포켓몬에 올리려면 '목록에서 고르기'를 눌러요.`, list: sidsOf(ms) });
+}
 async function onHandCard(iid) {
   const v = G.view, me = meSeat(); const x = v.p[me].hand.find(h => h.i === iid); const c = cinfo(x.c);
   const isBasic = c.st === 'P' && (c.sub || []).includes('Basic');
@@ -1875,7 +2006,7 @@ async function onHandCard(iid) {
       const k = opts[+b.dataset.i].value; closeSheet(); await new Promise(r => setTimeout(r, 30));
       if (k === 'sa' || k === 'sb') return send({ type: 'setupPlace', iid, to: k === 'sa' ? 'active' : 'bench' });
       if (k === 'bench') return send({ type: 'bench', iid });
-      if (k === 'evolve') { const sid = await pickSlot('어느 포켓몬을 진화시킬까요?'); if (sid) send({ type: 'evolve', iid, sid }); return; }
+      if (k === 'evolve') { const sid = await evoPick(c); if (sid) send({ type: 'evolve', iid, sid }); return; }
       if (k === 'attach') { const sid = await pickSlot('어느 포켓몬에게 붙일까요?', [me, 1 - me]); if (sid) send({ type: 'attach', iid, sid }); return; }
       if (k === 'play') { send({ type: 'play', iid }); return; }
       if (k === 'move') moveMenu([iid], cname(c));
@@ -1934,7 +2065,8 @@ async function onSlot(sid) {
   if (me != null && v.phase === 'play') {
     // 맨 윗줄: 기술과 특성 (내 포켓몬) / 둘째 줄: 체력 ▼▲ 적용 / 셋째 줄: 나머지
     if (mine && f.where === 'active') (c.at || []).forEach((a, k) => opts.push({ label: `${ICON.battle}${esc((c.kat || [])[k]?.n || a.n)} ${esc(a.d || '')}`, value: ['attack', k], cls: 'primary', row: 1 }));
-    if (mine) (c.ab || []).forEach((a, k) => { const used = abUsedOf(sid, k); opts.push({ label: `${used ? ICON.check : ICON.spark}특성 ${esc((c.kab || [])[k]?.n || a.n)}${used ? '<small class="fx">사용함</small>' : ''}`, value: ['ability', k], cls: used ? 'blue used' : 'blue', row: 1 }); });
+    const stc = v.stadium ? cinfo(v.stadium.c) : null, lost = stc && abLost(stadRules(stc), c) ? stadShort(stc) : ''; // 용암동굴·감시탑 등으로 특성이 없어짐
+    if (mine) (c.ab || []).forEach((a, k) => { const used = abUsedOf(sid, k); opts.push({ label: `${used ? ICON.check : ICON.spark}특성 ${esc((c.kab || [])[k]?.n || a.n)}${lost ? `<small class="fx lost">${esc(lost)}${josaRo(lost)} 없어짐</small>` : used ? '<small class="fx">사용함</small>' : ''}`, value: ['ability', k], cls: used || lost ? 'blue used' : 'blue', row: 1 }); });
     if (mine && f.where === 'active' && v.p[me].bench.length) opts.push({ label: '후퇴', value: ['retreat'], cls: 'blue' });
     if (f.where === 'bench') opts.push({ label: '배틀 포켓몬과 바꾸기' + FX, value: ['switch'], cls: 'judge' });
     if (f.where === 'active') opts.push({ label: '특수상태', value: ['cond'], cls: 'judge' });
@@ -1956,11 +2088,7 @@ async function onSlot(sid) {
     el.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => {
       const [k, arg] = opts[+b.dataset.i].value; closeSheet(); await new Promise(r => setTimeout(r, 30));
       if (k === 'setupReturn') return send({ type: 'setupReturn', sid });
-      if (k === 'attack') {
-        const a = c.at[arg]; const sug = suggest(arg);
-        const ka = (c.kat || [])[arg] || a; const fm = await ask(`기술 ${ka.n}`, `<p>${esc(ka.t || '추가 효과 없음')}</p><p>사이트 계산: <b>${sug.dmg}</b>${sug.parts.length ? ' (' + esc(sug.parts.join(', ')) + ')' : ''}</p><label class="h">상대 배틀 포켓몬에게 줄 데미지</label>${stepHtml('dmg', sug.dmg, { min: 0, max: 990, by: 10 })}<label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">${a.t ? '<p class="small muted">추가 효과(벤치 데미지, 상태 이상 등)는 기술을 쓴 뒤 도구로 처리하고 「효과 끝」을 눌러요.</p>' : ''}`, '기술 쓰기');
-        if (!fm) return; const d = +fm.dmg; return send({ type: 'attack', k: arg, dmg: d === sug.dmg ? undefined : d, note: fm.note || undefined });
-      }
+      if (k === 'attack') return attackDialog(c, arg);
       if (k === 'retreat') {
         const to = await pickSlot('누구와 바꿀까요?'); if (!to || to === sid) return;
         const cost = c.rt || 0; const ens = f.sl.en;
@@ -1993,17 +2121,44 @@ async function onSlot(sid) {
   });
 }
 
-function suggest(k) {
-  const v = G.view, me = meSeat(); const A = v.p[me].active, D = v.p[1 - me].active;
-  const c = cinfo(topOf(A).c), at = c.at[k]; const parts = [];
-  let dmg = parseInt(at.d || '0', 10) || 0;
-  if (/[+×x-]$/.test(at.d || '')) parts.push(`기본 ${at.d}: 추가 데미지는 직접 고쳐 주세요`);
-  if (D && !D.hidden && dmg > 0) {
+function suggest(k, target = null) { // 서버(engine.js suggestDamage)와 같은 계산. target: 고르는 기술에서 맞을 상대 포켓몬
+  const v = G.view, me = meSeat(), R2 = (v.rv || 1) >= 2; const A = v.p[me].active, O = v.p[1 - me];
+  const c = cinfo(topOf(A).c), at = c.at[k], kt = R2 ? (((c.kat || [])[k] || {}).t || '') : '', parts = [];
+  let base = parseInt(at.d || '0', 10) || 0;
+  const td = R2 ? targetDmg(kt) : null; if (td != null && !base) base = td;
+  const tf = target ? findSlot(target) : null, D = tf ? tf.sl : O.active, onB = !!tf && tf.where === 'bench';
+  let dmg = base;
+  const ex = R2 ? extraDmg(kt, { selfEn: A.en.length, oppEn: O.active && !O.active.hidden ? O.active.en.length : 0 }) : null;
+  if (ex) { dmg += ex.add; parts.push(`${ex.why} = +${ex.add}`); }
+  else if (/[+×x-]$/.test(at.d || '')) parts.push(`기본 ${at.d}: 추가 데미지는 효과대로 고쳐 주세요`);
+  if (onB) { if (dmg > 0) parts.push('벤치: 약점·저항력 없음'); }
+  else if (D && !D.hidden && dmg > 0) {
     const d = cinfo(topOf(D).c);
     if ((d.wk || []).some(t => (c.ty || []).includes(t))) { dmg *= 2; parts.push('약점 ×2'); }
     const r = (d.rs || []).find(([t]) => (c.ty || []).includes(t)); if (r) { dmg = Math.max(0, dmg + (parseInt(r[1], 10) || -30)); parts.push('저항력 ' + r[1]); }
   }
-  return { dmg, parts };
+  return { dmg, parts, base };
+}
+async function attackDialog(c, k) { // 기술 쓰기 창: 고르는 기술은 판에서 맞을 포켓몬부터, 동전 기술은 사이트가 던짐
+  const v = G.view, R2 = (v.rv || 1) >= 2, a = c.at[k], ka = (c.kat || [])[k] || a, kt = R2 ? ((c.kat || [])[k] || {}).t || '' : '';
+  const autoFx = R2 ? [statusOf(kt) && `상대 배틀 포켓몬 ${statusOf(kt).map(x => COND_KO[x]).join('·')}`, lockOf(kt) && `상대는 다음 차례에 손패의 ${LOCK_KO[lockOf(kt)]} 금지`].filter(Boolean) : [];
+  const autoP = autoFx.length ? `<p class="small fxauto">${ICON.check}사이트가 처리: ${esc(autoFx.join(', '))}</p>` : '';
+  const note = `<label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%">`;
+  const later = a.t && !autoFx.length ? '<p class="small muted">추가 효과(벤치 데미지, 상태 이상 등)는 기술을 쓴 뒤 판정 창 단추나 도구로 처리하고 「효과 끝」을 눌러요.</p>' : '';
+  const cs = R2 ? coinSpec(kt) : null;
+  if (cs) {
+    const fm = await ask(`기술 ${ka.n}`, `<p>${esc(ka.t || '')}</p><p class="fxcoin">${ICON.coin}<span><b>${esc(coinSpecLabel(cs))}</b><br>사이트가 동전을 던지고 데미지를 계산해요.${cs.add ? ` 기본 ${esc(String(a.d || '0').replace(/[+×x\-]+$/, ''))}에 더해요.` : ''}</span></p>${autoP}${note}`, '동전 던지고 기술 쓰기');
+    if (!fm) return; return send({ type: 'attack', k, coins: true, note: fm.note || undefined });
+  }
+  let target = null;
+  if (R2 && targetDmg(kt) != null) {
+    target = await boardPick(`${ka.n}: 맞을 상대 포켓몬`, sidsOf(allSlots(oppSeat())), { hint: '벤치는 약점·저항력 계산 없음' });
+    if (!target) return;
+  }
+  const sug = suggest(k, target), tl = target ? slotLabel(target) : '상대 배틀 포켓몬';
+  const fm = await ask(`기술 ${ka.n}`, `<p>${esc(ka.t || '추가 효과 없음')}</p><p>사이트 계산: <b>${sug.dmg}</b>${sug.parts.length ? ' (' + esc(sug.parts.join(', ')) + ')' : ''}</p>${autoP}<label class="h">${tl}에게 줄 데미지</label>${stepHtml('dmg', sug.dmg, { min: 0, max: 990, by: 10 })}${note}${later}`, '기술 쓰기');
+  if (!fm) return; const d = +fm.dmg;
+  return send({ type: 'attack', k, dmg: d === sug.dmg ? undefined : d, note: fm.note || undefined, ...(target ? { target } : {}) });
 }
 const lkSide = lk => lk.z === 'deck' && lk.n != null ? (lk.bottom ? ' 맨 아래 카드' : ' 맨 위 카드') : ''; // 덱 위·아래에서 N장 보는 중
 async function onZone(z, p) {
@@ -2088,7 +2243,8 @@ function zvMenu(el, chip) {
 function zvFx(v = G.view) {
   const fx = G.ui && G.ui.fx, me = G.rw ? null : meSeat(); if (!fx || !ZV || ZV.v || me == null) return null;
   if (fx.gid && v.openGroup?.[me] !== fx.gid) { G.ui.fx = null; return null; } // 그 효과가 끝났으면 도우미도 끝
-  if (fx.kind === 'cost') return !ZV.look && ZV.z === 'hand' && ZV.p === me ? fx : null;
+  const src = fx.kind === 'cost' ? 'hand' : fx.sp.src || 'deck';
+  if (src !== 'deck') return !ZV.look && ZV.z === src && ZV.p === me ? fx : null; // 손패에서 트래시(비용)·붙이기·이상한사탕, 트래시에서 가져오기
   const lk = v.p[me].look; return ZV.look && lk && lk.p === me && lk.z === 'deck' && (fx.sp.top ? lk.n != null && !!lk.bottom === !!fx.sp.bottom : lk.n == null) ? fx : null; // 위·아래에서 N장 도우미는 같은 쪽 N장 보기에만, 덱 찾기는 덱 전체 보기에만
 }
 function zvOpts(v = G.view) { // 고른 카드를 옮길 곳 (대전 중에만)
@@ -2109,7 +2265,7 @@ function zvBarActs(opts, fx, n = 0, total = 0) { // 아래 줄 단추: 자주 �
   if (fx && fx.kind === 'cost') return [{ label: `${ICON.check}트래시로`, value: { z: 'discard', p: me }, cls: 'primary', cost: 1 }, { label: '건너뛰기', skip: 1 }];
   let pri;
   if (fx && fx.sp.top && (fx.sp.to || fx.sp.rest)) { const r = fxRest(fx.sp, total - n); pri = [{ label: `${ICON.check}${n && fx.sp.to && r ? `<span class="b2"><span>${fxPri(fx.sp)}</span><small>+ ${r}</small></span>` : n && fx.sp.to ? fxPri(fx.sp) : r || fxPri(fx.sp)}`, fx: 1, cls: 'primary', zero: !!fx.sp.rest }]; } // 두 줄: 고른 카드 옮기기 / + 나머지 // 위에서 N장: 고른 카드 옮기고 나머지까지 한 번에 (못 찾았으면 나머지만)
-  else if (fx && fx.sp.to) pri = [{ label: `${ICON.check}${fxPri(fx.sp)}`, fx: 1, cls: 'primary' }];
+  else if (fx && fx.sp.to) pri = [{ label: `${ICON.check}${fxPri(fx.sp)}`, fx: 1, cls: 'primary' }, ...(fx.skipLabel ? [{ label: fx.skipLabel, skip: 1 }] : [])];
   else { const want = o => o.show || (o.value && (o.value.z === 'hand' || o.value.z === 'discard')); pri = opts.filter(want).slice(0, 3); if (pri.length < 3) pri = [...pri, ...opts.filter(o => !pri.includes(o)).slice(0, 3 - pri.length)]; if (pri[0]) pri[0] = { ...pri[0], cls: 'primary' }; }
   const rest = opts.filter(o => !pri.some(p => p.label === o.label));
   return rest.length ? [...pri, { label: '다른 곳으로…', more: rest }] : pri;
@@ -2174,7 +2330,8 @@ function zvFill(el, barOnly = false) {
     const max = fx ? (fx.kind === 'cost' ? fx.co.n : fx.sp.max) : null;
     const acts = zvBarActs(opts, fx, n, cards.length).map((o, i) => ({ ...o, i }));
     const fxa = fx && fx.kind !== 'cost' && acts.length <= 2, rest = [['bottom', '덱 맨 아래로'], ['top', '덱 맨 위로'], ['discard', '트래시로'], ['shuffle', '덱 섞기']];
-    bar.innerHTML = `<div class="zvbh"><div class="zvn${max != null && n > max ? ' over' : ''}">${n ? `고른 카드 <b>${n}</b>${max != null ? ` / ${max}` : ''}장` : fx ? (fx.kind === 'cost' ? `트래시할 손패 ${max}장을 골라요` : `동그라미를 눌러 골라요${max != null ? ` (${max}장${fx.sp.upTo ? '까지' : ''})` : ''}${fx.sp.top && fx.sp.rest ? ' · 없으면 그냥 눌러요' : ''}`) : lkTop ? '옮길 카드를 동그라미로 골라요' : ''}</div>${lkDeck && !lkTop && fx?.kind !== 'cost' ? `<button type="button" class="sm zvshuf" aria-pressed="${!!ZV.shuf}">${ZV.shuf ? ICON.check : ''}옮긴 뒤 덱 섞기</button>` : ''}</div>
+    const each = fx && fx.kind !== 'cost' && fx.sp.each, miss = each && n ? eachFit(each, ZV.sel.map(i => cinfo(cards.find(x => x.i === i).c))).missing : null;
+    bar.innerHTML = `<div class="zvbh"><div class="zvn${max != null && n > max ? ' over' : ''}">${n ? `고른 카드 <b>${n}</b>${max != null ? ` / ${max}` : ''}장${miss && miss.length ? `<small class="zvmiss">아직 ${esc(miss.join(' · '))}</small>` : ''}` : fx ? (fx.kind === 'cost' ? `트래시할 손패 ${max}장을 골라요` : each ? '종류마다 1장씩 골라요' : `동그라미를 눌러 골라요${max != null ? ` (${max}장${fx.sp.upTo ? '까지' : ''})` : ''}${fx.sp.top && fx.sp.rest ? ' · 없으면 그냥 눌러요' : ''}`) : lkTop ? '옮길 카드를 동그라미로 골라요' : ''}</div>${lkDeck && !lkTop && fx?.kind !== 'cost' && fx?.sp?.to !== 'evoDeck' ? `<button type="button" class="sm zvshuf" aria-pressed="${!!ZV.shuf}">${ZV.shuf ? ICON.check : ''}옮긴 뒤 덱 섞기</button>` : ''}</div>
       <div class="acts zvacts${fxa ? ' fxa' : ''}" style="--n:${acts.length};--np:${Math.min(2, acts.length)}">${acts.map(o => `<button class="${o.cls || ''}" data-za="${o.i}" ${!n && !o.skip && !o.zero ? 'disabled' : ''}>${o.label}</button>`).join('')}</div>
       ${lkTop && !fx ? `<div class="zvrest"><span class="zvrn">${n ? '고르지 않은' : '본'} 카드 <b>${cards.length - n}</b>장은</span><div class="acts" style="--n:4;--np:2">${rest.map(([k, l]) => `<button data-zr="${k}" ${cards.length - n ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>` : ''}`;
     bar.querySelectorAll('[data-za]').forEach(b => b.onclick = () => zvDo(acts[+b.dataset.za]));
@@ -2199,7 +2356,7 @@ async function zvDo(o) { // 고른 카드 옮기기. 창을 바꾸는 물음(어
   const fx = zvFx(v), cards = zvCards(ZV, v) || [], cmap = Object.fromEntries(cards.map(x => [x.i, x.c]));
   const keep = { spec: ZV.look ? { look: 1 } : { z: ZV.z, p: ZV.p }, sel: [...ZV.sel], only: ZV.only, shuf: ZV.shuf, cat: ZV.cat };
   const reopen = (sel = keep.sel) => { if (!$('#sheet').hidden || !zvCards(keep.spec)) return; openZoneView(keep.spec, G.view, { ...keep, sel }); };
-  if (o.skip) { const nx = fx && fx.next; G.ui.fx = null; closeSheet(); if (nx) setTimeout(() => fxSearch(nx), 60); return; }
+  if (o.skip) { const nx = fx && fx.next, os = fx && fx.onSkip; G.ui.fx = null; closeSheet(); if (os) os(); if (nx) setTimeout(() => fxSearch(nx), 60); return; }
   const iids = keep.sel; if (!iids.length && !(o.fx && o.zero)) return toast('먼저 카드를 골라 주세요.');
   const restIds = o.fx && fx.sp.top ? cards.map(x => x.i).filter(i => !iids.includes(i)) : null; // 위에서 N장: 고르지 않은 나머지
   const lk = v.p[me].look;
@@ -2214,11 +2371,32 @@ async function zvDo(o) { // 고른 카드 옮기기. 창을 바꾸는 물음(어
     const max = o.cost ? fx.co.n : fx.sp.max, exact = !!o.cost; // 덱에서 찾기는 못 찾을 수도 있어 적게 고르는 건 괜찮음
     const bad = fx.test ? iids.filter(i => !fx.test(cinfo(cmap[i]))) : [];
     const cnt = max != null && (exact ? iids.length !== max : iids.length > max);
-    if (bad.length || cnt) {
+    const ex = !o.cost && fx.sp.each && !bad.length ? eachFit(fx.sp.each, iids.map(i => cinfo(cmap[i]))).extra.map(k => iids[k]) : []; // 종류마다 1장: 같은 종류를 2장 고름
+    if (bad.length || cnt || ex.length) {
       const cond = o.cost ? fx.co.cond : fx.sp.cond;
-      const f = await ask('이대로 할까요?', `<p>카드 글과 다른 점이 있어요.</p><ul>${cnt ? `<li>${esc(fx.title)}: ${max}장${exact ? '' : '까지'}인데 ${iids.length}장을 골랐어요.</li>` : ''}${bad.length ? `<li>조건 ${esc(cond)}에 안 맞아 보이는 카드: ${bad.map(nmI).join(', ')}</li>` : ''}</ul><p class="small muted">카드 효과로 괜찮다면 그대로 진행하세요. 기록에 <span class="chip judge">사람 판정</span>으로 남고 상대가 확인해요.</p>`, '그대로 진행', 'judge');
+      const f = await ask('이대로 할까요?', `<p>카드 글과 다른 점이 있어요.</p><ul>${cnt ? `<li>${esc(fx.title)}: ${max}장${exact ? '' : '까지'}인데 ${iids.length}장을 골랐어요.</li>` : ''}${bad.length ? `<li>조건 ${esc(cond)}에 안 맞아 보이는 카드: ${bad.map(nmI).join(', ')}</li>` : ''}${ex.length ? `<li>종류마다 1장씩인데 같은 종류를 더 골랐어요: ${ex.map(nmI).join(', ')}</li>` : ''}</ul><p class="small muted">카드 효과로 괜찮다면 그대로 진행하세요. 기록에 <span class="chip judge">사람 판정</span>으로 남고 상대가 확인해요.</p>`, '그대로 진행', 'judge');
       if (!f) return reopen();
     }
+  }
+  if (iids.length && to === 'candy') { // 이상한사탕: 고른 2진화로 진화할 수 있는 기본 포켓몬이 빛남
+    const c = cinfo(cmap[iids[0]]), basics = allSlots(me).filter(sl => isBasicC(cinfo(topOf(sl).c))), good = basics.filter(sl => evoOk(c, cinfo(topOf(sl).c), true) !== false);
+    const sid = await boardPick(`${cname(c)}을(를) 올릴 기본 포켓몬`, sidsOf(good.length ? good : basics), { hint: good.length && evoName(c, true) ? `${evoName(c, true)}에서 진화해요` : '', none: '내 필드에 기본 포켓몬이 없어요.', dim: '이 2진화로 진화할 수 없는 포켓몬이에요. 그래도 올리려면 목록에서 골라요.', list: sidsOf(allSlots(me)) });
+    if (!sid) return reopen();
+    if (await send({ type: 'evolve', iid: iids[0], sid, candy: true })) { G.ui.fx = null; Sound.sfx('place'); return; }
+    return reopen();
+  }
+  if (iids.length && to === 'evoDeck') { // 위대한 거목: 덱에서 고른 카드로 진화 → 이어서 2진화 → 덱 섞기
+    const sid = fx && fx.evoSid; if (!sid || !findSlot(sid)) { G.ui.fx = null; toast('진화시킬 포켓몬이 없어졌어요.'); return; }
+    if (!(await send({ type: 'evolve', iid: iids[0], sid, from: 'deck', ...(fx.stage === 2 ? { chain: true } : {}) }))) { if (ZV) { const el = $('#sheet .zvsheet'); if (el) zvFill(el); } else if (G.view.p[me].look) openZoneView({ look: 1 }); return; }
+    Sound.sfx('place');
+    const t1 = findSlot(sid) && cinfo(topOf(findSlot(sid).sl).c);
+    if (fx.stage === 1 && t1) {
+      G.ui.fx = { ...fx, title: `${fx.base || fx.title} · 이어서 2진화`, stage: 2, sp: { ...fx.sp, cond: `${cname(t1)}에서 진화하는 2진화 포켓몬` }, test: c => c.st === 'P' && (c.sub || []).includes('Stage 2') && evoOk(c, t1) !== false, skipLabel: '2진화 안 하고 덱 섞기' };
+      const el = $('#sheet .zvsheet');
+      if (el && ZV) { ZV.sel = []; ZV.only = false; el.querySelector('.zvtools').dataset.sig = ''; zvFill(el); } else if (G.view.p[me].look) openZoneView({ look: 1 });
+      return;
+    }
+    G.ui.fx = null; closeSheet(); send({ type: 'shuffle', p: me }); return;
   }
   if (iids.length && (to === 'attach' || to === 'evolve')) { // 어느 포켓몬에게
     let sid = o.fx && fx.sp.target === 'self' && fx.sid && findSlot(fx.sid) ? fx.sid : null;
@@ -2238,7 +2416,7 @@ async function zvDo(o) { // 고른 카드 옮기기. 창을 바꾸는 물음(어
   if (ok) Sound.sfx('place');
   if (ok && fx) {
     if (o.cost) { const nx = fx.next; G.ui.fx = null; closeSheet(); if (nx) setTimeout(() => fxSearch(nx), 60); return; }
-    if (o.fx) G.ui.fx = null;
+    if (o.fx) { G.ui.fx = null; if (fx.then) setTimeout(fx.then, 60); if ((fx.sp.src || 'deck') !== 'deck') { closeSheet(); return; } } // 트래시·손패에서 가져오기는 끝나면 창을 닫음
   }
   if (ZV) { ZV.sel = ok ? [] : ZV.sel; const el = $('#sheet .zvsheet'); if (el) zvFill(el); }
   else reopen(ok ? [] : keep.sel);
@@ -2257,24 +2435,144 @@ function zvCard(el, x) { // 카드 자세히 (창 안에서 겹쳐 보기) + 고
 // ---------- 카드 효과 도우미 시작: 트레이너스(아이템·서포트)·특성·기술을 쓰면 카드 글을 읽어 차림 ----------
 function fxPrep(a) { // 쓰기 직전에 어떤 카드의 어떤 글인지 잡아 둠 (쓴 뒤에는 손패에서 사라지므로)
   const v = G.view, me = meSeat(); if (!v || me == null || v.phase !== 'play') return null;
-  if (a.type === 'play') { const x = (v.p[me].hand || []).find(h => h.i === a.iid); if (!x) return null; const c = cinfo(x.c); if (!(c.sub || []).some(s => s === 'Item' || s === 'Supporter')) return null; return { cid: x.c, title: cname(c), lines: c.kr || c.r || [] }; }
-  if (a.type === 'ability') { const f = findSlot(a.sid); if (!f || f.p !== me) return null; const t = topOf(f.sl), c = cinfo(t.c), ab = (c.kab || [])[a.k] || (c.ab || [])[a.k]; return ab ? { cid: t.c, sid: a.sid, title: `${cname(c)} · 특성 ${ab.n}`, lines: [ab.t] } : null; }
-  if (a.type === 'attack') { const sl = v.p[me].active; if (!sl) return null; const t = topOf(sl), c = cinfo(t.c), at = (c.kat || [])[a.k] || (c.at || [])[a.k]; return at ? { cid: t.c, sid: sl.sid, title: `${cname(c)} · 기술 ${at.n}`, lines: [at.t] } : null; }
+  if (a.type === 'play') { const x = (v.p[me].hand || []).find(h => h.i === a.iid); if (!x) return null; const c = cinfo(x.c); if (!(c.sub || []).some(s => s === 'Item' || s === 'Supporter')) return null; return { kind: 'play', cid: x.c, title: cname(c), short: cname(c), lines: c.kr || c.r || [] }; }
+  if (a.type === 'ability') { const f = findSlot(a.sid); if (!f || f.p !== me) return null; const t = topOf(f.sl), c = cinfo(t.c), ab = (c.kab || [])[a.k] || (c.ab || [])[a.k]; return ab ? { kind: 'ability', cid: t.c, sid: a.sid, title: `${cname(c)} · 특성 ${ab.n}`, short: ab.n, lines: [ab.t] } : null; }
+  if (a.type === 'attack') { const sl = v.p[me].active; if (!sl) return null; const t = topOf(sl), c = cinfo(t.c), at = (c.kat || [])[a.k] || (c.at || [])[a.k]; return at ? { kind: 'attack', cid: t.c, sid: sl.sid, title: `${cname(c)} · 기술 ${at.n}`, short: at.n, lines: [at.t] } : null; }
   return null;
 }
 function fxCtx() { const v = G.view, me = meSeat(); return { name: c => cnameKo(c), oppNames: me == null ? [] : allSlots(1 - me).map(sl => cnameKo(cinfo(topOf(sl).c))) }; }
 function fxAfter(pre) {
-  if (!pre) return; const ctx = fxCtx(); let sp = null, co = null;
+  if (!pre || !G || !G.view || G.view.phase !== 'play') return; const ctx = fxCtx(); let sp = null, co = null;
   for (const t of pre.lines) { if (!co) co = parseCost(t, ctx); if (!sp) sp = parseTop(t, ctx) || parseSearch(t, ctx); }
-  if (!sp) return;
   const me = meSeat(), gid = G.view.openGroup?.[me] || null;
-  const fx = { kind: 'search', title: pre.title, cid: pre.cid, sid: pre.sid, sp, test: sp.test, gid };
+  const search = sp ? (then = null) => fxSearchStart(pre, sp, co, gid, then) : null;
+  if (fxSpecial(pre, sp, gid, search)) return;
+  if (search) search(pre.then || null);
+}
+function fxSearchStart(pre, sp, co, gid, then) {
+  const me = meSeat();
+  const fx = { kind: 'search', title: pre.title, cid: pre.cid, sid: pre.sid, sp, test: sp.test, gid, then };
   if (sp.coin) { G.ui.fx = fx; toast('동전을 던진 뒤 덱을 열면 맞는 카드를 진하게 보여 줘요.', 3200); return; }
   if (co) { G.ui.fx = { kind: 'cost', title: pre.title, cid: pre.cid, co, test: co.test, gid, next: fx }; setTimeout(() => { if ($('#sheet').hidden) openZoneView({ z: 'hand', p: me }); }, 80); return; }
   fxSearch(fx);
 }
-function fxSearch(fx) { // 덱을 열고 도우미를 붙임 (이미 덱 전체를 보는 중이면 창만 다시)
-  G.ui.fx = fx; const me = meSeat(), lk = G.view.p[me].look;
+// ----- 글을 읽어 사이트가 대신 해 줄 다음 단계 (판정 창 맨 위 단추). 처리했으면 true -----
+const bench = p => G.view.p[p].bench.filter(x => x && !x.hidden);
+const isBasicC = c => c.st === 'P' && (c.sub || []).includes('Basic');
+const sidsOf = sls => sls.map(x => x.sid);
+function fxSpecial(pre, sp, gid, search) {
+  const v = G.view, me = meSeat(), L = pre.lines.map(t => String(t || '')), all = L.join(' '), atk = pre.kind === 'attack';
+  const base = { title: pre.title, cid: pre.cid, gid, short: pre.short };
+  let m;
+  for (const t of L) { const r = parseReset(t); if (r) { resetStep(base, r); return true; } } // 릴리에의 결심·저지맨·레드카드 …
+  if (atk && (m = all.match(/(?:^|\. )데미지 카운터 (\d+)개를 상대의 (벤치 )?포켓몬에게 원하는 대로 올린다/))) { spreadStep(base, +m[1], !!m[2]); return true; } // 스펙터다이브
+  if ((m = all.match(/자신의 필드의 포켓몬 1마리에게 올려져 있는 데미지 카운터를 (\d+)개까지 선택해서 상대 필드의 포켓몬 1마리에게 올린다/))) { adrenaStep(base, +m[1]); return true; } // 아드레나 브레인
+  const swSelf = /(?:^|[.,] )(?:원한다면 )?(?:자신의 배틀 포켓몬|이 포켓몬)을 벤치 포켓몬과 교체한다/.test(all);
+  if (!atk && (m = all.match(/(동전[^.]*)?상대의 벤치 포켓몬을 1마리 선택해서 배틀 포켓몬과 교체한다/))) { gustStep(base, !!m[1], swSelf && /그 뒤, 자신의 배틀 포켓몬을 벤치 포켓몬과 교체한다/.test(all)); return true; } // 보스의 지령·프라임 캐처
+  if ((m = all.match(/(자신의 필드의 포켓몬|이 포켓몬)에게 붙어 있는 기본 에너지를 1개 선택해서 (자신의 다른 포켓몬|벤치 포켓몬|자신의 벤치 포켓몬)에게 붙인다/))) { energyStep(base, m[1] === '이 포켓몬' ? pre.sid : null, /벤치/.test(m[2]), !atk); return true; } // 에너지 갈아 달기
+  if (/자신의 패에서 2진화 포켓몬을 1장 선택해서 그 포켓몬으로 진화하는 자신의 필드의 기본 포켓몬 위에 올려/.test(all)) { candyStart(base); return true; } // 이상한사탕
+  const dRe = /(?:^|[.,] )(?:자신의 )?덱을 (\d+)장 뽑는다/, dm = all.match(dRe), dn = L.map(parseDraw).find(n => n != null) ?? null, di = dm ? all.indexOf(dm[0]) : -1;
+  if ((m = all.match(/이 포켓몬과 붙어 있는 모든 카드를 (?:자신의 )?(패|덱)(?:으로|로) 되돌(린다|리고 섞는다)/))) { // 꽁무니빼기·도주 드로
+    const ri = all.indexOf(m[0]); returnStep(base, pre.sid, m[1] === '패' ? 'hand' : 'deck', m[2] !== '린다', dn != null && di >= 0 && di < ri ? dn : 0, search); return true;
+  }
+  if (swSelf && !search) { switchStep(base, !atk); return true; } // 포켓몬 교체·카지
+  if (dn != null) {
+    if (search) { const si = all.search(/(?:덱|트래쉬|패)에서 [^.]*?선택/); if (si >= 0 && di > si) { pre.then = () => send({ type: 'draw', n: dn }); return false; } } // 오거폰 '벽록의 춤': 붙인 뒤 바로 1장
+    drawStep(base, dn, search); return true; // 역이용·심부름 대시: 단추를 한 번 더 눌러 뽑기
+  }
+  return false;
+}
+function resetStep(base, r) {
+  const v = G.view, me = meSeat(), my = v.p[me].prizesN, n = resetCount(r, my, v.p[1 - me].prizesN), on = esc(v.p[1 - me].name);
+  const HOW = { deck: '덱에 넣고 섞은 뒤', bottom: '섞어서 덱 아래로 넣은 뒤', discard: '모두 트래시하고' };
+  const label = r.who === 'me' ? `내 패를 ${HOW[r.how]} ${n[0]}장 뽑기` : r.who === 'both' ? `서로 패를 덱에 넣고 섞기 · 나 ${n[0]}장 · 상대 ${n[1]}장 뽑기` : `상대 패를 ${r.how === 'bottom' ? '섞어서 덱 아래로' : '덱에 넣고 섞기'} · 상대 ${n[1]}장 뽑기`;
+  const more = r.more ? `${r.more.side === 'me' ? '내' : '상대'} 남은 프라이즈가 ${r.more.side === 'me' ? my : v.p[1 - me].prizesN}장이라 ${n[0]}장을 뽑아요. ` : '';
+  const opp = r.who !== 'me' ? `${on} 님 손패는 사이트가 바로 처리해요. 상대는 이의를 걸거나 되돌리자고 할 수 있어요.` : '';
+  fxStep({ ...base, desc: more + opp, items: [{ label, run: () => send({ type: 'handReset', who: r.who, how: r.how, n }) }] });
+}
+function hpLeftOf(sl) { const c = cinfo(topOf(sl).c); return c.hp ? Math.max(0, c.hp - sl.dmg) : null; }
+function openSpread(title, total, sids) { // 카운터 나누기: 포켓몬마다 ▼▲, 합이 정확히 total 이어야 올릴 수 있음
+  const rows = sids.map(sid => { const f = findSlot(sid), hp = hpLeftOf(f.sl); return `<div class="sprow"><span class="spn">${slotLabel(sid)}${hp != null ? `<small>남은 HP ${hp}</small>` : ''}</span>${stepHtml('s_' + sid, 0, { min: 0, max: total, unit: '개' })}</div>`; }).join('');
+  return ask(title, `<p class="small sph">데미지 카운터 <b>${total}</b>개를 원하는 대로 나눠요 <span class="chip sptot">남은 카운터 <b>${total}</b>개</span></p><div class="sprows">${rows}</div>`, '카운터 올리기', 'primary', el => {
+    const ok = el.querySelector('[data-ok]'), tot = el.querySelector('.sptot b');
+    const upd = () => {
+      const ins = [...el.querySelectorAll('input[name^=s_]')], sum = ins.reduce((t, x) => t + +x.value, 0);
+      tot.textContent = total - sum; ok.disabled = sum !== total;
+      ins.forEach(x => { const up = x.closest('[data-step]').querySelectorAll('.stp')[1]; up.disabled = +x.value >= total || sum >= total; });
+    };
+    bindSteps(el, upd); upd();
+  }).then(f => f ? sids.map(sid => ({ sid, n: +f['s_' + sid] || 0 })).filter(x => x.n > 0) : null);
+}
+function spreadStep(base, total, benchOnly) {
+  const tg = () => sidsOf(benchOnly ? bench(oppSeat()) : allSlots(oppSeat()));
+  if (!tg().length) { toast(benchOnly ? '상대 벤치에 포켓몬이 없어 카운터를 올릴 곳이 없어요.' : '카운터를 올릴 상대 포켓몬이 없어요.', 2800); return; }
+  fxStep({ ...base, desc: `데미지 카운터 ${total}개를 ${benchOnly ? '상대 벤치 포켓몬' : '상대 포켓몬'}에게 나눠 올려요.`, auto: 0,
+    items: [{ label: `카운터 ${total}개 나눠 올리기`, run: async () => { const s = tg(); if (!s.length) { toast('카운터를 올릴 포켓몬이 없어요.'); return false; } const to = await openSpread(base.title, total, s); return !!to && to.length > 0 && send({ type: 'spread', to, why: base.short }); } }] });
+}
+function adrenaStep(base, max) {
+  const run = async () => {
+    const from = sidsOf(allSlots(meSeat()).filter(sl => sl.dmg > 0));
+    const a = await boardPick('카운터를 가져올 내 포켓몬', from, { hint: '데미지 카운터가 있는 포켓몬만 빛나요', none: '데미지 카운터가 올려진 내 포켓몬이 없어요.' }); if (!a) return false;
+    const b = await boardPick('카운터를 올릴 상대 포켓몬', sidsOf(allSlots(oppSeat())), { none: '카운터를 올릴 상대 포켓몬이 없어요.' }); if (!b) return false;
+    const fa = findSlot(a); if (!fa) return false;
+    const k = Math.min(max, Math.floor(fa.sl.dmg / 10));
+    const n = k <= 1 ? 1 : await pick('몇 개 옮길까요?', Array.from({ length: k }, (_, i) => ({ label: `${i + 1}개`, value: i + 1, cls: i + 1 === k ? 'primary' : '' })), `${slotLabel(a)} → ${slotLabel(b)}`);
+    return !!n && send({ type: 'dmgMove', from: a, to: b, n, why: base.short });
+  };
+  fxStep({ ...base, desc: `내 포켓몬 1마리의 데미지 카운터를 ${max}개까지 상대 포켓몬 1마리에게 옮겨요. 가져올 포켓몬 → 올릴 포켓몬 → 개수 순서로 눌러요.`, auto: 0, items: [{ label: '카운터 옮기기', run }] });
+}
+function gustStep(base, coin, thenSelf) {
+  if (!bench(oppSeat()).length) { toast('상대 벤치에 포켓몬이 없어요.', 2600); return; }
+  const run = async () => { const sid = await boardPick('배틀 필드로 끌어낼 상대 포켓몬', sidsOf(bench(oppSeat())), { hint: '상대 벤치에서 골라요', none: '상대 벤치에 포켓몬이 없어요.' }); return !!sid && send({ type: 'switch', sid }); };
+  fxStep({ ...base, desc: coin ? '동전 앞면이 나왔을 때만 해요.' : '', ...(coin ? {} : { auto: 0 }), items: [{ label: '상대 포켓몬 끌어내기', run }], then: thenSelf ? () => switchStep(base, true) : null });
+}
+function switchStep(base, auto) {
+  if (!bench(meSeat()).length) return;
+  const run = async () => { const sid = await boardPick('배틀 필드로 내보낼 내 벤치 포켓몬', sidsOf(bench(meSeat())), { none: '내 벤치에 포켓몬이 없어요.' }); return !!sid && send({ type: 'switch', sid }); };
+  fxStep({ ...base, desc: '', ...(auto ? { auto: 0 } : {}), items: [{ label: '내 배틀 포켓몬 바꾸기', run }] });
+}
+function energyStep(base, srcSid, toBench, auto) {
+  const hasB = sl => sl.en.some(x => basicEnergyType(cinfo(x.c)));
+  const run = async () => {
+    const me = meSeat();
+    const from = srcSid || await boardPick('기본 에너지를 뗄 내 포켓몬', sidsOf(allSlots(me).filter(hasB)), { hint: '기본 에너지가 붙은 포켓몬만 빛나요', none: '기본 에너지가 붙은 내 포켓몬이 없어요.' }); if (!from) return false;
+    const F = findSlot(from); if (!F) return false;
+    const ens = F.sl.en.filter(x => basicEnergyType(cinfo(x.c))); if (!ens.length) { toast('이 포켓몬에는 기본 에너지가 없어요.'); return false; }
+    const kinds = [...new Map(ens.map(x => [cinfo(x.c).n, x])).values()];
+    const e = kinds.length === 1 ? kinds[0] : await pick('어떤 에너지를 옮길까요?', kinds.map(x => ({ label: `${typeIcon(basicEnergyType(cinfo(x.c)))}${esc(nmOf(x))}`, value: x })));
+    if (!e) return false;
+    const to = await boardPick(`${nmOf(e)}을(를) 붙일 내 포켓몬`, sidsOf((toBench ? bench(me) : allSlots(me)).filter(x => x.sid !== from)), { none: '붙일 다른 포켓몬이 없어요.' }); if (!to) return false;
+    return send({ type: 'move', iids: [e.i], to: { z: 'slot', sid: to, part: 'en' } });
+  };
+  fxStep({ ...base, desc: srcSid ? '이 포켓몬의 기본 에너지 1개를 옮겨요.' : '뗄 포켓몬 → (에너지가 여러 종류면 고르기) → 붙일 포켓몬 순서로 눌러요.', ...(auto ? { auto: 0 } : {}), items: [{ label: '기본 에너지 옮기기', run }] });
+}
+function returnStep(base, sid, z, shuf, drawN, search) {
+  const f0 = findSlot(sid); if (!f0) return;
+  const nm0 = nmOf(topOf(f0.sl)); let did = 0; // 뽑기까지 했으면 다시 누를 때 또 뽑지 않음
+  const run = async () => {
+    const me = meSeat();
+    if (drawN && !did) { if (!(await send({ type: 'draw', n: drawN }))) return false; did = 1; }
+    const f = findSlot(sid); if (!f) return true;
+    const ids = [...f.sl.cards, ...f.sl.en, ...f.sl.tl].map(x => x.i);
+    if (!(await send({ type: 'move', iids: ids, to: z === 'hand' ? { z: 'hand', p: me } : { z: 'deck', p: me } }))) return false;
+    return z === 'deck' && shuf ? send({ type: 'shuffle', p: me }) : true;
+  };
+  const what = z === 'hand' ? '손패로 되돌리기' : shuf ? '덱에 넣고 섞기' : '덱으로 되돌리기';
+  fxStep({ ...base, sid, desc: `${drawN ? `덱에서 ${drawN}장 뽑은 뒤 ` : ''}${esc(nm0)}와(과) 붙은 카드를 모두 ${z === 'hand' ? '손패로 되돌려요' : shuf ? '덱에 넣고 섞어요' : '덱으로 되돌려요'}.${f0.where === 'active' ? ' 그다음 새 배틀 포켓몬을 골라요.' : ''}`,
+    items: [{ label: drawN ? `${drawN}장 뽑고 ${esc(nm0)} ${what}` : `${esc(nm0)} ${what}`, run }], then: search ? () => search() : null });
+}
+function drawStep(base, n, search) {
+  fxStep({ ...base, desc: '', items: [{ label: `덱에서 ${n}장 뽑기`, run: () => send({ type: 'draw', n }) }], then: search ? () => search() : null });
+}
+function candyStart(base) { // 손패의 2진화만 진하게 → 고르면 진화할 수 있는 기본 포켓몬이 빛남
+  const me = meSeat();
+  if (!(G.view.p[me].hand || []).some(x => { const c = cinfo(x.c); return c.st === 'P' && (c.sub || []).includes('Stage 2'); })) { toast('손패에 2진화 포켓몬이 없어요.', 2600); return; }
+  G.ui.fx = { kind: 'search', title: base.title, cid: base.cid, gid: base.gid, sp: { src: 'hand', cond: '2진화 포켓몬', max: 1, upTo: false, to: 'candy' }, test: c => c.st === 'P' && (c.sub || []).includes('Stage 2') };
+  openZoneView({ z: 'hand', p: me }, G.view, { only: true });
+}
+function fxSearch(fx) { // 덱(트래시·손패)을 열고 도우미를 붙임 (이미 그 창을 보는 중이면 창만 다시)
+  G.ui.fx = fx; const me = meSeat(), lk = G.view.p[me].look, src = fx.sp.src || 'deck';
+  if (src !== 'deck') { const el = $('#sheet .zvsheet'); if (el && ZV && !ZV.look && ZV.z === src && ZV.p === me) { el.querySelector('.zvtools').dataset.sig = ''; zvFill(el); } else openZoneView({ z: src, p: me }); return; }
   if (fx.sp.top) { closeSheet(); return void send({ type: 'look', p: me, z: 'deck', n: fx.sp.top, ...(fx.sp.bottom ? { from: 'bottom' } : {}) }); } // 위·아래에서 N장 보기
   if (lk && lk.p === me && lk.z === 'deck' && lk.n == null) { const el = $('#sheet .zvsheet'); if (el && ZV) { el.querySelector('.zvtools').dataset.sig = ''; zvFill(el); } else if ($('#sheet').hidden) openZoneView({ look: 1 }); return; }
   send({ type: 'look', p: me, z: 'deck' });
@@ -2338,7 +2636,7 @@ function dragPlan(c) { // 이 카드를 놓을 곳과 그때 보낼 행동
   }
   if (v.phase !== 'play') return T;
   if (c.st === 'P' && basic) { if (P.bench.length < 5) T.push({ sel: `${mine} .g-bench`, act: iid => ({ type: 'bench', iid }) }); }
-  else if (c.st === 'P') T.push({ sel: `${mine} [data-sid]`, slot: 1, act: (iid, sid) => ({ type: 'evolve', iid, sid }) });
+  else if (c.st === 'P') T.push({ sel: evoTargets(c).map(sl => `${mine} [data-sid="${sl.sid}"]`).join(', ') || `${mine} [data-sid]`, slot: 1, act: (iid, sid) => ({ type: 'evolve', iid, sid }) }); // 진화할 수 있는 포켓몬만 빛남
   else if (c.st === 'E' || tool) T.push({ sel: '.mat [data-sid]', slot: 1, act: (iid, sid) => ({ type: 'attach', iid, sid }) });
   else if (c.st === 'T') T.push({ sel: '.mat', act: iid => ({ type: 'play', iid }) });
   return T;
@@ -2348,7 +2646,7 @@ function bindDrag() {
   app.querySelectorAll('.handbar [data-hand]').forEach(el => {
     el.ondragstart = e => e.preventDefault();
     el.onpointerdown = e => {
-      if (e.button > 0 || DRAG.live) return;
+      if (e.button > 0 || DRAG.live || BP) return;
       const x = (G.view.p[me].hand || []).find(h => h.i === el.dataset.hand); if (!x) return;
       const plan = dragPlan(cinfo(x.c)), sx = e.clientX, sy = e.clientY, r0 = el.getBoundingClientRect();
       el.classList.add('grab'); // 잡으면 살짝 커짐
@@ -2409,6 +2707,8 @@ function bindBoard() {
   if (me == null) app.querySelectorAll('.handbar .pc[data-k]').forEach(el => { el.classList.add('peekable'); el.onclick = () => { const x = (v.p[bottomSeat()].hand || []).find(h => String(h.i) === el.dataset.k); if (x) openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(x.c))}`); }; });
   app.querySelectorAll('[data-pile]').forEach(el => { el.onclick = () => onPile(el.dataset.pile); el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPile(el.dataset.pile); } }; });
   app.querySelectorAll('[data-order]').forEach(el => el.onclick = () => send({ type: 'order', first: el.dataset.order === '1' }));
+  app.querySelectorAll('[data-fxs]').forEach(el => el.onclick = () => { const [id, k] = el.dataset.fxs.split(':'); fxStepRun(+id, +k); });
+  app.querySelectorAll('[data-fxx]').forEach(el => el.onclick = () => fxDrop(el.dataset.fxx));
   app.querySelectorAll('[data-mull]').forEach(el => el.onclick = () => send({ type: 'mullDraw', n: +el.dataset.mull }));
   app.querySelectorAll('[data-confirm]').forEach(el => el.onclick = () => send({ type: 'confirm', pid: el.dataset.confirm }));
   app.querySelectorAll('[data-dismiss]').forEach(el => el.onclick = async () => { const f = await ask('다르게 처리할까요?', '<p>자동 제안 대신 도구로 직접 처리해요. 기록에 사람 판정으로 남아요.</p><label class="h">이유 (선택)</label><input name="note" maxlength="100" style="width:100%" placeholder="예: 특성 효과로 기절하지 않음">', '다르게 처리', 'judge'); if (f) send({ type: 'dismiss', pid: el.dataset.dismiss, note: f.note }); });
@@ -2427,7 +2727,7 @@ function bindBoard() {
   app.querySelectorAll('[data-rwno]').forEach(el => el.onclick = () => send({ type: 'rewindNo', gid: el.dataset.rwno }));
   app.querySelectorAll('[data-rwok]').forEach(el => el.onclick = async () => { if (await ask('이 판정 바로 전으로 되돌릴까요?', '<p>그 뒤에 한 행동이 모두 취소되고, 기록에는 줄을 그어 남겨요.</p><p class="small"><span class="chip warn">이미 본 카드가 있어요</span> 덱이나 손패에서 본 카드는 잊을 수 없어요. 덱은 다시 섞여요.</p>', '되돌리기', 'bad')) send({ type: 'rewindOk', to: +el.dataset.rwok }); });
   app.querySelectorAll('[data-uses]').forEach(el => { el.onclick = openUses; el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUses(); } }; });
-  app.querySelectorAll('[data-stadium]').forEach(el => el.onclick = () => { const c = cinfo(v.stadium.c); openSheet(`<button class="x sm" data-close>닫기</button>${me != null ? cardActHtml(c, `<div class="acts"><button class="judge" data-sd>트래시로${v.stadium.two ? ' (2장)' : ''}${FX}</button></div>`) : cardInfoHtml(c)}`, e2 => { if (me != null) e2.classList.add('cactsheet'); const b = e2.querySelector('[data-sd]'); if (b) b.onclick = () => { closeSheet(); send({ type: 'move', iids: [v.stadium.i], to: { z: 'discard', p: v.stadium.by } }); }; }); });
+  app.querySelectorAll('[data-stadium]').forEach(el => el.onclick = () => openStadium());
   app.querySelectorAll('[data-t]').forEach(el => el.onclick = async () => {
     const t = el.dataset.t;
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
@@ -2447,6 +2747,32 @@ function bindBoard() {
   });
 }
 
+function openStadium() { // 스타디움 카드 창: 차례마다 1번 쓰는 효과(위대한 거목 등) 단추 + 트래시로
+  const v = G.view, me = meSeat(); if (!v.stadium) return;
+  const c = cinfo(v.stadium.c), R = stadRules(c), live = me != null && v.phase === 'play';
+  const use = live && (R.tree || /차례마다 1번/.test((c.kr || c.r || []).join(' '))), used = live && !!(v.p[me].used || {}).stad;
+  const acts = `<div class="acts">${use ? `<button class="${used ? 'blue used' : 'primary'}" data-su>${used ? ICON.check : ICON.spark}${esc(stadShort(c))} 쓰기${used ? '<small class="fx">사용함</small>' : ''}</button>` : ''}<button class="judge" data-sd>트래시로${v.stadium.two ? ' (2장)' : ''}${FX}</button></div>`;
+  openSheet(`<button class="x sm" data-close>닫기</button>${me != null ? cardActHtml(c, acts) : cardInfoHtml(c)}`, e2 => {
+    if (me != null) e2.classList.add('cactsheet');
+    const b = e2.querySelector('[data-sd]'); if (b) b.onclick = () => { closeSheet(); send({ type: 'move', iids: [v.stadium.i], to: { z: 'discard', p: v.stadium.by } }); };
+    const u = e2.querySelector('[data-su]'); if (u) u.onclick = async () => { closeSheet(); await new Promise(r => setTimeout(r, 30)); if (R.tree) treeUse(); else if (await send({ type: 'stadUse' })) toast("스타디움 효과를 처리한 뒤 왼쪽 '효과 끝'을 눌러요.", 3000); };
+  });
+}
+async function treeUse() { // 위대한 거목: 기본 포켓몬 고르기 → 덱에서 1진화(빛남) → 이어서 2진화 → 덱 섞기
+  const me = meSeat(), sc = G.view.stadium.c;
+  if (!allSlots(me).some(sl => isBasicC(cinfo(topOf(sl).c)))) { toast('진화시킬 기본 포켓몬이 없어요.'); return; }
+  if (!(await send({ type: 'stadUse' }))) return;
+  const gid = G.view.openGroup?.[me] || null, title = stadShort(cinfo(sc));
+  const run = async () => {
+    const sid = await boardPick(`${title}: 진화시킬 기본 포켓몬`, sidsOf(allSlots(me).filter(sl => isBasicC(cinfo(topOf(sl).c)))), { hint: '고르면 덱에서 진화할 카드를 찾아요' });
+    if (!sid || !findSlot(sid)) return false;
+    const b = cinfo(topOf(findSlot(sid).sl).c);
+    fxSearch({ kind: 'search', title: `${title} · 1진화`, base: title, cid: sc, sid, evoSid: sid, gid, stage: 1, sp: { src: 'deck', cond: `${cname(b)}에서 진화하는 1진화 포켓몬`, max: 1, upTo: false, to: 'evoDeck' },
+      test: c => c.st === 'P' && (c.sub || []).includes('Stage 1') && evoOk(c, b) !== false, skipLabel: '진화 안 하고 덱 섞기', onSkip: () => send({ type: 'shuffle', p: me }) });
+    return true;
+  };
+  fxStep({ title, cid: sc, gid, desc: '기본 포켓몬을 고르면 덱에서 1진화를 빛내 보여 주고, 이어서 2진화도 찾을 수 있어요. 끝나면 덱을 섞어요.', auto: 0, items: [{ label: '진화시킬 포켓몬 고르기', run }] });
+}
 
 // ---------- 상대 직전 턴 다시 보기 ----------
 // 상대가 마지막으로 한 차례를 처음부터 한 단계씩 천천히 다시 그림. 움직인 카드에 강조 틀, 위에 무엇을 했는지 한 줄.
@@ -2479,6 +2805,7 @@ function rwSeen(t) { try { return localStorage.getItem(rwKey(t)) === '1'; } catc
 const turnStartsOf = lines => [...new Set(lines.filter(l => l.turn && l.k >= 0).map(l => l.k))].sort((a, b) => a - b);
 async function startRewatch(opt = {}) { // 대전 중: 기본은 상대의 마지막 차례 처음부터
   if (G.rw) return;
+  if (BP) bpEnd(null);
   const me = meSeat(), n = G.view.n ?? 0, lines = G.lines;
   const t = lastOppTurn(), fresh = !!(t && !rwSeen(t)); // 새로 본 적 없는 상대 차례면 처음부터 자동 재생
   const st = rwStart(), k = opt.k != null ? opt.k : st.k;

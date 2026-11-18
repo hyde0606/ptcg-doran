@@ -149,10 +149,12 @@ const svgFor = u => { let h = 0; for (const ch of u) h = (h * 31 + ch.charCodeAt
     if (await cur.$(zv)) errs.push('다크볼: 누른 뒤 창이 남음');
     lt = await logText(cur); if (!/섞었어요/.test(lt.slice(-300))) errs.push('다크볼: 덱 섞기 기록 없음');
   } else log('다크볼이 프라이즈에 있어 건너뜀');
-  // 5) 메가레쿠쟈 ex: 덱에서 벤치로 → 특성 → 위에서 4장 + 기본 에너지 붙이기 + 나머지 섞어서 아래로, 특성 사용 표시
+  // 5) 메가레쿠쟈 ex: 덱에서 손패로 → 손패에서 벤치로 ('패에서 벤치로 내보냈을 때' 특성) → 특성 → 위에서 4장 + 기본 에너지 붙이기 + 나머지 섞어서 아래로, 특성 사용 표시
   await openDeck(cur, '덱 전체 보기'); await cur.waitForSelector(zv + ' .zc');
   if (await selByName(cur, /메가레쿠쟈/, 1)) {
-    await (await barBtn(cur, /다른 곳으로/)).click(); await cur.waitForSelector('.sheet .acts button');
+    await (await barBtn(cur, /^손패로$/)).click(); await cur.waitForTimeout(600); await closeAll(cur);
+    const rq = await handCard(cur, /메가레쿠쟈|me6-84|me6-138|me6-141/); if (!rq) errs.push('메가레쿠쟈가 손패에 없음');
+    await rq.click({ position: { x: 8, y: 12 } }); await cur.waitForSelector('.sheet .acts button');
     for (const bt of await cur.$$('.sheet .acts button')) if (/벤치에 내기/.test(await bt.textContent())) { await bt.click(); break; }
     await cur.waitForTimeout(700); await closeAll(cur);
     const sl = (await cur.$$('.area.bottom .g-bench [data-sid]')).pop(); await sl.click(); await cur.waitForSelector('.sheet .acts button.blue');

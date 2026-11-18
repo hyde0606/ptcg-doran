@@ -1,9 +1,11 @@
 // Cloudflare Worker: 로그인, 방, 덱, 대전(Durable Object) 연결
 import { DurableObject } from 'cloudflare:workers';
 import { newGame, apply, viewFor, replay, waitingOn, fixJosa } from '../public/lib/engine.js';
+import { withEvo } from '../public/lib/fxrules.js';
 import { indexCards, checkDeck, expand } from '../public/lib/deck.js';
 import { makeVapid, sendPush } from './webpush.js';
 import { DC_KR, DC_JP, JP_PICT, DC_UA, dcFetch, deckCode } from './deckcode.js';
+import EVO from './evo.json'; // 진화 전 이름 표 (tools/build-evo.py 로 만듦)
 
 const json = (o, status = 200, headers = {}) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
 const err = (m, status = 400) => json({ error: m }, status);
@@ -258,9 +260,9 @@ async function startGame(env, req, lobby, room, actorUid) {
   const decks = await Promise.all(room.players.map((u, k) => lobby.deck(u, room.decks[k])));
   const users = await Promise.all(room.players.map(u => lobby.user(u)));
   const cards = {};
-  for (const d of decks) for (const { id } of d.list) cards[id] = idx.byId[id];
+  for (const d of decks) for (const { id } of d.list) cards[id] = withEvo(idx.byId[id], EVO);
   const gameId = room.id + '-' + (room.games.length + 1);
-  const init = { seed: rid(16), cfg: { ...room.cfg, roomId: room.id, game: room.games.length + 1 }, cards,
+  const init = { seed: rid(16), rv: 2, cfg: { ...room.cfg, roomId: room.id, game: room.games.length + 1 }, cards, // rv: 규칙 판 (2 = 카드 글 도우미 규칙)
     players: room.players.map((u, k) => ({ uid: u, name: users[k].name, deck: expand(decks[k].list) })) };
   const g = env.GAME.get(env.GAME.idFromName(gameId));
   await lobby.gameStarted(room.id, gameId); // 방에 판을 먼저 붙여야 판 시작 알림·남은 시간이 바로 들어감

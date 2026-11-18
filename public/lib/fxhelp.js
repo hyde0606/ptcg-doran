@@ -5,6 +5,12 @@ const has = (c, s) => (c.sub || []).includes(s);
 const isP = c => c.st === 'P', isE = c => c.st === 'E', isT = c => c.st === 'T';
 const basicType = c => (String(c.n).match(/^Basic (\w+) Energy$/) || [])[1] || null;
 const ruleBox = c => isP(c) && (has(c, 'ex') || has(c, 'MEGA') || has(c, 'V') || has(c, 'VSTAR') || has(c, 'VMAX'));
+// 글 나누기: re(g 플래그)에 맞는 곳에서 자름. 1번 묶음이 맞았으면 그 글자는 앞 조각에 남김 (예전 아이폰 사파리가 못 읽는 '뒤돌아보기(?<=)' 대신)
+function splitKeep(t, re) {
+  const out = []; let last = 0, m; re.lastIndex = 0;
+  while ((m = re.exec(t))) { const cut = m[1] != null ? m.index + m[1].length : m.index; out.push(t.slice(last, cut)); last = m.index + m[0].length; if (!m[0].length) re.lastIndex++; }
+  out.push(t.slice(last)); return out;
+}
 
 // 조건 글 → 카드 시험 함수. 모르는 글이면 null (그때는 모든 카드를 똑같이 보여 줌)
 // ctx.name(c): 화면의 한국어 이름, ctx.oppNames: 상대 필드 포켓몬 이름들
@@ -15,7 +21,7 @@ export function condTest(raw, ctx = {}) {
   if (/같은 이름의 포켓몬$/.test(t) && /상대 필드의 포켓몬/.test(t)) { const ns = new Set((ctx.oppNames || []).map(x => x.replace(/ ex$/, ''))); return c => isP(c) && ns.has(nameOf(c).replace(/ ex$/, '')); }
   if (/같은 타입/.test(t)) return null; // 붙은 에너지 등 판 위 상황에 따라 달라짐: 사람이 판단
   // 여러 종류: 「A」「B」「C」 / A와 B / A 또는 B
-  const parts = t.split(/」\s*「|」\s*(?:과|와|또는)\s*「|\s+또는\s+|(?<=[가-힣」)])(?:과|와)\s+(?=[「(가-힣0-9])/).map(x => x.trim()).filter(Boolean);
+  const parts = splitKeep(t, /」\s*「|」\s*(?:과|와|또는)\s*「|\s+또는\s+|([가-힣」)])(?:과|와)\s+(?=[「(가-힣0-9])/g).map(x => x.trim()).filter(Boolean);
   if (parts.length > 1) {
     const fix = x => { if (x.startsWith('「') && !x.includes('」')) x = x.slice(1); if (x.endsWith('」') && !x.includes('「')) x = x.slice(0, -1); return x; }; // 나눌 때 잘린 낫표 정리
     const fs = parts.map(x => condTest(fix(x), ctx));
@@ -64,25 +70,35 @@ function noun(t0, nameOf) {
   return null;
 }
 
-// "덱에서 찾기" 효과 읽기. 없으면 null.
-// { cond, test, max(null=원하는 만큼), to: hand|bench|discard|attach|evolve|top|null, reveal, shuffle, coin, target: self|bench|any, text }
+// "덱에서 찾기" 효과 읽기. 없으면 null. 덱이 아니면 트래쉬(패로·붙이기·벤치), 패(붙이기)에서 고르는 글도 읽음
+// { src: deck|discard|hand, cond, test, each(종류마다 1장씩: [{ cond, test }]), max(null=원하는 만큼), to: hand|bench|discard|attach|evolve|top|null, reveal, shuffle, coin, target: self|bench|any, text }
+const SRC = { 덱: 'deck', 트래쉬: 'discard', 패: 'hand' };
 export function parseSearch(text, ctx = {}) {
   const T = String(text || '');
-  const m = T.match(/(?:자신의 )?덱에서 (.+?) ?선택(?:해서|한다)\s*(상대에게 보여주고 )?([^.]*)\./);
+  for (const z of ['덱', '트래쉬', '패']) {
+    const sp = searchIn(T, z, ctx); if (!sp) continue;
+    if (sp.src === 'discard' && !['hand', 'attach', 'bench'].includes(sp.to)) continue; // 트래쉬에서: 패로 가져오기·붙이기·벤치로만
+    if (sp.src === 'hand' && sp.to !== 'attach') continue; // 패에서: 붙이기만 (트래쉬하는 비용 글은 parseCost)
+    return sp;
+  }
+  return null;
+}
+function searchIn(T, z, ctx) {
+  const m = T.match(new RegExp(`(?:자신의 )?${z}에서 (.+?) ?선택(?:해서|한다)\\s*(상대에게 보여주고 )?([^.]*)\\.`));
   if (!m) return null;
   const at = T.indexOf(m[0]), before = T.slice(0, at);
   let what = m[1], pre = null;
   if (/^\d+장(?:씩|까지)?$/.test(what)) { // "이 포켓몬에서 진화하는 카드를 자신의 덱에서 1장 선택해서"
     const pm = before.match(/([^.]*?)(?:을|를) (?:자신의 )?$/); if (!pm) return null; pre = pm[1];
   }
-  const shuffle = /덱을 섞는다|남은 덱을 섞고/.test(T);
+  const src = SRC[z], shuffle = src === 'deck' && /덱을 섞는다|남은 덱을 섞고/.test(T);
   const coin = /동전/.test(before.split(/\.\s*/).pop() || '') || /동전을 \d+번 던진다/.test(before) || /앞면이 나온 수/.test(what);
-  let cond = '', max = null, upTo = false, cm;
+  let cond = '', max = null, upTo = false, each = false, cm;
   if (pre != null) { cm = what.match(/^(\d+)장(씩|까지)?$/); cond = pre.replace(/^.*?(?:선택해서|던진다\.) /, '').trim(); max = cm[2] === '씩' ? null : +cm[1]; upTo = cm[2] === '까지'; }
   else if ((cm = what.match(/^(.+?)(?:을|를) (합계 |각각 )?(\d+)장(까지|씩)?(?: 또는 (.+?)(?:을|를) (\d+)장(까지)?)?$/))) {
     cond = cm[1]; const n = +cm[3]; upTo = cm[4] === '까지';
     if (cm[5]) { cond = `${cm[1]} 또는 ${cm[5]}`; max = Math.max(n, +cm[6]); upTo = true; }
-    else if (cm[4] === '씩' || cm[2] === '각각 ') { max = n * countKinds(cm[1]); upTo = cm[4] === '까지' || cm[2] === '각각 '; }
+    else if (cm[4] === '씩' || cm[2] === '각각 ') { max = n * countKinds(cm[1]); upTo = cm[4] === '까지' || cm[2] === '각각 '; each = n === 1; }
     else max = n;
   } else if ((cm = what.match(/^(.+?)(?:을|를) 원하는 만큼$/))) cond = cm[1];
   else if ((cm = what.match(/만큼까지 (?:자신의 )?덱에서 (.+?)(?:을|를)$/)) || (cm = what.match(/^(.+?)(?:을|를)$/))) cond = cm[1];
@@ -98,9 +114,24 @@ export function parseSearch(text, ctx = {}) {
   else if (/덱의 위로 되돌린다/.test(T)) to = 'top';
   cond = cond.replace(/^자신의 /, '');
   const test = /진화하는 카드/.test(cond) ? null : condTest(cond, ctx);
-  return { cond, test, max, upTo, to, reveal: !!m[2], shuffle, coin, target, optional: /원한다면/.test(before) || /좋다$/.test(dest) };
+  const kinds = each && test ? kindsOf(cond, ctx) : null; // 종류마다 1장씩 (빛나·투희): 종류별 시험 (모두 읽혀야만)
+  return { src, cond, test, ...(kinds ? { each: kinds } : {}), max, upTo, to, reveal: !!m[2], shuffle, coin, target, optional: /원한다면/.test(before) || /좋다$/.test(dest) };
 }
 function countKinds(t) { return Math.max(1, (t.match(/「[^」]+」/g) || []).length || t.split(/(?:과|와) /).length); }
+function kindsOf(t, ctx) {
+  const qs = t.match(/「[^」]+」/g), parts = qs && qs.length > 1 ? qs.map(x => x.slice(1, -1)) : splitKeep(t, /([가-힣」)])(?:과|와) /g).map(x => x.trim());
+  if (parts.length < 2) return null;
+  const out = parts.map(c => ({ cond: c, test: condTest(c, ctx) }));
+  return out.every(k => k.test) ? out : null;
+}
+// 종류마다 1장씩: 고른 카드를 종류에 하나씩 맞춰 봄 → { missing: [종류 이름], extra: [맞출 종류가 없는 카드 번호] }
+export function eachFit(kinds, cards) {
+  const own = kinds.map(() => -1), seen = new Set();
+  const tryC = ci => { for (let k = 0; k < kinds.length; k++) { if (seen.has(k) || !kinds[k].test(cards[ci])) continue; seen.add(k); if (own[k] < 0 || tryC(own[k])) { own[k] = ci; return true; } } return false; };
+  const extra = [];
+  cards.forEach((c, ci) => { seen.clear(); if (!tryC(ci)) extra.push(ci); });
+  return { missing: kinds.filter((k, i) => own[i] < 0).map(k => k.cond), extra };
+}
 
 // "덱을 위(아래)에서부터 N장 보고 그 중에서 ○○를 M장 선택해서 …. 남은 카드는 …" (메가레쿠쟈 ex 등)
 // { top: N, rest: 'shuffle'(덱에 넣고 섞기) | 'bottom' | 'bottomMix'(섞어서 아래로) | 'discard' | null, …parseSearch 결과 }
@@ -125,7 +156,7 @@ export function parseCost(text, ctx = {}) {
 }
 
 // 사람이 읽는 짧은 안내: 「포켓몬 ex」를 3장까지 → 보여주고 손패로
-export const TO_KO = { hand: '손패로', bench: '벤치에 내기', discard: '트래시로', attach: '포켓몬에게 붙이기', evolve: '올려서 진화', top: '덱 위로' };
+export const TO_KO = { hand: '손패로', bench: '벤치에 내기', discard: '트래시로', attach: '포켓몬에게 붙이기', evolve: '올려서 진화', top: '덱 위로', candy: '기본 포켓몬에 올려 진화', evoDeck: '올려서 진화' };
 export const toLabel = sp => sp.to === 'attach' ? (sp.target === 'self' ? '이 포켓몬에게 붙이기' : sp.target === 'bench' ? '벤치 포켓몬에게 붙이기' : '포켓몬에게 붙이기') : sp.to === 'evolve' && sp.target === 'self' ? '이 포켓몬에게 올려 진화' : TO_KO[sp.to];
 export function searchLabel(sp) {
   if (sp.top) { const n = sp.max == null ? '원하는 만큼' : `${sp.max}장${sp.upTo ? '까지' : ''}`; return `${sp.bottom ? '아래' : '위'}에서 ${sp.top}장 중 ${sp.cond ? sp.cond + ' ' : ''}${n}${sp.to ? ' · ' + (sp.reveal ? '보여주고 ' : '') + toLabel(sp) : ''}${sp.rest ? ' · ' + REST_KO[sp.rest] : ''}`; }
