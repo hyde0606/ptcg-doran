@@ -1042,3 +1042,16 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .addfab .addn { min-width: 46px; text-align: center; font: 700 1.3rem/1 'Rubik', var(--fh); color: var(--text); }
 .addfab .addn small { font-family: var(--fh); font-weight: 400; font-size: .72rem; color: var(--muted); margin-left: 1px; }
 @media (max-width: 290px) { .hprow { gap: 4px; padding: 6px 4px; } .hprow .stepper { gap: 3px; } .hprow .stp { width: 32px; height: 32px; min-height: 32px; } .hprow .stv { min-width: 0; } .hprow .stv b { font-size: 1.15rem; } .hprow .hpm { font-size: .75rem; } .hprow .hpl { font-size: .8rem; } .hprow [data-hpgo] { min-width: 0; padding: 0 9px; } }
+
+/* 덱 리스트 내보내기 창: 형식 고르기 · 안내 · 글 상자 · 복사/파일/공유 */
+.sheet > .in.xsheet { width: min(560px, 100%); }
+.xsheet .xfmt { margin-top: 4px; }
+.xsheet .xfmt button { min-height: 40px; }
+.xsheet .xnote { margin: 10px 2px 8px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
+.xsheet .xnote > span { display: block; }
+.xsheet .warnt { display: flex; gap: 6px; align-items: flex-start; margin-top: 4px; font-family: var(--fh); font-weight: normal; color: #b0640a; }
+.xsheet .warnt .ic { width: 16px; height: 16px; flex: none; margin-top: 2px; color: var(--warn); }
+.xsheet .xout { display: block; min-height: 180px; resize: vertical; font-size: .92rem; line-height: 1.5; padding: 10px 14px; background: #f7fbfd; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.xsheet .xacts { margin-top: 12px; }
+.xsheet .xacts button { min-height: 46px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+@media (max-width: 360px) { .xsheet .xout { font-size: .86rem; padding: 8px 10px; } .xsheet .xfmt button { font-size: .84rem; } }

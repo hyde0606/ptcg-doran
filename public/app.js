@@ -1,5 +1,5 @@
 import KS from '/lib/ks.js';
-import { indexCards, parseDeckList, checkDeck } from '/lib/deck.js';
+import { indexCards, parseDeckList, checkDeck, exportDeckList, koName, cardNo } from '/lib/deck.js';
 import Sound from '/lib/sound.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -52,6 +52,9 @@ const ICON = {
   expand: svg('<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>'),
   shrink: svg('<path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>'),
   share: svg('<path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M8.5 10.5H6v10h12v-10h-2.5"/>'),
+  copy: svg('<rect x="8.5" y="8.5" width="11.5" height="12.5" rx="2.2"/><path d="M15.5 8.5V5.2A2.2 2.2 0 0 0 13.3 3H6.2A2.2 2.2 0 0 0 4 5.2v8.6A2.2 2.2 0 0 0 6.2 16h2.3"/>'),
+  save: svg('<path d="M12 3.5v11M7.5 10l4.5 4.5 4.5-4.5"/><path d="M4 15.5v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>'),
+  out: svg('<path d="M13 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/><path d="M14.5 3.5H20V9M20 3.5l-8 8"/>'),
   flag: svg('<path d="M5.5 21V3.5M5.5 4h12.5l-2.6 4.6 2.6 4.6H5.5"/>'),
   homeAdd: svg('<rect x="6" y="2.8" width="12" height="18.4" rx="2.6"/><path d="M12 8.5v6M9 11.5h6"/>'),
 };
@@ -164,7 +167,7 @@ function picHtml(c, want, big = false) { // 카드 그림 <img> (합친 카드�
   if (m === 'mix') { const [t, b, ace] = BAND(c), clip = ace ? `;clip-path:polygon(0 ${t}%,100% ${t}%,100% 55.5%,90.5% 55.5%,90.5% ${b}%,0 ${b}%)` : ''; return `<img src="${c.kimg}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"><img class="band" src="${en}" alt="" referrerpolicy="no-referrer" ${lazy} draggable="false" style="--bt:${t}%;--bb:${100 - b}%${clip}"${fb}>`; }
   return `<img src="${m === 'kr' ? c.kimg : en}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"${m === 'en' ? fb : ''}>`;
 }
-const cnameKo = c => { if (!c) return '?'; if (c.kn) return c.kn; if (!c.ko) return c.n; let k = c.ko; if (/^Mega /.test(c.n)) k = '메가' + k; if (/ ex$/.test(c.n)) k += ' ex'; return k; };
+const cnameKo = c => !c ? '?' : koName(c) || c.n; // 한국어 이름 (deck.js의 koName: 내보내기·붙여 넣기와 같은 이름)
 const cname = c => !c ? '?' : D.dtext === 'en' && !c.kro ? c.n : cnameKo(c); // 화면에 쓰는 이름 (카드 글자 설정)
 const altName = c => D.dtext === 'both' && c && !c.kro && c.n !== cnameKo(c) ? c.n : ''; // '한국어 + 영어 이름'일 때 덧붙일 영문 이름
 
@@ -629,7 +632,7 @@ function deckEditor(deck) {
   const count = () => list.reduce((a, b) => a + b.n, 0);
   const KIND = { P: '포켓몬', T: '트레이너스', E: '에너지' }, KIND_EN = { P: 'Pokémon', T: 'Trainer', E: 'Energy' };
   const kindName = st => D.dtext === 'en' ? KIND_EN[st] : KIND[st];
-  const setNo = c => D.dtext !== 'en' && c.kset ? `${c.kset} ${c.kno || ''}` : `${c.set || ''} ${c.no || ''}`;
+  const setNo = c => D.dtext !== 'en' && c.kset ? `${c.kset} ${c.kno || ''}` : `${c.set || ''} ${cardNo(c) || ''}`;
   const hexN = n => `<span class="hexn"><b>${n}</b></span>`;
   const tile = (c, n, extra = '', note = '') => `<div class="dkc" data-id="${c.id}">${picMode(c, D.dimg) ? `<span class="cpic">${picHtml(c, D.dimg)}</span>` : `<div class="ph">${esc(cname(c))}</div>`}${n ? hexN(n) : ''}${extra}<div class="cnm">${esc(cname(c))}${altName(c) ? `<small class="alt">${esc(altName(c))}</small>` : D.dtext === 'both' ? '<small class="alt">&nbsp;</small>' : ''}</div><div class="muted cno">${esc(setNo(c))}${note}</div></div>`;
   let view = 'kind'; try { view = localStorage.getItem('dkView') === 'all' ? 'all' : 'kind'; } catch {}
@@ -704,9 +707,51 @@ function deckEditor(deck) {
       draw(); if (matchMedia('(hover: hover)').matches) { qi.focus(); qi.select(); }
     });
   };
-  const openImp = () => openSheet(`<button class="x sm" data-close>닫기</button><h3>리스트 붙여 넣기</h3><p class="small muted">PTCGL에서 내보낸 덱 리스트를 붙여 넣으면 지금 리스트를 바꿔요.</p><textarea id="paste" placeholder="4 Pikachu ex SVP 106&#10;..."></textarea><div class="row" style="margin-top:8px"><button id="go" class="primary">불러오기</button></div><div id="bad" class="small"></div>`, el => {
+  const openImp = () => openSheet(`<button class="x sm" data-close>닫기</button><h3>리스트 붙여 넣기</h3><p class="small muted">PTCGL이나 이 사이트에서 내보낸 덱 리스트(영어·한국어)를 붙여 넣으면 지금 리스트를 바꿔요.</p><textarea id="paste" placeholder="4 Pikachu ex SVP 106&#10;..."></textarea><div class="row" style="margin-top:8px"><button id="go" class="primary">불러오기</button></div><div id="bad" class="small"></div>`, el => {
     el.querySelector('#go').onclick = () => { const r = parseDeckList(el.querySelector('#paste').value, IDX); list = r.list; drawList(); if (r.bad.length) el.querySelector('#bad').innerHTML = '못 찾은 줄: ' + r.bad.map(esc).join(' · '); else { closeSheet(); toast('리스트를 모두 불러왔어요.'); } };
   });
+  // 리스트 내보내기: PTCGL(영어) / 한국어 글. 복사·파일 저장·공유 (고른 형식은 기억)
+  const openExp = () => {
+    let fmt = 'ptcgl'; try { if (localStorage.getItem('dkExp') === 'ko') fmt = 'ko'; } catch {}
+    const nm = () => ((($('#dn') || {}).value || deck.name || '').trim() || '덱');
+    const canShare = !!navigator.share;
+    const btns = [['copy', 'copy', '복사하기', 'primary'], ['file', 'save', '파일로 저장', ''], ...(canShare ? [['share', 'share', '공유하기', '']] : [])];
+    openSheet(`<button class="x sm" data-close>닫기</button><h3>리스트 내보내기</h3>
+      <div class="seg2 n2 xfmt" role="group" aria-label="글 형식">${[['ptcgl', 'PTCGL 형식 (영어)'], ['ko', '한국어 형식']].map(([k, l]) => `<button type="button" class="sm" data-fmt="${k}">${l}</button>`).join('')}</div>
+      <p class="small muted xnote"></p><textarea id="xout" class="xout" readonly spellcheck="false" aria-label="내보낼 덱 리스트"></textarea>
+      <div class="acts bal xacts" style="--cols:${balCols(btns.map(b => b[2]), Math.min(innerWidth, 640) - 40)}">${btns.map(([k, ic, l, cls]) => `<button type="button" class="${cls}" data-x="${k}">${ICON[ic]}${l}</button>`).join('')}</div>`, el => {
+      el.classList.add('xsheet');
+      const out = el.querySelector('#xout'), note = el.querySelector('.xnote');
+      const draw = () => {
+        const r = exportDeckList(list, IDX, fmt);
+        out.value = r.text;
+        el.querySelectorAll('[data-fmt]').forEach(b => { b.classList.toggle('on', b.dataset.fmt === fmt); b.setAttribute('aria-pressed', b.dataset.fmt === fmt); });
+        const ns = [fmt === 'ko' ? '한국어 이름과 한국판 카드 번호로 적어요. 친구에게 보내기 좋아요.' : '포켓몬 TCG 라이브(PTCGL)의 덱 가져오기에 그대로 붙여 넣을 수 있어요.', "이 사이트의 '리스트 붙여 넣기'로도 다시 불러올 수 있어요."];
+        if (fmt !== 'ko' && r.krOnly.length) ns.push(`<b class="warnt">${ICON.warn}한국판에만 있는 카드(${esc(r.krOnly[0])}${r.krOnly.length > 1 ? ` 외 ${r.krOnly.length - 1}종` : ''})는 PTCGL에서 읽지 못해요.</b>`);
+        if (r.total !== 60) ns.push(`<b class="warnt">${ICON.warn}지금 ${r.total}장이에요. 대전에는 60장이 필요해요.</b>`);
+        note.innerHTML = ns.map(x => `<span>${x}</span>`).join(' ');
+        out.style.height = ''; out.style.height = Math.min(out.scrollHeight + 4, Math.max(180, innerHeight * .46)) + 'px';
+      };
+      el.querySelectorAll('[data-fmt]').forEach(b => b.onclick = () => { fmt = b.dataset.fmt; try { localStorage.setItem('dkExp', fmt); } catch {} draw(); });
+      out.onfocus = () => out.setSelectionRange(0, out.value.length);
+      const fname = () => `${nm().replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim() || '덱'} (${fmt === 'ko' ? '한국어' : 'PTCGL'}).txt`;
+      const act = {
+        copy: async () => {
+          let ok = false;
+          try { await navigator.clipboard.writeText(out.value); ok = true; } catch {}
+          if (!ok) { out.focus(); out.setSelectionRange(0, out.value.length); try { ok = document.execCommand('copy'); } catch {} }
+          toast(ok ? (fmt === 'ko' ? '복사했어요.' : '복사했어요. PTCGL의 덱 가져오기에 붙여 넣어 주세요.') : '복사하지 못했어요. 글을 모두 골라 직접 복사해 주세요.');
+        },
+        file: () => {
+          const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([out.value + '\n'], { type: 'text/plain;charset=utf-8' })); a.download = fname();
+          document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast(`'${fname()}' 파일로 저장했어요.`);
+        },
+        share: async () => { try { await navigator.share({ title: nm(), text: out.value }); } catch (e) { if (e && e.name !== 'AbortError') toast('공유하지 못했어요. 복사하기를 써 주세요.'); } },
+      };
+      el.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { Sound.sfx('tap'); act[b.dataset.x](); });
+      draw();
+    });
+  };
   const save = async () => {
     try { const r = await api('/api/decks', { id: deck.id, name: $('#dn').value, list }); deck.id = r.deck.id; GUARD = null; toast(r.check.ok ? '저장했어요.' : '저장했어요. 덱 규칙을 확인해 주세요.'); go('#decks'); return true; } catch (e) { toast(e.message); return false; }
   };
@@ -721,8 +766,9 @@ function deckEditor(deck) {
   $('#back').onclick = leave;
   $('#add').onclick = openAdd;
   $('#cnt').onclick = () => { const ch = checkDeck(list, IDX); openSheet(`<button class="x sm" data-close>닫기</button><h3>덱 규칙</h3>${ch.ok ? '<p><span class="chip ok">덱 규칙 통과</span> 60장, 같은 이름 4장까지, 기본 포켓몬 1장 이상을 모두 지켰어요.</p>' : `<ul class="probs">${ch.problems.map(p => `<li>${ICON.warn}<span>${esc(p)}</span></li>`).join('')}</ul>`}`); };
-  $('#more').onclick = async () => { const k = await pick('덱 더 보기', [{ label: `${ICON.paste}리스트 붙여 넣기`, value: 'imp' }, ...(deck.id ? [{ label: '덱 지우기', value: 'del', cls: 'bad' }] : [])]);
+  $('#more').onclick = async () => { const k = await pick('덱 더 보기', [{ label: `${ICON.paste}리스트 붙여 넣기`, value: 'imp' }, ...(list.length ? [{ label: `${ICON.out}리스트 내보내기`, value: 'exp' }] : []), ...(deck.id ? [{ label: '덱 지우기', value: 'del', cls: 'bad' }] : [])]);
     if (k === 'imp') setTimeout(openImp, 40);
+    if (k === 'exp') setTimeout(openExp, 40);
     if (k === 'del' && await ask('덱을 지울까요?', '<p>지우면 되돌릴 수 없어요.</p>', '지우기', 'bad')) { await api('/api/decks/' + deck.id, null, 'DELETE'); GUARD = null; go('#decks'); } };
   $('#save').onclick = save;
   guardPage('한 번 더 누르면 덱 목록으로 가요', () => dirty() ? leave : null);
@@ -736,7 +782,7 @@ function cardInfoHtml(c, opt = {}) { // 카드를 눌렀을 때: 글자 + 작은
   const cost = cs => (cs || []).map(t => typeIcon(t, 'ecost', `title="${TYPE_KO[t] || t}"`)).join('');
   const L = en ? { ab: 'Ability', w: 'Weakness', r: 'Resistance', rt: 'Retreat', reg: 'Regulation' } : { ab: '특성', w: '약점', r: '저항력', rt: '후퇴', reg: '레귤레이션' };
   const tyName = t => en ? t : TYPE_KO[t] || t;
-  const setLine = en || !c.kset ? `${c.set || ''} ${c.no || ''}` : `${c.kset} ${c.kno || ''}`;
+  const setLine = en || !c.kset ? `${c.set || ''} ${cardNo(c) || ''}` : `${c.kset} ${c.kno || ''}`;
   return `<div class="cardinfo">${pic}<div class="txt"><h3>${esc(en ? c.n : cnameKo(c))}${alt(c.kro ? '' : c.n !== cnameKo(c) ? c.n : '')}</h3><div class="small muted">${c.kro ? '한국판 카드 · ' : ''}${esc(setLine)} · ${L.reg} ${esc(c.rm || '')}${c.kra && !en ? ` · ${esc(c.kra)}` : ''}</div>
     <div class="row" style="margin:4px 0">${(c.sub || []).map(x => `<span class="chip">${esc(x)}</span>`).join('')}${c.hp ? `<span class="chip">HP ${c.hp}</span>` : ''}${(c.ty || []).map(t => `<span class="chip">${esc(tyName(t))}</span>`).join('')}</div>
     ${(c.ab || []).map((a, i) => { const k = en ? a : (c.kab || [])[i] || a; return `<div class="atk"><b>${L.ab} ${esc(k.n)}</b>${alt(en ? '' : a.n !== k.n ? a.n : '')}<div>${esc(k.t)}</div></div>`; }).join('')}
