@@ -71,6 +71,7 @@ export function newGame(init) {
     p: [0, 1].map(() => ({ deck: [], hand: [], prizes: [], discard: [], lost: [], active: null, bench: [], mull: 0, mullDrawn: false, ready: false,
       used: { energy: false, supporter: false, stadium: false, retreat: false, attack: false }, look: null })),
     stadium: null, prompts: [], groups: [], openGroup: [null, null], nextId: 1, winner: null, winReason: null,
+    stop: null, // 잠깐 멈춤(지적): { by, text, to(되돌릴 행동 번호), what(그 행동 설명), at }
   };
   init.players.forEach((pl, p) => {
     pl.deck.forEach((cid, i) => { const iid = (p ? 'b' : 'a') + i; s.inst[iid] = cid; s.p[p].deck.push(iid); });
@@ -194,6 +195,8 @@ export function apply(s, who, a, idx = 0) {
   const fail = err => ({ ok: false, err, ev: [] });
   const say = (pub, own) => ev.push(own ? { pub, own, ownBy: who } : { pub });
   if (s.phase === 'over' && !['chat', 'agree', 'dispute'].includes(a.type)) return fail('끝난 판이에요.');
+  // 잠깐 멈춘 동안에는 채팅·대답·항복만 (지적을 정리해야 판이 다시 움직임)
+  if (s.stop && !['chat', 'stopEnd', 'concede', 'agree', 'dispute', 'rewindAsk', 'rewindNo', 'lookEnd'].includes(a.type)) return fail('잠깐 멈춘 상태예요. 지적을 먼저 정리해 주세요.');
 
   let gid = null; // 이 행동이 속한 사람 판정 묶음
   const judged = (title) => { // 사람 판정 묶음에 넣기 (없으면 새로)
@@ -587,6 +590,32 @@ export function apply(s, who, a, idx = 0) {
       break;
     }
     // rewindOk 는 서버(replay)가 처리한다
+    // ----- 잠깐! 멈추고 지적하기 -----
+    case 'stop': { // {text, to?: 잘못된 행동 번호, what?: 그 행동 설명} 상대 차례에도 누를 수 있음
+      if (s.stop) return fail('이미 잠깐 멈춘 상태예요.');
+      const text = String(a.text || '').trim().slice(0, 200);
+      const to = Number.isInteger(a.to) && a.to >= 0 && a.to < idx ? a.to : null;
+      s.stop = { by: who, text, to, what: to == null ? '' : String(a.what || '').trim().slice(0, 140), at: idx };
+      say(`⏸ ${me}: 잠깐! 판을 멈추고 지적했어요${s.stop.what ? ` (「${s.stop.what}」)` : ''}${text ? ' — ' + text : ''}`);
+      break;
+    }
+    case 'stopEnd': { // {how: 'drop' 지적한 사람이 거둠 | 'fix' 직접 고치고 계속 | 'keep' 이대로 계속, note?}
+      const st = s.stop; if (!st) return fail('멈춘 상태가 아니에요.');
+      const note = String(a.note || '').trim().slice(0, 200);
+      if (a.how === 'drop') {
+        if (st.by !== who) return fail('지적한 사람이 거둘 수 있어요.');
+        s.stop = null; say(`▶ ${me}: 지적을 거두고 계속해요.${note ? ' — ' + note : ''}`);
+      } else if (a.how === 'fix' || a.how === 'keep') {
+        if (st.by === who) return fail('지적받은 사람이 정해요.');
+        s.stop = null;
+        if (a.how === 'fix') { // 고치는 손질은 한 묶음(사람 판정)으로: '효과 끝'을 누르면 상대가 확인
+          closeGroup(s, who); const g = openGroup(s, who, '지적 받아 고치기', idx, st.text); gid = g.gid;
+          say(`▶ ${me}: 지적을 받아들여 직접 고치고 계속해요.${note ? ' — ' + note : ''}`);
+        } else say(`▶ ${me}: 제 행동이 맞다고 보고 이대로 계속해요.${note ? ' — ' + note : ''}`);
+      } else return fail('어떻게 할지 골라 주세요.');
+      break;
+    }
+    // stopUndo(지적받은 사람이 '그 행동 전으로 되돌리기'에 동의)도 서버(replay)가 처리한다
     case 'chat': {
       const t = String(a.text || '').trim().slice(0, 300); if (!t) return fail('빈 메시지예요.');
       ev.push({ pub: t, chat: true });
@@ -684,6 +713,7 @@ export function waitingOn(s) {
     if (s.first == null && !w.includes(s.coinWinner)) w.push(s.coinWinner);
     return w;
   }
+  if (s.stop) return [other(s.stop.by)]; // 잠깐 멈춤: 지적받은 사람이 대답할 차례
   const q = s.prompts.map(x => x.to).filter(x => x != null);
   return q.length ? [...new Set(q)] : [s.current];
 }
@@ -715,7 +745,7 @@ export function viewFor(s, who) {
   return {
     phase: s.phase, turn: s.turn, current: s.current, first: s.first, coinWinner: s.coinWinner,
     stadium: s.stadium && { ...card(s.stadium.iid), by: s.stadium.by }, prompts: s.prompts, groups: s.groups,
-    openGroup: s.openGroup, winner: s.winner, winReason: s.winReason, p, waiting: waitingOn(s), cfg: s.cfg,
+    openGroup: s.openGroup, winner: s.winner, winReason: s.winReason, p, waiting: waitingOn(s), cfg: s.cfg, stop: s.stop || null,
   };
 }
 
@@ -739,6 +769,17 @@ export function replay(init, log, upto = log.length, keepSnaps = false) {
       s.rng = hash128(String(s.rng.join(',')) + ':' + L.a.salt);
       for (let j = target; j < k; j++) if (steps[j]) steps[j].rewound = true;
       steps.push({ ok: true, ev: [{ pub: `↺ ${s.players[L.who].name}: 동의 — 「${title}」 바로 전으로 되돌렸어요. (이미 본 카드는 잊을 수 없어요)` }] });
+      snaps.push(snapOf(s));
+      continue;
+    }
+    if (L.a.type === 'stopUndo') { // 잠깐 멈춤: 지적받은 사람이 동의 → 지적한 행동 바로 전으로
+      const st = s.stop, target = st ? st.to : null;
+      if (!st || target == null || st.by === L.who || target > k) { steps.push({ ok: false, ev: [] }); snaps.push(snapOf(s)); continue; }
+      const what = st.what;
+      const sn = snaps[target]; sn.cards = null; s = clone(sn); sn.cards = cards; s.cards = cards;
+      s.rng = hash128(String(s.rng.join(',')) + ':' + L.a.salt);
+      for (let j = target; j < k; j++) if (steps[j]) steps[j].rewound = true;
+      steps.push({ ok: true, ev: [{ pub: `↺ ${s.players[L.who].name}: 지적을 받아들여 「${what || '그 행동'}」 바로 전으로 되돌렸어요. (이미 본 카드는 잊을 수 없어요)` }] });
       snaps.push(snapOf(s));
       continue;
     }

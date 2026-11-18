@@ -93,4 +93,28 @@ if (g) {
 const R2 = replay(init, log.slice(0, 10));
 const st2 = replay(init, log.slice(0, 10));
 assert.deepEqual(R2.s.p[0].deck, st2.s.p[0].deck);
+// 잠깐! 멈추고 지적하기: 멈춘 동안 다른 행동 막힘 → 거두기 / 이대로 계속 / 직접 고치기 / 되돌리기
+{
+  const L2 = log.slice(0, 12); let S = replay(init, L2).s; const cur = S.current, op = 1 - cur;
+  const ap = (who, a, ok = true) => { const r = apply(S, who, a, L2.length); if (r.ok) L2.push({ who, a }); assert.equal(!!r.ok, ok, JSON.stringify(r)); return r; };
+  const k0 = L2.length; ap(cur, { type: 'draw', n: 1 }); // 잘못한 행동이라고 칠 것
+  ap(op, { type: 'stop', text: '드로우를 두 번 했어요', to: k0, what: '덱에서 1장을 뽑았어요' });
+  assert.ok(S.stop && S.stop.by === op); assert.deepEqual(waitingOn(S), [cur]);
+  assert.ok(/멈춘 상태/.test(ap(cur, { type: 'draw', n: 1 }, false).err), '멈춘 동안 막힘');
+  ap(cur, { type: 'chat', text: '아 맞네요' });
+  ap(cur, { type: 'stopEnd', how: 'drop' }, false); // 거두기는 지적한 사람만
+  ap(op, { type: 'stopEnd', how: 'drop' }); assert.equal(S.stop, null);
+  ap(op, { type: 'stop', text: '다시' }); ap(cur, { type: 'stopEnd', how: 'keep', note: '효과예요' }); assert.equal(S.stop, null);
+  ap(op, { type: 'stop', text: '고쳐 주세요' }); const r = ap(cur, { type: 'stopEnd', how: 'fix' }); assert.ok(r.gid && S.openGroup[cur]);
+  ap(cur, { type: 'effectEnd' });
+  const hand0 = replay(init, L2.slice(0, k0)).s.p[cur].hand.length;
+  ap(op, { type: 'stop', text: '드로우 취소', to: k0, what: '덱에서 1장을 뽑았어요' });
+  L2.push({ who: op, a: { type: 'stopUndo', salt: 'a1' } }); // 지적한 사람이 되돌리기는 안 됨
+  let R = replay(init, L2); assert.equal(R.steps.at(-1).ok, false); assert.ok(R.s.stop);
+  L2.pop(); L2.push({ who: cur, a: { type: 'stopUndo', salt: 'a1' } });
+  R = replay(init, L2); assert.equal(R.steps.at(-1).ok, true); assert.equal(R.s.stop, null);
+  assert.equal(R.s.p[cur].hand.length, hand0, '드로우 전 손패로'); assert.ok(R.steps.slice(k0, -1).every(x => x.rewound));
+  assert.ok(viewFor(R.s, 0).stop === null);
+  console.log('stop ok');
+}
 console.log('waiting', waitingOn(state), 'log', log.length, 'OK');

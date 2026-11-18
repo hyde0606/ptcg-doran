@@ -288,7 +288,7 @@ export class Game extends DurableObject {
     return { ...v, id: G.id, me: seat, n: G.log.length, deadline: this.deadline(G), cfg: G.init.cfg };
   }
   deadline(G) {
-    if (G.init.cfg.mode !== 'async' || G.s.phase === 'over') return null;
+    if (G.init.cfg.mode !== 'async' || G.s.phase === 'over' || G.s.stop) return null; // 잠깐 멈춘 동안은 기한 시계도 멈춤
     const last = G.log.length ? G.log[G.log.length - 1].t : this.meta('created');
     return last + G.init.cfg.deadlineH * 3600e3;
   }
@@ -340,6 +340,14 @@ export class Game extends DurableObject {
     if (a.type === 'rewindOk') {
       const g = G.s.groups.find(x => x.start === (a.to | 0));
       if (!g || g.rewindBy == null || g.rewindBy === seat) return { ok: false, err: '되돌리기 요청이 없어요.' };
+      a.salt = rid(12);
+      this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length, seat, JSON.stringify(a), t);
+      this.cache = null; const G2 = this.load();
+      this.push(G2, true); await this.report(G2); return { ok: true };
+    }
+    if (a.type === 'stopUndo') { // 잠깐 멈춤에서 지적받은 사람이 '그 행동 전으로 되돌리기'
+      const st = G.s.stop;
+      if (!st || st.to == null || st.by === seat) return { ok: false, err: '되돌릴 지적이 없어요.' };
       a.salt = rid(12);
       this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length, seat, JSON.stringify(a), t);
       this.cache = null; const G2 = this.load();
