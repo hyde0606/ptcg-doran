@@ -533,12 +533,12 @@ async function renderLobby() {
     else if (r.status === 'between' && r.mine) main = `<button class="primary sm" data-next="${r.id}">${ICON.play}다음 판</button>`;
     else if (last && r.status === 'playing') main = `<a class="btn ${r.mine ? 'primary' : ''} sm" href="#game/${last}">${r.mine ? `${ICON.battle}판으로` : `${ICON.eye}관전`}</a>`;
     const rec = last && r.status !== 'open' ? `<a class="btn sm" href="#replay/${last}">${ICON.rewind}리플레이</a>` : '';
-    const adm = SK.admin ? `<button class="sm k-admin" data-admin="${r.id}" aria-label="관리자: 판 끝내기·지우기">${ICON.gear}관리</button>` : '';
-    return `<article class="rcard s-${st[0]}"><div class="rtop">${ringIcon(st[1], 'k-' + st[0], r.myTurn)}<span class="rst">${st[2]}</span></div>
+    const adm = SK.admin ? `<button class="radm" data-admin="${r.id}" aria-label="관리자: 판 끝내기·지우기">${ICON.gear}관리</button>` : '';
+    return `<article class="rcard s-${st[0]}"><div class="rtop">${ringIcon(st[1], 'k-' + st[0], r.myTurn)}<span class="rst">${st[2]}</span>${adm}</div>
       <h4 class="rt">${esc(r.cfg.title || nm.filter(Boolean).join(' vs '))}</h4>
       <div class="rvsrow">${who(nm[0])}${score}${who(nm[1])}</div>
       <div class="rmode">${esc(modeKo(r.cfg))}</div>${left}
-      <div class="rbtns2">${main}${rec}${adm}</div></article>`;
+      <div class="rbtns2">${main}${rec}</div></article>`;
   };
   const lists = { mine, open, watch, done }, cur = lists[lobbyTab] || [];
   const emptyMsg = { mine: '진행 중인 대전이 없어요. 방을 만들거나 들어갈 방을 찾아보세요.', open: '들어갈 수 있는 방이 없어요. 직접 방을 만들어 보세요.', watch: '지금 관전할 대전이 없어요.', done: '끝난 판이 아직 없어요.' }[lobbyTab];
@@ -546,8 +546,6 @@ async function renderLobby() {
   app.innerHTML = `<div class="lobh"><div class="ltabs" role="tablist">${tabs.map(([k, l, n]) => `<button class="ltab ${lobbyTab === k ? 'on' : ''}" role="tab" aria-selected="${lobbyTab === k}" data-tab="${k}">${l}<b>${n}</b>${k === 'mine' && myTurnN ? `<i class="dot" title="내 차례 ${myTurnN}"></i>` : ''}</button>`).join('')}</div><button class="primary newroom" data-tab="new">${ICON.plus}<span>방 만들기</span></button></div>
     ${cur.length ? `<div class="rlist">${cur.map(roomCard).join('')}</div>` : `<div class="empty-note">${ringIcon('wait', 'k-wait')}<p>${emptyMsg}</p></div>`}`;
   app.querySelectorAll('.ltab[data-tab]').forEach(b => b.onclick = () => { lobbyTab = b.dataset.tab; try { localStorage.setItem('lobbyTab', lobbyTab); } catch {} renderLobby(); });
-  const rl = app.querySelector('.rlist'); // 가로 화면: 마우스 휠을 가로 스크롤로
-  if (rl) rl.addEventListener('wheel', e => { if (getComputedStyle(rl).overflowX === 'auto' && Math.abs(e.deltaY) > Math.abs(e.deltaX) && rl.scrollWidth > rl.clientWidth) { rl.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
   const chooseDeck = async () => {
     const ok = decks.decks; if (!ok.length) { toast('먼저 덱을 만들어 주세요.'); location.hash = '#decks'; return null; }
     return pick('어떤 덱으로 할까요?', ok.map(d => ({ label: esc(d.name) + (d.ok ? '' : ` <span class="chip warn">규칙 확인</span>`), value: d.id })));
@@ -1613,9 +1611,23 @@ function zvFill(el) {
   g.querySelectorAll('[data-zc]').forEach(b => { const go = () => { const x = cards.find(y => String(y.i) === b.dataset.zc); if (x) zvCard(el, x); }; b.onclick = go; b.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; }); // 단추(button) 대신 div: 격자 줄 높이가 카드 높이를 제대로 따라감
 }
 const emLen = t => [...String(t)].reduce((n, ch) => n + (/[\u3131-\uD7A3]/.test(ch) ? 1 : ch === ' ' ? .3 : .58), 0) + .4; /* 이름 폭(글자 크기 배수): 한 줄에 다 들어가게 글자 크기를 줄임 */
-function zvSize(g) { // 한 줄 카드 수를 폭에 맞춰 정하고 카드 폭을 px로 (그래야 줄 높이가 카드 높이를 따라감)
-  const cs = getComputedStyle(g), W = g.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), zw = parseFloat(cs.getPropertyValue('--zw')) || 150, gap = parseFloat(cs.columnGap) || 12;
-  const n = Math.max(2, Math.floor((W + gap) / (zw + gap))); g.style.setProperty('--zn', n); g.style.setProperty('--zcw', Math.floor((W - (n - 1) * gap) / n) + 'px');
+function zvSize(g) { // 한 줄 카드 수와 카드 폭(px)을 정함. 6장 이하(프라이즈 등)는 한 줄에 다 넣고 창도 카드만큼만 (빈 곳 없게)
+  const el = g.closest('.zvsheet'), sh = el.parentElement, cs = getComputedStyle(g), es = getComputedStyle(el), ss = getComputedStyle(sh), px = v => parseFloat(v) || 0;
+  const padX = px(cs.paddingLeft) + px(cs.paddingRight) + px(es.paddingLeft) + px(es.paddingRight);
+  const outer = Math.min(1240, sh.clientWidth - px(ss.paddingLeft) - px(ss.paddingRight)), W = outer - padX;
+  const zw = px(cs.getPropertyValue('--zw')) || 150, gap = px(cs.columnGap) || 12, c = g.querySelectorAll('.zc').length, one = (W - (c - 1) * gap) / c;
+  let n, cw, fit = false;
+  if (c && c <= 6 && one >= zw * .75) {
+    const maxH = px(es.maxHeight) || innerHeight, hd = el.querySelector('.zvh').offsetHeight;
+    const hCap = (maxH - hd - px(es.paddingTop) - px(es.paddingBottom) - px(cs.paddingTop) - px(cs.paddingBottom) - 34) / 1.3968;
+    n = c; cw = Math.floor(Math.max(60, Math.min(one, zw * 1.2, hCap))); fit = true;
+  } else {
+    n = Math.max(2, Math.floor((W + gap) / (zw + gap)));
+    if (c && c <= 6) n = Math.ceil(c / Math.ceil(c / n)); // 6장 이하가 두 줄이면 줄마다 고르게 (3+3)
+    cw = Math.floor((W - (n - 1) * gap) / n);
+  }
+  g.classList.toggle('fit', fit); g.style.setProperty('--zn', n); g.style.setProperty('--zcw', cw + 'px');
+  el.style.width = fit ? Math.round(Math.max(n * cw + (n - 1) * gap + padX, Math.min(outer, 560))) + 'px' : '';
 }
 window.addEventListener('resize', () => { const g = document.querySelector('#sheet .zvgrid'); if (g) zvSize(g); });
 function zvActs(x) { // 대전 중일 때만 옮기기 단추
@@ -1950,10 +1962,9 @@ async function renderReplay(id, k0) {
 
 document.addEventListener('error', e => { const im = e.target; if (im.tagName === 'IMG' && !im.dataset.f) { im.dataset.f = 1; const d = document.createElement('div'); d.className = 'ph'; d.textContent = im.alt || '카드'; d.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.72rem;padding:2px;word-break:keep-all;aspect-ratio:63/88'; im.replaceWith(d); } }, true);
 // 잔잔한 배경: 천천히 흐르는 구름 몇 겹, 아주 느리게 도는 햇살, 아래에서 떠오르는 빛 알갱이 (움직임 줄이기 설정이면 멈춤)
-(function ambient() {
+(function ambient() { // 디지털 경기장: 지나가는 빛 띠 + 격자 위에서 깜빡이는 점
   let seed = 7; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const clouds = Array.from({ length: 6 }, (_, i) => `<i class="cl" style="--w:${Math.round(90 + r() * 120)}px;--y:${Math.round(6 + r() * 58)}vh;--o:${(.5 + r() * .4).toFixed(2)};--d:${Math.round(110 + r() * 90)}s;--dl:${-Math.round(r() * 200)}s"></i>`).join('');
-  const motes = Array.from({ length: 16 }, () => `<i class="mo" style="--x:${Math.round(r() * 100)}vw;--s:${Math.round(4 + r() * 7)}px;--o:${(.35 + r() * .45).toFixed(2)};--sw:${Math.round(-40 + r() * 80)}px;--d:${Math.round(16 + r() * 14)}s;--dl:${-Math.round(r() * 30)}s"></i>`).join('');
-  document.body.insertAdjacentHTML('afterbegin', `<div id="amb" aria-hidden="true"><i class="sun"></i>${clouds}${motes}</div>`);
+  const blips = Array.from({ length: 16 }, () => { const d = 5 + r() * 4; return `<i class="bl" style="--x:${(r() * 100).toFixed(1)}vw;--y:${(r() * 100).toFixed(1)}vh;--s:${(3 + r() * 3).toFixed(1)}px;--d:${d.toFixed(1)}s;--dl:${(-r() * d).toFixed(1)}s"></i>`; }).join('');
+  document.body.insertAdjacentHTML('afterbegin', `<div id="amb" aria-hidden="true"><i class="sw"></i>${blips}</div>`);
 })();
 route();

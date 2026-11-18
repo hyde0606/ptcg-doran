@@ -36,9 +36,10 @@ function tone(f, t, dur, o = {}) {
   osc.type = o.type || 'sine'; osc.frequency.setValueAtTime(f, t);
   if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t + (o.slide || dur));
   if (o.detune) osc.detune.value = o.detune;
-  const v = o.vol ?? 0.2, a = o.a ?? 0.005;
+  const v = o.vol ?? 0.2, a = o.a ?? 0.005, sus = o.sus || 0;
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + a);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  if (sus) { g.gain.setTargetAtTime(v * sus, t + a, 0.08); g.gain.setValueAtTime(v * sus, t + Math.max(a, dur - 0.04)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.03); } // 길게 유지되는 소리
+  else g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   let node = osc;
   if (o.lp) { const f2 = ctx.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = o.lp; osc.connect(f2); node = f2; }
   node.connect(g); g.connect(o.bus || sfxBus);
@@ -56,32 +57,33 @@ function noise(t, dur, o = {}) {
 }
 const N = n => 440 * Math.pow(2, (n - 69) / 12); // MIDI 번호 → 주파수
 
-// ---------- 효과음 ----------
+// ---------- 효과음: '실감' 묶음 (11/18 링크 님 고름) — 실제 카드를 내려놓는 듯한 묵직한 소리 ----------
+const bell = (f, t, dur, v) => [[1, v], [2.76, v * 0.4], [5.4, v * 0.2]].forEach(([k, vv]) => tone(f * k, t, dur / (k > 1 ? 1.6 : 1), { vol: vv }));
 const FX = {
-  tap: t => { tone(1100, t, 0.06, { to: 760, vol: 0.07 }); noise(t, 0.02, { f: 4000, vol: 0.03 }); },
-  pop: t => { tone(520, t, 0.09, { to: 980, slide: 0.05, vol: 0.12 }); tone(1560, t + 0.03, 0.08, { type: 'triangle', vol: 0.05 }); },
-  open: t => { noise(t, 0.16, { f: 500, to: 2200, vol: 0.05, q: 0.8 }); tone(880, t + 0.05, 0.12, { type: 'triangle', vol: 0.05 }); },
-  notify: t => { tone(1046, t, 0.35, { vol: 0.08 }); tone(1568, t + 0.06, 0.4, { vol: 0.05 }); },
-  error: t => { tone(220, t, 0.12, { type: 'square', vol: 0.05, lp: 900 }); tone(196, t + 0.13, 0.16, { type: 'square', vol: 0.05, lp: 900 }); },
-  draw: t => { noise(t, 0.16, { f: 2600, to: 900, vol: 0.12, q: 1.5 }); tone(1300, t + 0.12, 0.05, { vol: 0.04 }); },
-  place: t => { tone(170, t, 0.14, { to: 80, vol: 0.28 }); noise(t, 0.05, { ft: 'lowpass', f: 600, vol: 0.12 }); tone(1400, t + 0.01, 0.04, { vol: 0.04 }); },
-  play: t => { noise(t, 0.18, { f: 900, to: 3200, vol: 0.08 }); tone(660, t + 0.06, 0.12, { type: 'triangle', vol: 0.06 }); tone(990, t + 0.12, 0.14, { type: 'triangle', vol: 0.05 }); },
-  attach: t => { FX.place(t); [1318, 1760, 2093].forEach((f, i) => tone(f, t + 0.06 + i * 0.05, 0.16, { type: 'triangle', vol: 0.045 })); },
-  evolve: t => { tone(330, t, 0.5, { to: 1320, slide: 0.45, type: 'triangle', vol: 0.09 }); noise(t, 0.5, { f: 600, to: 5000, vol: 0.05 }); tone(1760, t + 0.48, 0.3, { vol: 0.07 }); },
-  shuffle: t => { for (let i = 0; i < 8; i++) noise(t + i * 0.045, 0.03, { f: 2800 + Math.random() * 1200, vol: 0.08, q: 2 }); },
-  retreat: t => { noise(t, 0.25, { f: 2400, to: 500, vol: 0.07 }); },
-  attack: t => { noise(t, 0.16, { f: 500, to: 3500, vol: 0.12 }); tone(140, t + 0.15, 0.28, { to: 45, vol: 0.38 }); noise(t + 0.15, 0.16, { ft: 'lowpass', f: 1200, vol: 0.22 }); },
-  damage: t => { tone(320, t, 0.14, { to: 140, type: 'square', vol: 0.05, lp: 1400 }); },
-  heal: t => { [72, 76, 79, 84].forEach((n, i) => tone(N(n), t + i * 0.07, 0.25, { vol: 0.06 })); },
-  coin: t => { for (let i = 0; i < 6; i++) tone(2600 + i * 90, t + i * 0.07, 0.05, { type: 'triangle', vol: 0.025 }); tone(2093, t + 0.5, 0.6, { vol: 0.07 }); tone(2637, t + 0.5, 0.5, { vol: 0.05, detune: 6 }); },
-  prize: t => { [84, 88, 91].forEach((n, i) => tone(N(n), t + i * 0.06, 0.22, { type: 'triangle', vol: 0.05 })); },
-  judge: t => { [76, 83, 88].forEach((n, i) => tone(N(n), t + i * 0.05, 0.2, { vol: 0.05 })); },
-  ko: t => { tone(660, t, 0.5, { to: 110, type: 'square', vol: 0.06, lp: 1500 }); noise(t + 0.1, 0.4, { ft: 'lowpass', f: 800, vol: 0.1 }); },
-  turnMine: t => { tone(N(79), t, 0.16, { type: 'triangle', vol: 0.1 }); tone(N(86), t + 0.12, 0.3, { type: 'triangle', vol: 0.1 }); tone(N(91), t + 0.12, 0.3, { vol: 0.04 }); },
-  turnTheirs: t => { tone(N(72), t, 0.18, { type: 'triangle', vol: 0.07 }); tone(N(67), t + 0.13, 0.28, { type: 'triangle', vol: 0.06 }); },
-  start: t => { [60, 64, 67, 72].forEach((n, i) => tone(N(n + 12), t + i * 0.08, 0.3, { type: 'triangle', vol: 0.07 })); tone(N(84), t + 0.36, 0.5, { vol: 0.05 }); },
-  win: t => { [60, 64, 67, 72, 76, 79, 84].forEach((n, i) => tone(N(n + 12), t + i * 0.09, 0.35, { type: 'triangle', vol: 0.07 })); [72, 76, 79].forEach(n => tone(N(n + 12), t + 0.7, 1.1, { vol: 0.05 })); },
-  lose: t => { [67, 64, 60, 55].forEach((n, i) => tone(N(n + 12), t + i * 0.16, 0.4, { type: 'triangle', vol: 0.06 })); },
+  tap: t => { noise(t, 0.018, { ft: 'highpass', f: 4800, vol: 0.08 }); tone(2400, t, 0.02, { vol: 0.03 }); },
+  pop: t => { noise(t, 0.02, { ft: 'highpass', f: 4000, vol: 0.07 }); tone(900, t, 0.06, { to: 600, vol: 0.06 }); },
+  open: t => { noise(t, 0.13, { f: 1200, to: 2600, vol: 0.06, q: 0.9, a: 0.02 }); },
+  notify: t => { bell(N(84), t, 0.7, 0.05); },
+  error: t => { tone(180, t, 0.1, { to: 120, vol: 0.22 }); noise(t, 0.05, { ft: 'lowpass', f: 700, vol: 0.12 }); tone(160, t + 0.13, 0.12, { to: 100, vol: 0.2 }); },
+  draw: t => { noise(t, 0.2, { f: 1600, to: 3800, vol: 0.13, q: 0.9, a: 0.03 }); noise(t + 0.17, 0.03, { ft: 'highpass', f: 5000, vol: 0.06 }); },
+  place: t => { noise(t, 0.07, { ft: 'lowpass', f: 900, vol: 0.32 }); tone(130, t, 0.12, { to: 55, vol: 0.32 }); noise(t, 0.012, { ft: 'highpass', f: 6000, vol: 0.12 }); },
+  play: t => { noise(t, 0.12, { f: 1600, to: 3200, vol: 0.1, a: 0.02 }); noise(t + 0.1, 0.06, { ft: 'lowpass', f: 900, vol: 0.22 }); tone(140, t + 0.1, 0.1, { to: 60, vol: 0.2 }); },
+  attach: t => { FX.place(t); [1568, 2350, 3136].forEach((f, i) => tone(f, t + 0.05, 0.7 - i * 0.12, { vol: 0.05 - i * 0.012, detune: i * 7 })); noise(t + 0.05, 0.35, { ft: 'highpass', f: 7000, vol: 0.03, a: 0.05 }); },
+  evolve: t => { noise(t, 1.0, { f: 300, to: 6000, vol: 0.12, q: 1.2, a: 0.8 }); tone(220, t, 1.0, { to: 880, type: 'sawtooth', vol: 0.03, a: 0.8, lp: 2400 }); tone(80, t + 1.0, 0.6, { to: 38, vol: 0.4 }); [84, 88, 91].forEach(n => tone(N(n), t + 1.0, 1.1, { vol: 0.04 })); },
+  shuffle: t => { let a = 0; for (let i = 0; i < 14; i++) { noise(t + a, 0.018, { f: 3000 + Math.random() * 2500, q: 2.5, vol: 0.09 }); a += 0.05 - i * 0.002; } noise(t + a + 0.04, 0.05, { ft: 'lowpass', f: 900, vol: 0.18 }); },
+  retreat: t => { noise(t, 0.3, { f: 3000, to: 700, vol: 0.09, a: 0.05 }); },
+  attack: t => { noise(t, 0.13, { f: 600, to: 4000, vol: 0.12, a: 0.1 }); tone(95, t + 0.13, 0.5, { to: 34, vol: 0.5 }); noise(t + 0.13, 0.35, { ft: 'lowpass', f: 1500, vol: 0.3 }); noise(t + 0.13, 0.05, { ft: 'highpass', f: 5000, vol: 0.15 }); },
+  damage: t => { tone(170, t, 0.13, { to: 60, vol: 0.4 }); noise(t, 0.09, { f: 700, vol: 0.2 }); },
+  heal: t => { [76, 79, 84].forEach((n, i) => bell(N(n), t + i * 0.09, 0.8, 0.035)); },
+  coin: t => { [0, .07, .13, .18, .22].forEach(a => noise(t + a, 0.015, { f: 6500, q: 4, vol: 0.12 })); [2637, 3951, 5274].forEach((f, i) => tone(f, t + 0.32, 1.1 - i * 0.25, { vol: 0.05 - i * 0.012, detune: i ? 9 : 0 })); },
+  prize: t => { noise(t, 0.16, { f: 2000, to: 4200, vol: 0.1, a: 0.03 }); tone(N(91), t + 0.14, 0.6, { vol: 0.05 }); tone(N(96), t + 0.18, 0.6, { vol: 0.04 }); },
+  judge: t => { [0, 0.12].forEach(a => { tone(820, t + a, 0.05, { vol: 0.08 }); noise(t + a, 0.03, { f: 1500, q: 2, vol: 0.1 }); }); },
+  ko: t => { tone(90, t, 0.9, { to: 30, vol: 0.5 }); noise(t, 1.1, { ft: 'lowpass', f: 900, to: 200, vol: 0.32, a: 0.01 }); tone(320, t + 0.1, 1.0, { to: 60, type: 'sawtooth', vol: 0.025, lp: 900 }); },
+  turnMine: t => { bell(N(69), t, 1.3, 0.06); tone(N(76), t + 0.16, 1.1, { vol: 0.035 }); },
+  turnTheirs: t => { bell(N(64), t, 1.0, 0.04); },
+  start: t => { [60, 64, 67, 72].forEach((n, i) => tone(N(n), t + 0.05, 0.9, { type: 'sawtooth', vol: 0.03, a: 0.06, lp: 1800, detune: i * 3 })); tone(70, t, 0.5, { to: 45, vol: 0.35 }); noise(t + 0.05, 1.0, { ft: 'highpass', f: 5200, vol: 0.08 }); },
+  win: t => { [60, 64, 67, 72].forEach((n, i) => tone(N(n), t + 0.05, 1.5, { type: 'sawtooth', vol: 0.035, a: 0.09, sus: 0.8, lp: 1800, detune: i * 3 })); for (let i = 0; i < 7; i++) tone(90, t + i * 0.035, 0.12, { to: 70, vol: 0.12 + i * 0.02 }); noise(t + 0.25, 1.6, { ft: 'highpass', f: 5000, vol: 0.11 }); tone(65, t + 0.25, 0.7, { to: 45, vol: 0.4 }); },
+  lose: t => { [57, 60, 64].forEach((n, i) => tone(N(n), t, 1.4, { type: 'sawtooth', to: N(n - 2), slide: 1.2, vol: 0.03, a: 0.05, lp: 1100, detune: i * 4 })); tone(80, t, 0.6, { to: 40, vol: 0.3 }); },
 };
 let lastAt = {};
 function sfx(name) {
