@@ -281,11 +281,23 @@ export function scanDeck(imageData, idx, names, energy, progress = () => {}) {
   for (const Py of g.Pys) for (let i = 0; i <= 12; i++) tries.push([Py, (-0.12 + i * 0.02) * g.ch]);
   tries.forEach(([Py, dy], i) => { const cs = g.placeAt(Py, g.oy + dy), q = quick(cs); if (!best || q > best.q) best = { q, cs }; progress(0.05 + 0.35 * (i + 1) / tries.length, '카드 칸 맞추는 중'); });
   let cards = best.cs;
+  // 줄마다 위아래 위치를 그림 점수로 다시 맞춤: 줄 간격이 조금만 틀려도 첫 줄·끝 줄로 갈수록 칸이 어긋나 포켓몬 그림을 못 찾음 (2026-11-18, 영문 4줄 사진)
+  const rows = new Map(); for (const c of cards) { if (!rows.has(c.y)) rows.set(c.y, []); rows.get(c.y).push(c); }
+  const rowQ = (cs, dy) => { let t = 0; for (const c of cs) { const s = scores(idx, featBox(img, idx, ...boxOf(c, 0, dy))); let m = -1; for (const v of s) if (v > m) m = v; t += m; } return t / cs.length; };
+  let ri = 0;
+  for (const cs of rows.values()) {
+    const pool = cs.filter(c => !c.weak), use = pool.length ? pool : cs, st = Math.max(1, Math.floor(use.length / 4)), sm = use.filter((_, i) => i % st === 0).slice(0, 4);
+    let bd = 0, bq = -1;
+    for (let k = -4; k <= 4; k++) { const q = rowQ(sm, k * 0.03); if (q > bq) { bq = q; bd = k * 0.03; } } // 3% 간격으로 넓게
+    const c0 = bd; for (const d of [-0.02, -0.01, 0.01, 0.02]) { const q = rowQ(sm, c0 + d); if (q > bq) { bq = q; bd = c0 + d; } } // 1% 간격으로 좁게
+    if (bd) for (const c of cs) c.y = pyRound(c.y + c.h * bd);
+    progress(0.4 + 0.1 * (++ri) / rows.size, '카드 칸 맞추는 중');
+  }
   // 카드마다 그림으로 찾기
   const out = [];
   cards.forEach((c, i) => {
     const r = identify(img, idx, c, names);
-    progress(0.4 + 0.5 * (i + 1) / cards.length, `카드 찾는 중 ${i + 1}/${cards.length}`);
+    progress(0.5 + 0.4 * (i + 1) / cards.length, `카드 찾는 중 ${i + 1}/${cards.length}`);
     if (c.weak && r.score < 0.6) return; // 흰 바탕 칸이 카드가 아님
     const b = findBadge(img, c), cand = b ? numCands(readDigits(b, idx)) : {};
     out.push({ ...c, ...r, badge: b ? b.box : null, ncand: cand });

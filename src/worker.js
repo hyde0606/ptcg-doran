@@ -601,7 +601,7 @@ export class Game extends DurableObject {
       const init = this.meta('init'); if (!init) return;
       const idx = await cardIndex(this.env, { url: 'https://assets.local/' }); let ch = false;
       for (const id in init.cards) { const c = init.cards[id], cur = idx.byId[id]; if (!c || !cur) continue;
-        for (const f of ['kn', 'kimg', 'kab', 'kat', 'kr', 'kra', 'ksa', 'kset', 'kno']) if (cur[f] !== undefined && JSON.stringify(cur[f]) !== JSON.stringify(c[f])) { c[f] = cur[f]; ch = true; } }
+        for (const f of ['kn', 'kimg', 'kab', 'kat', 'kr', 'kra', 'ksa', 'kset', 'kno', 'side', 'pair']) if (cur[f] !== undefined && JSON.stringify(cur[f]) !== JSON.stringify(c[f])) { c[f] = cur[f]; ch = true; } }
       if (ch) { this.setMeta('init', init); this.cache = null; }
     } catch (e) { console.log('fresh cards', e); }
   }
