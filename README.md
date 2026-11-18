@@ -78,3 +78,10 @@ npx wrangler deploy
 - 카드 추가 창 '리스트·사진'에서 덱 사진을 고르거나 붙여 넣거나 끌어 놓으면, 기기 안에서 카드 칸·장수·카드를 찾아요(`public/lib/deckscan.js`, 따로 도는 `deckscan-worker.js`). 사진은 서버로 보내지 않아요.
 - 확실한 카드만 미리 체크하고, 애매한 카드는 후보에서 고르게 해요. H·I·J가 아닌 카드는 '사이트에 없는 카드'로 보여요.
 - 인식 자료 `public/cardart.bin`(약 1.4MB)은 저장소에 없어요. PC의 public/ 에 두고 올려야 해요. 만드는 법은 `tools/deckart/README.md`.
+
+## 덱 코드로 덱 추가
+- 같은 '리스트·사진' 칸에 한국 공식 덱 코드(예: `vqvQ-LtHf-zBuI-kt8B`)나 일본 공식 덱 코드(예: `fbVVkk-tfvTLr-FvkvVF`), 또는 그 주소를 붙여 넣으면 바로 읽어요.
+- 서버(`src/deckcode.js`)가 공식 사이트에서 카드 목록·장수를 받아 사이트 카드로 이어요. 받은 목록은 하루 동안 저장해 둬요.
+  - 한국 공식: 카드 번호(BS…)·확장팩 기호+번호로 이음.
+  - 일본 공식: 포켓몬은 확장팩 기호+번호, 기본 에너지는 이름. 트레이너스는 한국판과 번호가 다를 때가 있어 공식 카드 그림을 받아 덱 사진처럼 그림으로 찾아요(확실한 것만 미리 체크).
+- 이을 표 `public/kprints.json`(약 400KB)은 저장소에 없고 인터넷에서 바로 받을 수 없어요(서버 안에서만 씀). PC의 public/ 에 두고 올려야 해요. 카드 자료가 바뀌면 `python tools/deckart/mkprints.py public/cards.json <cards_kr.json> public/kprints.json` 으로 다시 만들어요.

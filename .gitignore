@@ -7,3 +7,4 @@ card-src/
 public/kimg/
 *.log
 public/cardart.bin
+public/kprints.json

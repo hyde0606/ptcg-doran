@@ -182,6 +182,9 @@ function identify(img, idx, c, names) {
   return { cands, score: top.score, gap, sure: top.score >= 0.68 && gap >= 0.1 };
 }
 
+// 카드 한 장의 그림 (덱 코드의 일본 공식 카드 그림처럼 카드만 있는 그림)
+export function identifyCard(imageData, idx, names) { const img = toPlanes(imageData); return identify(img, idx, { x: 0, y: 0, w: img.W, h: img.H }, names); }
+
 // ---------- 장수 칸과 숫자 ----------
 function findBadge(img, c) { return findBadge1(img, c, 34) || findBadge1(img, c, 20); }
 function findBadge1(img, c, tol) {

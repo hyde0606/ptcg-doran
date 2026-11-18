@@ -898,6 +898,14 @@ const DeckScan = {
     const { res } = await this.call({ t: 'scan', img, names: this.names, energy: this.energy }, onProg);
     return { res, cv };
   },
+  async card(url) { // 카드 한 장 그림(일본 공식 덱 코드) → 그림으로 찾기
+    await this.prep();
+    const r = await fetch(url, { credentials: 'same-origin' }); if (!r.ok) throw new Error('카드 그림을 받지 못했어요.');
+    const src = await createImageBitmap(await r.blob()), s = Math.min(1, 520 / src.width), cv = document.createElement('canvas'); cv.width = Math.round(src.width * s); cv.height = Math.round(src.height * s);
+    const g = cv.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; g.drawImage(src, 0, 0, cv.width, cv.height);
+    const { res } = await this.call({ t: 'card', img: g.getImageData(0, 0, cv.width, cv.height), names: this.names });
+    return { res, crop: this.crop(cv, { x: 0, y: 0, w: cv.width, h: cv.height }) };
+  },
   crop(cv, c) { // 결과 줄에 보일 사진 속 카드 (작게)
     const k = document.createElement('canvas'); k.width = 90; k.height = 126; const g = k.getContext('2d'); g.imageSmoothingQuality = 'high';
     g.fillStyle = '#ddd'; g.fillRect(0, 0, 90, 126); g.drawImage(cv, c.x, c.y, c.w, c.h, 0, 0, 90, 126); return k.toDataURL('image/jpeg', 0.82);
@@ -976,6 +984,30 @@ function deckEditor(deck) {
         } catch (e) { scan = null; toast(e.message, 3600); }
         pasteDraw();
       };
+      // 덱 코드: 한국 공식(vqvQ-LtHf-zBuI-kt8B)·일본 공식(fbVVkk-tfvTLr-FvkvVF). 서버가 공식 사이트에서 받아 사이트 카드로 잇고,
+      // 일본판 트레이너스처럼 번호로 못 잇는 카드는 공식 카드 그림을 받아 그림으로 찾음 (확실한 것만 미리 체크)
+      const readCode = async code => {
+        if (scan && scan.busy) return;
+        if (filt !== 'L') setF('L');
+        scan = { busy: true, p: 0.05, s: '덱 코드 읽는 중', code }; pasteDraw();
+        try {
+          const r = await api('/api/deckcode?c=' + encodeURIComponent(code));
+          const rows = r.items.map(x => { const id = x.id && IDX.byId[x.id] ? x.id : null;
+            return { id, name: id ? null : x.kn || x.jp || '?', jp: x.jp || null, n: x.n, nSure: true, sure: !!id, on: !!id, cands: [], crop: null, pict: !id && !x.kn ? x.pict || null : null, note: !id && !x.kn && !x.pict ? '사이트 카드와 잇지 못했어요' : null }; });
+          const todo = rows.filter(w => w.pict);
+          for (let i = 0; i < todo.length; i++) {
+            const w = todo[i]; scan.p = Math.max(scan.p, 0.15 + 0.8 * i / todo.length); scan.s = `카드 그림으로 찾는 중 ${i + 1}/${todo.length}`; drawProg();
+            try {
+              const { res, crop } = await DeckScan.card('/api/deckcode/img?p=' + encodeURIComponent(w.pict)), l = res.cands[0].label, id = l[0] === '!' ? null : IDX.byId[l] ? l : null;
+              Object.assign(w, { crop, cands: res.cands.slice(0, 4).map(c => c.label), id, name: id ? null : l[0] === '!' ? l.slice(1) : w.name, sure: res.sure && !!id, on: res.sure && !!id });
+            } catch { w.note = '카드 그림을 받지 못했어요 · 카드 추가에서 직접 넣어 주세요'; }
+          }
+          scan = { rows, src: r.src, code };
+          Sound.sfx('place');
+        } catch (e) { scan = null; toast(e.message, 3600); }
+        pasteDraw();
+      };
+      const codeOf = t => { const m = String(t || '').match(/(?:^|[^A-Za-z0-9-])([A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}|[A-Za-z0-9]{6}-[A-Za-z0-9]{6}-[A-Za-z0-9]{6})(?![A-Za-z0-9-])/); return m ? m[1] : null; };
       el.addEventListener('paste', e => { const f = [...(e.clipboardData?.files || [])].find(x => x.type.startsWith('image/')); if (f) { e.preventDefault(); readPhoto(f); } });
       el.addEventListener('dragover', e => { if ([...(e.dataTransfer?.items || [])].some(x => x.kind === 'file')) e.preventDefault(); });
       el.addEventListener('drop', e => { const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith('image/')); if (f) { e.preventDefault(); readPhoto(f); } });
@@ -984,18 +1016,18 @@ function deckEditor(deck) {
         if (scan.busy) { if (!sv.querySelector('.sprog')) sv.innerHTML = `<div class="sprog"><div class="bar"><i></i></div><span></span></div>`; acts.innerHTML = ''; drawProg(); return; }
         const rows = scan.rows, onR = rows.filter(r => r.on && r.id), tot = onR.reduce((a, r) => a + r.n, 0), all = rows.reduce((a, r) => a + r.n, 0);
         const amb = rows.filter(r => r.id && !r.sure && !r.on).length, nos = rows.filter(r => !r.id).length, nq = rows.filter(r => !r.nSure).length;
-        sv.innerHTML = `<div class="shead"><span class="chip ${all === 60 ? 'ok' : 'warn'}">사진 속 ${rows.length}종 · ${all}장</span>${amb ? `<span class="chip warn">애매 ${amb}종</span>` : ''}${nos ? `<span class="chip">사이트에 없는 카드 ${nos}종</span>` : ''}${nq ? `<span class="chip warn">장수 확인 ${nq}종</span>` : ''}<span class="sbtns"><button type="button" class="sm" data-photo2>${ICON.photo}다른 사진</button><button type="button" class="sm" data-back2>${ICON.paste}리스트로</button></span></div>
-          <p class="small muted snote">체크한 카드만 덱에 넣어요. 애매한 카드는 아래 후보에서 맞는 것을 누르면 체크돼요. 장수가 다르면 −·+로 고쳐 주세요.</p>
-          <div class="slist">${rows.map((r, i) => { const c = r.id && IDX.byId[r.id], st = r.id ? (r.sure ? '확실' : r.on ? '고름' : '애매') : '사이트에 없음';
-            return `<div class="srow ${r.id ? (r.sure || r.on ? 'sure' : 'amb') : 'nos'}" data-i="${i}">
+        sv.innerHTML = `<div class="shead"><span class="chip ${all === 60 ? 'ok' : 'warn'}">${scan.src ? '덱 코드 속' : '사진 속'} ${rows.length}종 · ${all}장</span>${amb ? `<span class="chip warn">애매 ${amb}종</span>` : ''}${nos ? `<span class="chip">사이트에 없는 카드 ${nos}종</span>` : ''}${nq ? `<span class="chip warn">장수 확인 ${nq}종</span>` : ''}<span class="sbtns">${scan.src ? '' : `<button type="button" class="sm" data-photo2>${ICON.photo}다른 사진</button>`}<button type="button" class="sm" data-back2>${ICON.paste}리스트로</button></span></div>
+          <p class="small muted snote">${scan.src ? `${scan.src === 'kr' ? '한국' : '일본'} 공식 덱 코드 <b>${esc(scan.code)}</b>에서 읽었어요. 체크한 카드만 덱에 넣어요.${scan.src === 'jp' ? ' 일본판 트레이너스는 카드 그림으로 찾았어요.' : ''}${amb ? ' 애매한 카드는 아래 후보에서 맞는 것을 누르면 체크돼요.' : ''}` : '체크한 카드만 덱에 넣어요. 애매한 카드는 아래 후보에서 맞는 것을 누르면 체크돼요. 장수가 다르면 −·+로 고쳐 주세요.'}</p>
+          <div class="slist">${rows.map((r, i) => { const c = r.id && IDX.byId[r.id], st = r.id ? (r.sure ? '확실' : r.on ? '고름' : '애매') : r.note ? '못 찾음' : '사이트에 없음';
+            return `<div class="srow ${r.id ? (r.sure || r.on ? 'sure' : 'amb') : 'nos'}${r.crop ? '' : ' nc'}" data-i="${i}">
               <button type="button" class="sck ${r.on ? 'on' : ''}" data-on aria-pressed="${r.on}" ${r.id ? '' : 'disabled'} aria-label="덱에 넣기">${ICON.check}</button>
-              <img class="scrop" src="${r.crop}" alt="사진 속 카드">
+              ${r.crop ? `<img class="scrop" src="${r.crop}" alt="${scan.src ? '공식 카드 그림' : '사진 속 카드'}">` : ''}
               ${c ? `<span class="cpic spic">${picHtml(c, D.dimg)}</span>` : '<span class="spic none">—</span>'}
-              <div class="sinf"><b>${esc(c ? cnameKo(c) : r.name || '?')}</b><small><em class="st">${st}</em>${c ? ' · ' + esc(setNo(c)) : r.id ? '' : ' · H·I·J 카드가 아니에요'}</small>
+              <div class="sinf"><b>${esc(c ? cnameKo(c) : r.name || '?')}</b><small><em class="st">${st}</em>${c ? ' · ' + esc(setNo(c)) : r.id ? '' : ' · ' + esc(r.note || 'H·I·J 카드가 아니에요')}${r.jp && r.jp !== r.name ? ` · <span lang="ja">${esc(r.jp)}</span>` : ''}</small>
                 ${(!r.sure || !r.id) && r.cands.some(l => l[0] !== '!' && l !== r.id) ? `<div class="salt">${r.cands.map(l => { const cc = l[0] === '!' ? null : IDX.byId[l], cur = l === (r.id || '!' + r.name); return `<button type="button" class="sm ${cur ? 'on' : ''}" data-alt="${esc(l)}" ${cc ? '' : 'disabled'}>${esc(cc ? cnameKo(cc) : l.slice(1))}</button>`; }).join('')}</div>` : ''}</div>
               <div class="sstep"><button type="button" class="sm ib" data-n="-1" aria-label="1장 빼기">${ICON.minus}</button><b class="${r.nSure ? '' : 'q'}" title="${r.nSure ? '' : '장수를 확실히 읽지 못했어요'}">${r.n}</b><button type="button" class="sm ib" data-n="1" aria-label="1장 더">${ICON.plus}</button></div></div>`; }).join('')}</div>`;
-        sv.querySelector('[data-photo2]').onclick = () => photoIn.click();
-        sv.querySelector('[data-back2]').onclick = () => { scan = null; pasteDraw(); };
+        const p2 = sv.querySelector('[data-photo2]'); if (p2) p2.onclick = () => photoIn.click();
+        sv.querySelector('[data-back2]').onclick = () => { const ta = pp.querySelector('#paste'); if (scan.code && codeOf(ta.value) === scan.code) ta.value = ''; scan = null; pasteDraw(); };
         sv.querySelectorAll('.srow').forEach(rw => { const r = rows[+rw.dataset.i];
           rw.querySelector('[data-on]').onclick = () => { if (!r.id) return; r.on = !r.on; drawScan(); };
           rw.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { r.n = Math.max(1, Math.min(60, r.n + +b.dataset.n)); r.nSure = true; drawScan(); });
@@ -1016,11 +1048,11 @@ function deckEditor(deck) {
         const has = list.length > 0;
         if (!pp.firstChild) {
           pp.innerHTML = `<div class="phrow"><button type="button" class="primary sm" data-photo>${ICON.photo}덱 사진 읽기</button><small class="muted">덱 사진을 고르거나, 붙여 넣거나, 끌어 놓아요. 사진은 이 기기 안에서만 읽어요.</small></div>
-            <p class="small muted pnote">PTCGL이나 이 사이트에서 내보낸 덱 리스트(영어·한국어)를 붙여 넣으세요. 한 줄에 ‘장수 이름 세트 번호’예요.<span class="pn2"> <b>더하기</b>는 지금 덱에 보태고, <b>바꾸기</b>는 지금 덱을 이 리스트로 바꿔요.</span></p>
+            <p class="small muted pnote">PTCGL이나 이 사이트에서 내보낸 덱 리스트(영어·한국어)를 붙여 넣으세요. 한 줄에 ‘장수 이름 세트 번호’예요. 한국·일본 공식 <b>덱 코드</b>를 넣어도 돼요.<span class="pn2"> <b>더하기</b>는 지금 덱에 보태고, <b>바꾸기</b>는 지금 덱을 이 리스트로 바꿔요.</span></p>
             <div class="scanv" hidden></div>
-            <textarea id="paste" spellcheck="false" autocomplete="off" placeholder="4 Pikachu ex SVP 106&#10;4 피카츄 ex SV8 033&#10;…"></textarea>
+            <textarea id="paste" spellcheck="false" autocomplete="off" placeholder="4 Pikachu ex SVP 106&#10;4 피카츄 ex SV8 033&#10;…&#10;또는 덱 코드 vqvQ-LtHf-zBuI-kt8B"></textarea>
             <div class="pres" aria-live="polite"></div><div class="acts bal pacts"></div>`;
-          const ta = pp.querySelector('#paste'); ta.oninput = () => pasteDraw();
+          const ta = pp.querySelector('#paste'); ta.oninput = () => { const cd = codeOf(ta.value); if (cd && !parseDeckList(ta.value, IDX).list.length) { readCode(cd); return; } pasteDraw(); };
           pp.querySelector('[data-photo]').onclick = () => photoIn.click();
         }
         const scanOn = !!scan; pp.querySelector('.scanv').hidden = !scanOn; ['#paste', '.pres', '.pnote', '.phrow'].forEach(k => { pp.querySelector(k).hidden = scanOn; });

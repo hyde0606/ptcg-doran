@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { newGame, apply, viewFor, replay, waitingOn, fixJosa } from '../public/lib/engine.js';
 import { indexCards, checkDeck, expand } from '../public/lib/deck.js';
 import { makeVapid, sendPush } from './webpush.js';
+import { DC_KR, DC_JP, JP_PICT, DC_UA, dcFetch, deckCode } from './deckcode.js';
 
 const json = (o, status = 200, headers = {}) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
 const err = (m, status = 400) => json({ error: m }, status);
@@ -106,6 +107,7 @@ async function serveCards(env, req) {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url); const path = url.pathname;
+    if (path === '/kprints.json') return err('없는 주소예요.', 404); // 덱 코드용 카드 표는 서버 안에서만 씀
     if (!path.startsWith('/api/') && !path.startsWith('/ws/') && path !== '/cards.json' && path !== '/cardart.bin') return env.ASSETS.fetch(req);
     const lobby = env.LOBBY.get(env.LOBBY.idFromName('main')), key = await keyOf(env, lobby);
     if (path === '/api/health') return json({ ok: true, cards: !!(await lobby.cardsHash()) }); // 자동 반영 전 확인: 카드 자료를 보관해 두었는지
@@ -129,6 +131,18 @@ export default {
     }
 
     let m;
+    if (path === '/api/deckcode' && req.method === 'GET') { // 한국·일본 공식 덱 코드 → 사이트 카드
+      const code = String(url.searchParams.get('c') || '').trim();
+      if (!DC_KR.test(code) && !DC_JP.test(code)) return err('덱 코드 모양이 아니에요.');
+      try { return await deckCode(env, req, code); } catch (e) { return err(e.message || '덱 코드를 읽지 못했어요.', 502); }
+    }
+    if (path === '/api/deckcode/img' && req.method === 'GET') { // 일본 공식 카드 그림 (그림으로 카드를 찾을 때만, 같은 주소에서 읽어야 해서 거쳐 줌)
+      const p = String(url.searchParams.get('p') || '');
+      if (!JP_PICT.test(p)) return err('잘못된 그림 주소예요.');
+      const r = await dcFetch('https://www.pokemon-card.com' + p, { headers: { 'user-agent': DC_UA }, cf: { cacheTtl: 604800, cacheEverything: true } }).catch(() => null);
+      if (!r || !r.ok || !(r.headers.get('content-type') || '').startsWith('image/')) return err('카드 그림을 받지 못했어요.', 502);
+      return new Response(r.body, { headers: { 'content-type': r.headers.get('content-type'), 'cache-control': 'private, max-age=604800', 'x-content-type-options': 'nosniff' } });
+    }
     if (path === '/api/me') return json(await meInfo(env, lobby, me));
     if (path === '/api/prefs' && req.method === 'POST') { await lobby.setPrefs(uid, pick(await req.json().catch(() => ({})), PREF_RULES)); return json(await meInfo(env, lobby, me)); }
     if (path === '/api/group' && req.method === 'POST') {

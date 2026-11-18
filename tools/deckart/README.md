@@ -9,3 +9,6 @@
 
 `deckscan.py`·`ident.py`는 브라우저 코드(`public/lib/deckscan.js`)와 같은 방법의 파이썬 시험판이에요. 경로는 만들 때 쓴 환경 기준이라 쓸 때 고쳐 주세요.
 샘플(일본 공식 3, 아시아 공식, Limitless, 한국 공식, 코리안리그)에서 카드 칸·장수 모두 맞고, 틀린 '확실'은 0장이었어요.
+
+## 덱 코드용 카드 표 (public/kprints.json)
+`mkprints.py <cards.json> <cards_kr.json> <kprints.json>`: 한국판 카드 번호(BS…)와 확장팩 기호+번호를 사이트 카드 id로 잇는 표예요(사이트에 없는 SV·메가 시기 카드는 '!이름', 트레이너스·에너지는 이름 표도 함께). 이음 규칙은 buildlab.py와 같아요. 한국 공식 덱 코드 4개(116종)에서 틀린 연결 0이었어요.
