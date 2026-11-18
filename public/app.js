@@ -1292,7 +1292,7 @@ function send(a) {
 }
 const meSeat = () => G.view.me;
 const oppSeat = () => G.view.me == null ? 1 : 1 - G.view.me;
-const bottomSeat = () => G.view.me == null ? (G.ui?.flip ? 1 : 0) : G.view.me; // 관전: '시점 바꾸기'로 아래쪽 사람을 바꿈
+const bottomSeat = () => { const v = G.view, base = v.me == null ? 0 : v.me; return (G.rw || v.me == null) && G.ui?.flip ? 1 - base : base; }; // 관전·리플레이: '시점 바꾸기'로 아래쪽 사람을 바꿈 (대전 중 내 판은 늘 내가 아래)
 
 // ----- 카드 한 장 -----
 function cardFace(x, cls = '', extra = '', over = null) { // over: 판 위 포켓몬의 이름·HP 알약 (있으면 영문 그림 이름표 대신)
@@ -2552,7 +2552,7 @@ function bindBoard() {
     if (t === 'setupDone' && !G.view.p[me].active) return toast('먼저 손패의 기본 포켓몬을 눌러 배틀 포켓몬을 놓아 주세요.');
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
     if (t === 'rewatch') return startRewatch();
-    if (t === 'swap') { G.ui.flip = !G.ui.flip; try { localStorage.setItem('flip:' + G.id, G.ui.flip ? '1' : ''); } catch {} G.ui.marks = null; draw(null); toast(`${G.view.p[bottomSeat()].name} 님 쪽에서 보는 중`, 1600); return; }
+    if (t === 'swap') { swapView(); G.ui.marks = null; draw(null); swapToast(); return; }
     if (t === 'follow') { const f = await setFollow(G.room, !G.follow); if (f != null) { G.follow = f; draw([]); } return; }
     if (t === 'shuffleMine') return send({ type: 'shuffle', p: me });
     if (t === 'log') return openLog(e?.target?.closest?.('.specb') ? 'spec' : undefined); // 눈 표시(관전자 수)를 누르면 관전자 목록 칸으로
@@ -2597,6 +2597,8 @@ const rwKey = t => `rw:${G.id}:${t.k0}:${t.k1}`;
 function rwSeen(t) { try { return localStorage.getItem(rwKey(t)) === '1'; } catch { return false; } }
 // ---------- 리플레이 (판 위에서 그대로, 판 크기는 그대로) ----------
 // 차례 단위로 이동(이전 차례 · 다음 차례), 그 안에서 한 수씩(‹ ›), 재생·멈춤. 위에는 지금 수의 설명, 아래에는 조작 막대
+function swapView() { G.ui.flip = !G.ui.flip; try { localStorage.setItem('flip:' + G.id, G.ui.flip ? '1' : ''); } catch {} }
+const swapToast = () => toast(`${G.view.p[bottomSeat()].name} 님 쪽에서 보는 중`, 1600);
 const turnStartsOf = lines => [...new Set(lines.filter(l => l.turn && l.k >= 0).map(l => l.k))].sort((a, b) => a - b);
 async function startRewatch(opt = {}) { // 대전 중: 기본은 상대의 마지막 차례 처음부터
   if (G.rw) return;
@@ -2767,7 +2769,7 @@ function openRwLog() {
     const g = l.gid && gs[l.gid], jc = l.gid ? `<i class="lj ${g && g.status === 'ok' ? 'ok' : g && g.status === 'disputed' ? 'warn' : 'judge'}">${ICON[g && g.status === 'ok' ? 'check' : g && g.status === 'disputed' ? 'warn' : 'judge']}</i>` : '';
     return `<div class="ln ${o.cls} ${l.chat ? 'chat' : ''} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''} ${st}" ${at(l)}><b class="lk">${(l.k ?? -1) + 1}</b>${esc(l.chat ? l.txt : o.txt)}${jc}${l.own ? ` <span class="own">(${esc(l.own)})</span>` : ''}</div>`;
   });
-  openSheet(`<button class="x sm" data-close>닫기</button><h3>행동 기록 <small class="muted">${rw.k} / ${rw.n}수</small></h3><p class="small muted rwlh">줄을 누르면 그 장면으로 가요. 지금 보는 수는 주황 테두리예요.</p><div class="log rwlog">${html || '<p class="muted">아직 기록이 없어요.</p>'}</div>`, el => {
+  openSheet(`<button class="x sm" data-close>닫기</button><div class="rwlhd"><h3>행동 기록</h3><small class="muted rwlk">${rw.k} / ${rw.n}수</small><span class="small muted rwlh">줄을 누르면 그 장면으로 가요</span></div><div class="log rwlog">${html || '<p class="muted">아직 기록이 없어요.</p>'}</div>`, el => {
     el.classList.add('rwlogsheet');
     const cur = el.querySelector('.ln.cur') || [...el.querySelectorAll('.ln:not(.later)')].pop(); scrollInside(el.querySelector('.rwlog'), cur);
     el.querySelectorAll('[data-k2]').forEach(r => { const go = () => { const k = +r.dataset.k2; closeSheet(); setTimeout(() => { rw.playing = false; rwGo(k); }, 40); }; r.onclick = go; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
@@ -2779,7 +2781,7 @@ function drawRw(forward) {
   const cur = rw.views[rw.k], before = rw.k > 0 ? rw.views[rw.k - 1] : null;
   const ts = turnStartsOf(rw.lines), ti = ts.filter(t => t <= rw.k).length - 1; // 지금 몇 번째 차례 안인지
   const tl = ti >= 0 ? rw.lines.find(l => l.turn && l.k === ts[ti]) : null, tm = tl ? tl.txt.match(/(\d+)번째 차례: (.+) \(/) : null;
-  const owner = tm ? names.indexOf(tm[2]) : -1, side = owner < 0 ? 'sys' : owner === (rw.me == null ? 0 : rw.me) ? 'me' : 'op';
+  const owner = tm ? names.indexOf(tm[2]) : -1, side = owner < 0 ? 'sys' : owner === bottomSeat() ? 'me' : 'op';
   const stepLines = rw.k > 0 ? rw.lines.filter(l => l.k === rw.k - 1) : [];
   const who = owner >= 0 ? names[owner] : '';
   const caps = stepLines.filter(l => l.txt && !l.turn).map(l => esc(who ? stripWho(l.txt, who) : l.txt) + (l.own ? ` <span class="muted">(${esc(l.own)})</span>` : ''));
@@ -2789,24 +2791,29 @@ function drawRw(forward) {
   G.view = cur; G.lines = rw.lines.filter(l => l.k < rw.k);
   // 판·두 사람 손패·모든 카드는 대전 때와 똑같이 보임 (가리는 것 없음).
   // 조작은 판 왼쪽 가운데 리모컨 두 줄(왼쪽 줄 = 뒤로, 오른쪽 줄 = 앞으로), 설명은 배틀 포켓몬 오른쪽 빈자리의 카드 한 장
-  const rf = (k, ic, l, lb, dis, cls = '') => `<div class="fabw"><button class="fab k-rw2 ${cls}" data-rw="${k}" aria-label="${l}" ${dis ? 'disabled' : ''}>${FAB_FX}<span class="core">${FAB_ICON[ic]}</span></button><span class="fl">${lb}</span></div>`;
+  const rf = (k, ic, l, lb, dis, cls = '') => `<div class="fabw"><button class="fab k-rw2 ${cls}" data-rw="${k}" aria-label="${l}" ${dis ? 'disabled' : ''}>${FAB_FX}<span class="core">${FAB_ICON[ic]}</span></button><span class="fl">${lb.replace(/<br>/g, "<br> ")}</span></div>`; // 가로 폰에서 줄바꿈을 숨겨도 띄어쓰기는 남게
   const playB = end ? (rw.mode === 'game' ? rf('close', 'check', '판으로 돌아가기', '판으로', false, 'k-go on') : rf('play', 'play', '재생', '재생', true, 'k-play'))
     : rf('play', rw.playing ? 'pause' : 'play', rw.playing ? '멈춤' : '재생', rw.playing ? '멈춤' : '재생', false, 'k-play' + (rw.playing ? ' on' : ''));
   const turnTxt = tm ? `${tm[1]}번째 차례` : '대전 준비';
+  // 시점 바꾸기 · 전체 기록: 세로 화면은 리모컨 넷째 줄, 가로 화면은 대전 때 '기록' 자리(오른쪽 아래) — 가로에서 넷째 줄은 왼쪽 사이드 칸과 겹침
+  const xb = `${rf('swap', 'swap', '시점 바꾸기', '시점<br>바꾸기', false, G.ui.flip ? 'on' : '')}${rf('log', 'log', '전체 기록', '전체<br>기록', false)}`;
   const ctl = `<div class="rwpad" role="group" aria-label="리플레이 조작">${rf('close', 'x', '리플레이 닫기', '닫기', false, 'k-close')}${playB}
       ${rf('tprev', 'rwfirst', '이전 차례로', '이전<br>차례', rw.k <= 0)}${rf('tnext', 'rwlast', '다음 차례로', '다음<br>차례', end)}
-      ${rf('prev', 'rwprev', '한 수 뒤로', '한 수<br>뒤로', rw.k <= 0)}${rf('next', 'rwnext', '한 수 앞으로', '한 수<br>앞으로', end)}</div>
+      ${rf('prev', 'rwprev', '한 수 뒤로', '한 수<br>뒤로', rw.k <= 0)}${rf('next', 'rwnext', '한 수 앞으로', '한 수<br>앞으로', end)}
+      <div class="rwx4">${xb}</div></div>
     <div class="vwbox"><div class="vwcap ${side}" role="button" tabindex="0" aria-label="행동 기록 전체 보기" title="누르면 행동 기록 전체"><div class="vwtop">${who ? `<b class="vwh">${esc(who)}</b>` : ''}<span class="vwn">${esc(turnTxt)}</span><span class="vwk">${rw.k} / ${rw.n}수</span><span class="vwlg" aria-hidden="true">${ICON.chat}<span>전체 기록</span></span></div><div class="vwt">${cap}</div></div></div>`;
-  app.innerHTML = `<div class="arena rwmode"><div class="table">${matHtml(true, ctl)}<div class="hl-layer"></div>
+  app.innerHTML = `<div class="arena rwmode"><div class="table">${matHtml(true, ctl)}<div class="rbtns rwxr">${xb}</div><div class="hl-layer"></div>
     </div>${lobbyBtn()}</div>`;
   app.querySelectorAll('[data-rw]').forEach(b => b.onclick = () => {
     const k = b.dataset.rw;
     if (k === 'close') return endRewatch();
     if (k === 'play') { rw.playing = !rw.playing; drawRw(false); rwPlan(); return; }
+    if (k === 'swap') { swapView(); drawRw(false); swapToast(); return; }
+    if (k === 'log') return openRwLog();
     if (k === 'prev' || k === 'next') return rwGo(rw.k + (k === 'next' ? 1 : -1));
     rwTurnJump(k === 'tnext' ? 1 : -1);
   });
-  app.querySelectorAll('.handbar [data-hand]').forEach(el => el.onclick = () => { const x = (cur.p[bottomSeat()].hand || []).find(h => String(h.i) === el.dataset.hand); if (x) openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(x.c))}`); });
+  app.querySelectorAll('.handbar .pc[data-hand], .handbar .pc[data-k]').forEach(el => { el.classList.add('peekable'); el.onclick = () => { const id = el.dataset.hand || el.dataset.k, x = (cur.p[bottomSeat()].hand || []).find(h => String(h.i) === id); if (x) openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(x.c))}`); }; }); // 관전 화면처럼 아래 손패도 눌러서 보기
   const onCur = fn => e => { const sv = G.view; G.view = cur; try { fn(e); } finally { G.view = sv; } }; // 대전 중 리플레이: 누를 때도 그 장면 기준
   app.querySelectorAll('.mat [data-sid]').forEach(el => el.onclick = onCur(() => { const f = findSlot(el.dataset.sid); if (f) openSheet(`<button class="x sm" data-close>닫기</button>${slotInfoHtml(f)}`, bindCardPeek); }));
   bindToolPeek(() => cur);
@@ -2833,6 +2840,7 @@ async function renderReplay(id, k0) {
   let info; try { info = await api(`/api/games/${id}/info`); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
   const k = k0 >= 0 ? Math.min(k0, info.n) : info.over ? 0 : info.n;
   G = { id, view: null, lines: info.lines, cards: info.cards, specs: [], ui: {} };
+  try { G.ui.flip = localStorage.getItem('flip:' + id) === '1'; } catch {}
   const rw = { mode: 'page', id, me: info.me, n: info.n, k, lines: info.lines, views: {}, playing: false, timer: null, prev: null, start: k, over: info.over };
   G.rw = rw;
   leaveGame = () => { if (G.rw) clearTimeout(G.rw.timer); G.rw = null; document.body.classList.remove('in-game'); };
