@@ -541,7 +541,10 @@ export class Game extends DurableObject {
     this.cache = null;
   }
   mk() { this.sql.exec(`CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
-      CREATE TABLE IF NOT EXISTS log(k INTEGER PRIMARY KEY, who INTEGER, a TEXT, t INTEGER);`); }
+      CREATE TABLE IF NOT EXISTS log(k INTEGER PRIMARY KEY, who INTEGER, a TEXT, t INTEGER);
+      CREATE TABLE IF NOT EXISTS schat(k INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, text TEXT, t INTEGER);`); }
+  specHist() { return this.sql.exec('SELECT name,text,t FROM (SELECT * FROM schat ORDER BY k DESC LIMIT 500) ORDER BY k').toArray(); } // 관전자 채팅은 쌓아 둠 (늦게 온 사람·다시 온 사람도 봄)
+  seesSpec(G, a) { return a.seat == null || G.s.phase === 'over' || (a.sv && !G.init.cfg.muteSpec); } // 선수는 '대전 중에도 보기'를 켰을 때만
   async adminEnd(by) { // 관리자가 판 끝내기 (승자 없음). 보고 있는 사람에게 바로 보냄
     const G = this.load(); if (!G || G.s.phase === 'over') return false;
     const a = { type: 'adminEnd', by: String(by || '').slice(0, 20) }, t = Date.now();
@@ -603,7 +606,7 @@ export class Game extends DurableObject {
       const init = this.meta('init'); if (!init) return;
       const idx = await cardIndex(this.env, { url: 'https://assets.local/' }); let ch = false;
       for (const id in init.cards) { const c = init.cards[id], cur = idx.byId[id]; if (!c || !cur) continue;
-        for (const f of ['kn', 'kimg', 'kab', 'kat', 'kr', 'kra', 'ksa', 'kset', 'kno', 'side', 'pair']) if (cur[f] !== undefined && JSON.stringify(cur[f]) !== JSON.stringify(c[f])) { c[f] = cur[f]; ch = true; } }
+        for (const f of ['kn', 'kimg', 'kab', 'kat', 'kr', 'kra', 'ksa', 'kmix', 'kmr', 'kset', 'kno', 'side', 'pair']) if (cur[f] !== undefined && JSON.stringify(cur[f]) !== JSON.stringify(c[f])) { c[f] = cur[f]; ch = true; } }
       if (ch) { this.setMeta('init', init); this.cache = null; }
     } catch (e) { console.log('fresh cards', e); }
   }
@@ -616,11 +619,15 @@ export class Game extends DurableObject {
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1]);
     pair[1].serializeAttachment({ uid, seat, name });
-    pair[1].send(JSON.stringify({ t: 'full', view: this.view(G, seat), lines: this.lines(G, seat), cards: G.init.cards, specs: this.spectators(), room: G.init.cfg.roomId }));
+    pair[1].send(JSON.stringify({ t: 'full', view: this.view(G, seat), lines: this.lines(G, seat), cards: G.init.cards, specs: this.spectators(), room: G.init.cfg.roomId, schat: this.seesSpec(G, { seat }) ? this.specHist() : undefined }));
     this.broadcastSpecs();
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
-  spectators() { return this.ctx.getWebSockets().map(w => w.deserializeAttachment()).filter(a => a && a.seat == null).map(a => a.name); }
+  spectators() { // 지금 관전 중인 사람 (같은 사람이 창을 여러 개 열어도 한 명)
+    const seen = new Set(), out = [];
+    for (const w of this.ctx.getWebSockets()) { if (w.readyState !== 1) continue; const a = w.deserializeAttachment(); if (!a || a.seat != null) continue; const key = a.uid || a.name; if (seen.has(key)) continue; seen.add(key); out.push(a.name); }
+    return out;
+  }
   broadcastSpecs() { const sp = this.spectators(); for (const w of this.ctx.getWebSockets()) try { w.send(JSON.stringify({ t: 'specs', specs: sp })); } catch {} }
   async webSocketMessage(ws, msg) {
     const at = ws.deserializeAttachment(); let m; try { m = JSON.parse(msg); } catch { return; }
@@ -628,9 +635,11 @@ export class Game extends DurableObject {
     const G = this.load();
     if (m.t === 'ping') return ws.send('{"t":"pong"}');
     if (m.t === 'vis') { at.vis = m.v ? 1 : 0; ws.serializeAttachment(at); return; } // 화면을 보고 있는지 (안 보고 있으면 알림을 보냄)
-    if (m.t === 'specChat' && at.seat == null) { // 관전자 채팅 (판에는 영향 없음)
-      const txt = String(m.text || '').slice(0, 200); if (!txt) return;
-      for (const w of this.ctx.getWebSockets()) { const a = w.deserializeAttachment(); if (a.seat == null || !G.init.cfg.muteSpec) try { w.send(JSON.stringify({ t: 'spec', name: at.name, text: txt })); } catch {} }
+    if (m.t === 'specView') { at.sv = m.on ? 1 : 0; ws.serializeAttachment(at); if (G && this.seesSpec(G, at)) ws.send(JSON.stringify({ t: 'specHist', list: this.specHist() })); return; } // 선수: 관전자 채팅 보기 켜고 끄기
+    if (m.t === 'specChat' && at.seat == null) { // 관전자 채팅 (판에는 영향 없음, 쌓아 둠)
+      const txt = String(m.text || '').trim().slice(0, 200); if (!txt) return;
+      const t = Date.now(); this.sql.exec('INSERT INTO schat(name,text,t) VALUES(?,?,?)', at.name, txt, t);
+      for (const w of this.ctx.getWebSockets()) { const a = w.deserializeAttachment(); if (a && this.seesSpec(G, a)) try { w.send(JSON.stringify({ t: 'spec', name: at.name, text: txt, ts: t })); } catch {} }
       return;
     }
     if (m.t !== 'act' || at.seat == null) return;

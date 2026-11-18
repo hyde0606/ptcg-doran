@@ -66,6 +66,8 @@ header.top { display: flex; align-items: center; gap: 8px; padding: 8px 14px; ba
 #nav a.on { background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(135deg, var(--r1), var(--r2)) border-box; color: var(--teal2); box-shadow: 0 3px 8px rgba(40, 90, 140, .14); }
 #nav a.on .ic { color: var(--r2); }
 .sndbtn { width: 42px; height: 42px; min-height: 0; padding: 0; border-radius: 50%; }
+header.top > button { flex: none; } /* 오른쪽 둥근 단추는 줄어들거나 찌그러지지 않음 (탭 글자 길이에 따라 크기가 바뀌던 문제, 11/18 링크 님) */
+#nav { min-width: 0; }
 .sndbtn svg { width: 22px; height: 22px; }
 .sndbtn.off { --c: #9aa7b4; --c2: #c5ced6; }
 /* 머리 줄 '앱 설치' 단추 (폰이고 아직 앱으로 안 열었을 때만) */
@@ -757,6 +759,8 @@ input.wide { width: 100%; box-sizing: border-box; }
 .arena.rwmode .dinfos { display: none; }
 .rwpad { position: absolute; z-index: 26; left: var(--edgeL); top: var(--bmid, 47%); transform: translateY(-50%); display: grid; grid-template-columns: repeat(2, auto); gap: var(--bgap, 12px) 10px; justify-items: center; align-items: start; }
 .rwpad .fab { width: min(var(--fz), 48px); height: min(var(--fz), 48px); }
+.rwx4 { display: none; } .rwxr { gap: var(--bgap, 12px); } .rwxr .fab { width: min(var(--fz), 48px); height: min(var(--fz), 48px); } .rwxr .fl { text-align: center; line-height: 1.22; padding: 1px 8px; border-radius: 9px; }
+@media (max-aspect-ratio: 5/4), (max-width: 560px) { .rwx4 { display: contents; } .rwxr { display: none; } }
 .rwpad .fl { text-align: center; line-height: 1.22; padding: 1px 8px; border-radius: 9px; }
 .fab.k-rw2 { --c: #2f8fe0; --c2: #9ccaf3; }
 .fab.k-play { --c: #ff7a59; --c2: #ffc6ae; }
@@ -791,6 +795,7 @@ input.wide { width: 100%; box-sizing: border-box; }
 @media (max-height: 520px) and (min-aspect-ratio: 5/4) and (min-width: 561px) {
   .rwpad { gap: 5px 8px; } .rwpad .fab { width: 32px; height: 32px; } .rwpad .fabw { gap: 2px; }
   .rwpad .fl { font-size: .62rem; white-space: nowrap; padding: 0 7px; } .rwpad .fl br { display: none; }
+  .rwxr { gap: 5px; } .rwxr .fab { width: 32px; height: 32px; } .rwxr .fabw { gap: 2px; } .rwxr .fl { font-size: .62rem; white-space: nowrap; padding: 0 7px; } .rwxr .fl br { display: none; }
 }
 .hlf { position: absolute; pointer-events: none; animation: hlin .3s ease-out both; }
 .hlf svg { width: 100%; height: 100%; overflow: visible; display: block; filter: drop-shadow(0 0 .6px rgba(6, 34, 46, .9)) drop-shadow(0 0 1.4px rgba(6, 34, 46, .45)); }
@@ -1041,12 +1046,25 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .log .th .tnm { font-family: var(--fh); font-size: 1rem; color: var(--text); }
 .log .th .tdr { margin-left: auto; font-size: .74rem; color: var(--muted); }
 .log .th[data-k2] { cursor: pointer; }
-.log .tblk .ln { --lc: #c9d4dc; margin: 3px 8px 0; padding: 3px 9px; border-radius: 4px 10px 10px 4px; box-shadow: inset 3px 0 0 var(--lc); }
+/* 줄 정렬 (11/18 링크 님): 내 쪽(파랑)은 오른쪽, 상대(빨강)는 왼쪽 — 채팅과 같은 규칙. 확인용 줄은 가운데 작게, 큰 사건은 가운데 크게. 글자는 늘 왼쪽부터 읽힘 */
+.log .tblk .ln { --lc: #9aa8b4; margin: 3px 8px 0; padding: 4px 11px; width: fit-content; max-width: 86%; border-radius: 10px; background: #fff; box-shadow: 0 1px 2px rgba(30, 60, 90, .08); text-align: left; }
 .log .ln.a-me { --lc: #3484e6; } .log .ln.a-op { --lc: #e8574a; }
-.log .tblk .ln:not(.ow):not(.a-sys) { background: color-mix(in srgb, var(--lc) 8%, #fff); }
-.log .tblk .ln.chat { border-radius: 14px; box-shadow: none; background: color-mix(in srgb, var(--lc) 14%, #fff); width: fit-content; max-width: 88%; }
-.log .tblk .ln.chat.a-me { margin-left: auto; border-bottom-right-radius: 4px; } .log .tblk .ln.chat.a-op { border-bottom-left-radius: 4px; }
-.log .tblk .ln.j { box-shadow: inset 3px 0 0 var(--lc), inset 0 0 0 1.5px color-mix(in srgb, var(--judge) 45%, transparent); background: #f8f5ff; }
+.log .tblk .ln.k-act.a-op { margin-right: auto; border-radius: 4px 10px 10px 4px; box-shadow: inset 3px 0 0 var(--lc), 0 1px 2px rgba(30, 60, 90, .08); }
+.log .tblk .ln.k-act.a-me { margin-left: auto; border-radius: 10px 4px 4px 10px; box-shadow: inset -3px 0 0 var(--lc), 0 1px 2px rgba(30, 60, 90, .08); }
+.log .tblk .ln.j { background: color-mix(in srgb, var(--judge) 7%, #fff); }
+.log .tblk .ln.k-meta, .log .tblk .ln.k-sys { margin: 2px auto 0; max-width: 92%; padding: 1px 10px; background: none; box-shadow: none; text-align: center; font-size: .82em; color: #6c7f8e; }
+.log .tblk .ln.k-meta::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--lc); margin-right: 6px; vertical-align: 1px; }
+.log .tblk .ln.k-big { margin: 6px auto 3px; max-width: 92%; padding: 3px 14px; text-align: center; font-family: var(--fh); border-radius: 999px; background: color-mix(in srgb, var(--lc) 12%, #fff); box-shadow: inset 0 0 0 1.5px var(--lc); }
+.log .tblk .ln.chat { border-radius: 16px; box-shadow: none; color: var(--text); background: color-mix(in srgb, var(--lc) 18%, #fff); max-width: 80%; }
+.log .tblk .ln.chat.a-me { margin-left: auto; border-bottom-right-radius: 4px; } .log .tblk .ln.chat.a-op { margin-right: auto; border-bottom-left-radius: 4px; }
+
+.log .ln.spec, .log .tblk .ln.spec { margin: 4px auto 0; max-width: 84%; border-radius: 14px; background: #e9f7ef; box-shadow: inset 0 0 0 1.5px #bfe5cf; text-align: left; }
+.log .tblk .ln.spec::before { content: none; }
+.log .ln.spec .snm { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; font-family: var(--fh); font-weight: normal; color: #2d8a57; }
+.log .ln.spec .snm .ic { width: 13px; height: 13px; }
+.log .ln .own { display: block; margin-top: 1px; font-size: .86em; }
+.log .ln .lj { margin: 0 0 0 6px; }
+.log .tblk .ln.rw { text-decoration: line-through; }
 /* 리플레이 */
 
 /* 큰 알림, 코인 */
@@ -1109,17 +1127,17 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
   :root { --hh: 58px; }
   header.top { padding: 6px 8px; gap: 6px; flex-wrap: nowrap; }
   .brand { font-size: 1.05rem; gap: 7px; min-width: 0; }
-  .brand .bt { white-space: nowrap; }
-  #nav { flex-wrap: nowrap; }
-  #nav a { padding: 3px 9px; }
-  #nav a:not(.on) .lb { display: none; }
+  .brand .bt { display: none; } /* 폰에서는 이름 글자 없이 공 그림만 (잘리던 문제, 11/18 링크 님) */
   .sndbtn { width: 40px; height: 40px; }
   .instbtn { width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
   .instbtn .lb { display: none; }
 }
-@media (max-width: 400px) { header.top:has(#inst:not([hidden])) .brand .bt { display: none; } }
-@media (max-width: 420px) { body.in-game .brand .bt { display: none; } }
-@media (max-width: 340px) { .brand .bt { display: none; } }
+/* 폭이 애매한 화면(폰 ~ 작은 태블릿): 머리는 늘 한 줄. 메뉴는 고른 것만 글자, 설치 단추는 그림만 */
+@media (max-width: 640px) { header.top { flex-wrap: nowrap; } #nav { flex-wrap: nowrap; } #nav a { padding: 3px 9px; } #nav a:not(.on) .lb { display: none; } }
+/* 아주 좁은 폰: 메뉴가 안에서 넘치지 않게 고른 메뉴 글자까지 빼고, 설치 단추가 있으면 공 그림도 뺌 (대전 탭이 로비로 감) */
+@media (max-width: 350px) { header.top:has(#inst:not([hidden])) #nav a.on .lb { display: none; } }
+@media (max-width: 300px) { #nav a.on .lb { display: none; } header.top:has(#inst:not([hidden])) .brand { display: none; } }
+@media (min-width: 561px) and (max-width: 760px) { .instbtn { width: 42px; padding: 0; border-radius: 50%; justify-content: center; } .instbtn .lb { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
 /* ---------- 폰 화면: 홈 화면에 추가 안내 ---------- */
@@ -1230,9 +1248,16 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .vwcap:focus-visible { outline: 3px solid var(--r2); outline-offset: 2px; }
 .vwlg { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-family: var(--fh); font-size: .76em; color: var(--teal2); background: color-mix(in srgb, var(--r2) 12%, #fff); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--r2) 35%, transparent); border-radius: 999px; padding: 1px 8px 1px 6px; white-space: nowrap; line-height: 1.6; }
 .vwlg .ic { width: 1.15em; height: 1.15em; flex: none; }
-.sheet > .in.rwlogsheet { width: min(680px, 100%); height: min(88vh, 900px); display: flex; flex-direction: column; overflow: hidden; }
-.rwlogsheet h3 small { font-family: var(--fb); font-size: .8rem; margin-left: 6px; }
-.rwlogsheet .rwlh { margin: 0 0 8px; }
+/* 리플레이 행동 기록: 머리는 한 줄(제목 · 몇 수 · 짧은 안내), 나머지 높이는 모두 기록 칸 (11/18 링크 님 "세로 영역 최대한") */
+.sheet > .in.rwlogsheet { width: min(760px, 100%); height: calc(100vh - 24px); height: calc(100dvh - 24px); max-height: none; padding: 12px 12px 10px; position: relative; display: flex; flex-direction: column; overflow: hidden; }
+.sheet > .in.rwlogsheet::before { position: absolute; top: 0; left: 0; right: 0; margin: 0; height: 6px; background: linear-gradient(90deg, var(--r1), var(--r2)); border-radius: 28px 28px 0 0; }
+.rwlhd { display: flex; align-items: baseline; gap: 4px 10px; min-height: 34px; padding: 6px 54px 0 4px; margin-bottom: 4px; flex: none; }
+.rwlhd h3 { margin: 0; font-size: 1.05rem; white-space: nowrap; }
+.rwlhd .rwlk { font-family: var(--fh); font-size: .8rem; white-space: nowrap; }
+.rwlhd .rwlh { font-size: .74rem; white-space: nowrap; overflow: hidden; }
+@media (max-width: 520px) { .rwlhd .rwlh { display: none; } }
+@media (max-width: 600px) { .sheet > .in.rwlogsheet { height: calc(100dvh - 8px); border-radius: 22px 22px 0 0; padding: 10px 8px calc(8px + env(safe-area-inset-bottom)); } .sheet > .in.rwlogsheet::before { border-radius: 22px 22px 0 0; } }
+@media (max-height: 520px) and (min-width: 601px) { .sheet:has(.rwlogsheet) { padding: 6px; } .sheet > .in.rwlogsheet { height: calc(100vh - 12px); height: calc(100dvh - 12px); padding: 8px 12px 8px; } .rwlhd { min-height: 30px; } }
 .rwlogsheet .rwlog { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 3px; font-size: .9rem; padding: 2px; }
 .rwlog .lk { display: inline-block; min-width: 1.9em; margin-right: 6px; font-family: var(--fh); font-weight: normal; font-size: .74rem; color: var(--muted); text-align: right; }
 .rwlog [data-k2] { cursor: pointer; }
@@ -1381,6 +1406,64 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
   .sstep button { width: 28px; height: 28px; min-height: 28px; }
   .shead .sbtns { margin-left: 0; width: 100%; } .shead .sbtns button { flex: 1; }
 }
+
+/* ----- 누구 차례인지 (2026-11-18 링크 님: 오른쪽 화살표만으로는 잘 안 보임) ----- */
+/* 차례인 사람 쪽 판 전체에 금빛 테두리가 숨 쉬듯 빛남 + 이름표 옆 '내 차례'/'차례' 칩 + 내 차례면 손패 카드가 빛남 */
+.area.now::after { content: ''; position: absolute; inset: calc(var(--cw) * -.08) calc(var(--cw) * -.1); border-radius: calc(var(--cw) * .2); pointer-events: none; z-index: -1;
+  border: 3px solid rgba(255, 186, 74, .95); background: rgba(255, 200, 100, .07);
+  box-shadow: 0 0 0 3px rgba(255, 186, 74, .22), 0 0 calc(var(--cw) * .3) rgba(255, 166, 50, .55), inset 0 0 calc(var(--cw) * .28) rgba(255, 190, 80, .32);
+  animation: turnglow 1.9s ease-in-out infinite; }
+@keyframes turnglow { 50% { border-color: rgba(255, 214, 120, 1); box-shadow: 0 0 0 6px rgba(255, 186, 74, .12), 0 0 calc(var(--cw) * .55) rgba(255, 166, 50, .75), inset 0 0 calc(var(--cw) * .42) rgba(255, 190, 80, .42); } }
+.zst.nowc { font-family: var(--fh); font-size: .78rem; color: #fff; background: linear-gradient(90deg, #ffb35c, #ff7a2f); box-shadow: 0 0 0 2px rgba(255, 255, 255, .85), 0 3px 8px rgba(255, 122, 47, .45); animation: breathe 1.6s ease-in-out infinite; }
+.handbar.myturn .pc.inhand { box-shadow: 0 0 0 2px rgba(255, 206, 110, .95), 0 0 calc(var(--cw) * .2) rgba(255, 166, 50, .75), 0 3px 8px rgba(20, 50, 40, .35); }
+.handbar.myturn::before { content: ''; position: absolute; left: 12%; right: 12%; bottom: 0; height: calc(var(--cw) * .9); pointer-events: none; z-index: -1;
+  background: radial-gradient(60% 100% at 50% 100%, rgba(255, 190, 80, .55), rgba(255, 190, 80, 0) 70%); animation: handglow 1.9s ease-in-out infinite; }
+@keyframes handglow { 50% { opacity: .55; } }
+/* 준비 완료: 오른쪽 '차례 끝내기' 자리. 배틀 포켓몬을 놓기 전에는 흐리게, 놓으면 빛남 */
+.endturn.readyb.wait { filter: grayscale(.6) brightness(.95); opacity: .7; animation: none; }
+.endturn.readyb.go { animation: breathe 1.4s ease-in-out infinite; box-shadow: 0 0 0 4px rgba(255, 255, 255, .7), 0 0 18px rgba(60, 200, 170, .8); }
+@media (prefers-reduced-motion: reduce) { .area.now::after, .handbar.myturn::before, .zst.nowc { animation: none; } }
+
+/* 기록 단추: 새 채팅 수(파랑), 관전자 수(눈), 채팅이 오면 통 튀기 + 말풍선 */
+.fab .cbadge { position: absolute; top: -5px; right: -5px; z-index: 3; min-width: 20px; background: #2f80ed; color: #fff; font-style: normal; font-family: var(--fh); border-radius: 999px; padding: 0 6px; font-size: .74rem; line-height: 1.5; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(47, 128, 237, .45); }
+.fab .badge ~ .cbadge { right: auto; left: -5px; }
+.fab .specb { position: absolute; bottom: -4px; left: -8px; z-index: 3; display: inline-flex; align-items: center; gap: 2px; font-style: normal; font-family: var(--fh); font-size: .66rem; line-height: 1.5; color: #fff; background: #2e3a46; border: 1.5px solid #fff; border-radius: 999px; padding: 0 5px 0 4px; }
+.fab .specb .ic { width: 11px; height: 11px; }
+.fab.chatpop { animation: chatpop .9s cubic-bezier(.2, .9, .3, 1.4); }
+.fab.chatpop .cbadge { animation: cbin .5s cubic-bezier(.2, .9, .3, 1.6); }
+.fab.chatpop::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 3px solid #2f80ed; animation: chatring 1s ease-out 2; pointer-events: none; }
+@keyframes chatpop { 0% { transform: scale(1); } 25% { transform: scale(1.18) rotate(-8deg); } 50% { transform: scale(.96) rotate(5deg); } 75% { transform: scale(1.05) rotate(-2deg); } 100% { transform: none; } }
+@keyframes cbin { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+@keyframes chatring { 0% { transform: scale(.9); opacity: .9; } 100% { transform: scale(1.7); opacity: 0; } }
+.chatpeek { position: fixed; z-index: 130; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; max-width: min(300px, 64vw); min-height: 0; height: auto; padding: 7px 13px 8px; border: none; border-radius: 16px 16px 4px 16px; background: #fff; color: var(--text); font-family: var(--fb, inherit); font-size: .92rem; line-height: 1.4; text-align: left; white-space: normal; overflow-wrap: anywhere; box-shadow: 0 0 0 2px #2f80ed, 0 10px 24px rgba(20, 50, 90, .28); animation: peekin .35s cubic-bezier(.2, .9, .3, 1.3); cursor: pointer; }
+.chatpeek.op { box-shadow: 0 0 0 2px #e8574a, 0 10px 24px rgba(20, 50, 90, .28); }
+.chatpeek b { display: inline-flex; align-items: center; gap: 4px; font-family: var(--fh); font-weight: normal; font-size: .78rem; color: #2f80ed; }
+.chatpeek.op b { color: #d6463a; }
+.chatpeek b .ic { width: 13px; height: 13px; }
+.chatpeek.top { left: 50%; top: max(10px, env(safe-area-inset-top, 0px)); right: auto; bottom: auto; transform: translateX(-50%); border-radius: 16px; pointer-events: none; animation: peektop .35s ease-out; }
+.chatpeek.top.out { transform: translate(-50%, -6px); }
+@keyframes peektop { 0% { opacity: 0; transform: translate(-50%, -10px); } 100% { opacity: 1; transform: translateX(-50%); } }
+.chatpeek.out { opacity: 0; transform: translateY(6px); transition: opacity .45s, transform .45s; }
+@keyframes peekin { 0% { opacity: 0; transform: translateX(14px) scale(.85); } 100% { opacity: 1; transform: none; } }
+/* 다시 그릴 때 강조 틀은 움직임 없이 */
+.hl-layer.still .hlf, .hl-layer.still .hlf * { animation: none !important; }
+/* 브라우저가 소리를 막았을 때: 한 번 누르면 켜짐 */
+.sndhint { position: absolute; z-index: 40; left: 50%; top: max(6px, env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px; min-height: 30px; height: 30px; padding: 0 12px; border-radius: 999px; font-size: .8rem; background: rgba(255, 255, 255, .95); color: #24543d; box-shadow: 0 2px 8px rgba(20, 60, 40, .2); }
+.sndhint .ic { width: 15px; height: 15px; }
+/* 관전 칸: 지금 보는 사람, 선수용 '대전 중에도 관전자 채팅 보기' 스위치 */
+.log .speclist { flex: none; display: flex; flex-direction: column; gap: 7px; margin: 2px 4px 8px; padding: 10px 12px; border-radius: 14px; background: #f1f6fa; font-size: .88rem; }
+.log .speclist .slh { display: inline-flex; align-items: center; gap: 5px; font-family: var(--fh); font-weight: normal; font-size: 1rem; color: var(--head); }
+.log .speclist .slh .ic { width: 17px; height: 17px; }
+.log .speclist .slc { display: flex; flex-wrap: wrap; gap: 6px; }
+.log .speclist .spc { display: inline-flex; align-items: center; gap: 4px; padding: 3px 11px 3px 8px; border-radius: 999px; background: #fff; box-shadow: inset 0 0 0 1.5px #cfe0ec; font-family: var(--fh); color: var(--text); }
+.log .speclist .spc .ic { width: 14px; height: 14px; color: #2d8a57; } .log .speclist .spc.me { box-shadow: inset 0 0 0 1.5px #2fbf71; }
+.fab .specb { cursor: pointer; }
+.swb { display: inline-flex; align-items: center; gap: 9px; align-self: flex-start; min-height: 38px; height: auto; margin: 0 4px 8px; padding: 6px 14px 6px 8px; border-radius: 999px; background: #fff; color: var(--text); font-size: .88rem; box-shadow: inset 0 0 0 1.5px #d4e0ea; }
+.swb .swk { position: relative; flex: none; width: 38px; height: 22px; border-radius: 999px; background: #c9d4dc; transition: background .2s; }
+.swb .swk::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .2s; }
+.swb.on .swk { background: #2fbf71; } .swb.on .swk::after { transform: translateX(16px); }
+@media (prefers-reduced-motion: reduce) { .fab.chatpop, .fab.chatpop .cbadge, .fab.chatpop::after, .chatpeek { animation: none; } }
+.log.stoplog .tblk .ln.k-meta::before { display: none; } /* 잠깐! 칸은 동그라미(고르기)가 있으므로 색 점 없이 */
 /* ---------- 덱 창: 여러 장 고르기 · 카드 효과 도우미 · 남은 카드 (11/18) ---------- */
 .zvsheet > .zvtools { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 0 4px 8px; }
 .zvsheet > .zvtools:empty { display: none; }
@@ -1500,3 +1583,12 @@ button.blue.used { opacity: .82; }
 .zst.lock { display: inline-flex; align-items: center; gap: 3px; background: linear-gradient(90deg, #ff8a7a, #f05a4f); color: #fff; font-family: var(--fh); white-space: nowrap; }
 .zst.lock .ic { width: 1em; height: 1em; }
 .zvn .zvmiss { display: block; font-size: .8em; color: #c2410c; word-break: keep-all; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .zvsheet .zvbar .acts:not(.fxa) > button:last-child:nth-child(odd) { grid-column: 1 / -1; } } /* 두 칸 줄에서 마지막 단추가 혼자면 한 줄 다 (빈 칸 없이) */
+/* 관전·리플레이에서 위쪽 사람 손패 (11/18 링크 님): 카드 윗부분(이름·그림)을 똑바로. 띠를 두 배쯤 높여 그림까지 보이고(판은 그만큼만 작아짐),
+   카드는 겹치지 않게 칸에 맞춰 나란히 (많으면 카드가 작아짐). 아래 끝은 살짝 흐리게 해서 잘린 게 아니라 이어진다는 느낌 */
+.arena:has(.ohand.up) { --peek: .85; --ohs: 1.3; }
+.ohand.up { overflow: hidden; border-radius: 0 0 8px 8px; -webkit-mask-image: linear-gradient(#000 82%, rgba(0,0,0,.35)); mask-image: linear-gradient(#000 82%, rgba(0,0,0,.35)); }
+.ohand.up .ofan { gap: 3px; }
+.ohand.up .pc.oh { transform: none; margin: 0; flex: none; box-shadow: 0 1px 4px rgba(0,0,0,.3); width: min(calc(var(--cw) * var(--ohs)), calc((var(--oav) - (var(--n) - 1) * 3px) / var(--n))); }
+@media (max-aspect-ratio: 5/4), (max-width: 560px) { .arena:has(.ohand.up) { --peek: .8; --ohs: 1; } .ohand.up .ofan { --oav: calc(100vw - 64px); } }
+.sndhint { left: max(8px, env(safe-area-inset-left, 0px)); top: calc(max(6px, env(safe-area-inset-top, 0px)) + 76px); transform: none; } @media (max-aspect-ratio: 5/4), (max-width: 560px), (max-height: 520px) { .sndhint { top: calc(max(4px, env(safe-area-inset-top, 0px)) + 46px); } } /* 소리 켜기 안내는 왼쪽 위 로비 단추 아래 (위쪽 손패를 가리지 않게) */

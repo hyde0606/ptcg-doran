@@ -152,7 +152,7 @@ function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidde
 async function loadCards() { if (!ALL) { const r = await fetch('/cards.json'); if (!r.ok) throw new Error('카드 자료를 못 불러왔어요. 다시 로그인해 주세요.'); const a = await r.json(); IDX = indexCards(a); ALL = a; } return ALL; }
 // 카드 그림: kr = 한글판, en = 영문판(워터마크 없음), mix = 합친 카드(한글판 위에 그림 칸만 같은 그림의 영문판)
 const hires = u => u ? u.replace(/\.png$/, '_hires.png') : null;
-const canMix = c => !!(c && c.kimg && c.img && c.ksa && !(c.st === 'E' && (c.sub || []).includes('Basic'))); // 영문판과 한글판 그림이 같은 카드만 (기본 에너지는 글 칸이 없어 뺌)
+const canMix = c => !!(c && c.kimg && c.img && !(c.st === 'E' && (c.sub || []).includes('Basic'))); // 기본 에너지는 글 칸이 없어 뺌. 그림이 같은 한글판이 따로 있으면(kmix) 그 판을 바탕으로, 없으면 일반 판 틀에 영문판 그림 칸
 function picMode(c, want) { // 고른 그림 → 실제로 보일 그림 (없으면 있는 쪽)
   if (!c) return null;
   if (want === 'mix' && canMix(c)) return 'mix';
@@ -166,8 +166,9 @@ const BAND = c => { // 합친 카드에서 영문판을 쓰는 세로 범위 (�
   if (c.st !== 'P') return [13.5, 52.3];
   if (s.includes('MEGA')) return [13.6, 50.9]; // '○○이 메가진화한 모습' 띠 아래부터
   if (s.includes('Tera')) return [16.8, 50.9]; // 그림 위에 깔린 테라스탈 규칙 상자 아래부터
-  if (c.kra === 'AR') return [11.5, 50.5];
-  if (s.includes('ex') || /^(SAR|SR|UR|HR|MUR|SSR|BWR)$/.test(c.kra || '')) return [12, 50.9];
+  const kra = c.kmix ? c.kmr : c.kra; // 바탕이 된 한글판의 레어도
+  if (kra === 'AR') return [11.5, 50.5];
+  if (s.includes('ex') || /^(SAR|SR|UR|HR|MUR|SSR|BWR)$/.test(kra || '')) return [12, 50.9];
   return [11.8, 47.4]; // 보통 포켓몬: 진화 줄 아래 ~ 도감 줄 위
 };
 function picHtml(c, want, big = false) { // 카드 그림 <img> (합친 카드는 두 장 겹침). 감싸는 칸은 position: relative
@@ -175,7 +176,7 @@ function picHtml(c, want, big = false) { // 카드 그림 <img> (합친 카드�
   const nm = esc(cname(c)), lazy = big ? '' : 'loading="lazy"';
   // 크게 볼 때 영문 큰 그림은 장당 약 1MB·1초라, 이미 받아 둔 작은 그림을 먼저 보이고 큰 그림이 다 받아지면 바꾼다 (못 받으면 작은 그림 그대로)
   const en = c.img, fb = big && c.img ? ` data-hi="${hires(c.img)}" onload="const h=this.dataset.hi;if(h){this.dataset.hi='';const i=new Image();i.referrerPolicy='no-referrer';i.onload=()=>{this.src=h};i.src=h}"` : '';
-  if (m === 'mix') { const [t, b, ace] = BAND(c), clip = ace ? `;clip-path:polygon(0 ${t}%,100% ${t}%,100% 55.5%,90.5% 55.5%,90.5% ${b}%,0 ${b}%)` : ''; return `<img src="${c.kimg}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"><img class="band" src="${en}" alt="" referrerpolicy="no-referrer" ${lazy} draggable="false" style="--bt:${t}%;--bb:${100 - b}%${clip}"${fb}>`; }
+  if (m === 'mix') { const [t, b, ace] = BAND(c), clip = ace ? `;clip-path:polygon(0 ${t}%,100% ${t}%,100% 55.5%,90.5% 55.5%,90.5% ${b}%,0 ${b}%)` : ''; return `<img src="${c.kmix || c.kimg}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"><img class="band" src="${en}" alt="" referrerpolicy="no-referrer" ${lazy} draggable="false" style="--bt:${t}%;--bb:${100 - b}%${clip}"${fb}>`; }
   return `<img src="${m === 'kr' ? c.kimg : en}" alt="${nm}"${m === 'kr' && c.side === 'L' ? ' class="hl"' : ''} referrerpolicy="no-referrer" ${lazy} draggable="false"${m === 'en' ? fb : ''}>`; // 짝 카드 한글판은 두 장을 이어 붙인 그림: 좌측은 왼쪽 반(hl), 우측은 오른쪽 반(기본)
 }
 const cnameKo = c => !c ? '?' : koName(c) || c.n; // 한국어 이름 (deck.js의 koName: 내보내기·붙여 넣기와 같은 이름)
@@ -879,7 +880,7 @@ function printsOf(c) { // 같은 카드의 다른 그림들 (보이는 그림이
   const xs = PRINTS.get(fkey(c)) || [c], seen = new Set();
   return xs.filter(x => { const u = picKey(x); if (seen.has(u)) return false; seen.add(u); return true; });
 }
-const picKey = x => D.dimg === 'en' || !x.kimg ? x.img || x.id : x.kimg;
+const picKey = x => D.dimg === 'en' || !x.kimg || (D.dimg === 'mix' && canMix(x)) ? x.img || x.id : x.kimg; // 합친 카드는 그림 칸이 영문판이라 영문판 그림으로 구분
 // ---------- 덱 사진 → 카드 (기기 안에서만 읽음: lib/deckscan.js 를 따로 돌림) ----------
 const DeckScan = {
   w: null, names: null, energy: null, labels: null,
@@ -1227,14 +1228,14 @@ let G = null; // { id, view, lines, cards, ws, pend:{}, specs, ui }
 function cinfo(cid) { // 판에 저장된 카드 정보 + 지금 카드 자료의 한글 이름·그림·문장
   const base = (G && G.cards[cid]) || (IDX && IDX.byId[cid]) || { n: '?' };
   const cur = IDX && IDX.byId[cid];
-  return cur && cur.kn ? { ...base, kn: cur.kn, kimg: cur.kimg, kab: cur.kab, kat: cur.kat, kr: cur.kr, kra: cur.kra, ksa: cur.ksa, kset: cur.kset, kno: cur.kno, side: cur.side, pair: cur.pair } : base; // 한글은 항상 지금 자료 우선
+  return cur && cur.kn ? { ...base, kn: cur.kn, kimg: cur.kimg, kab: cur.kab, kat: cur.kat, kr: cur.kr, kra: cur.kra, ksa: cur.ksa, kmix: cur.kmix, kmr: cur.kmr, kset: cur.kset, kno: cur.kno, side: cur.side, pair: cur.pair } : base; // 한글은 항상 지금 자료 우선
 }
 const nmOf = x => x ? cname(cinfo(x.c)) : '?';
 const PRE = new Set();
 function preloadPics(cards) { // 판을 열면 두 덱 카드 그림을 미리 받아 둔다 (영문 그림 서버는 장당 0.5~0.7초라 처음 놓을 때 늦게 뜸)
   for (const cid of Object.keys(cards || {})) {
     const c = cinfo(cid), m = picMode(c, D.dimg); if (!m) continue;
-    for (const u of m === 'mix' ? [c.kimg, c.img] : [m === 'kr' ? c.kimg : c.img]) {
+    for (const u of m === 'mix' ? [c.kmix || c.kimg, c.img] : [m === 'kr' ? c.kimg : c.img]) {
       if (!u || PRE.has(u)) continue; PRE.add(u);
       const im = new Image(); im.referrerPolicy = 'no-referrer'; im.fetchPriority = 'low'; im.decoding = 'async'; im.src = u;
     }
@@ -1247,6 +1248,7 @@ const TYPE_CH = { Grass: '풀', Fire: '불', Water: '물', Lightning: '번', Psy
 function renderGame(id) {
   loadCards().then(() => { if (G && G.view && G.id === id) draw([]); }).catch(() => {});
   G = { id, view: null, lines: [], cards: {}, pend: {}, seq: 1, specs: [], ui: { tab: 'log', dockMode: 'auto', dockSig: '' }, prev: null };
+  try { G.ui.flip = localStorage.getItem('flip:' + id) === '1'; } catch {} // 관전 시점 (판마다 기억)
   app.innerHTML = '<div class="arena-loading"><div class="spin-ball"></div><p>판에 연결하는 중…</p></div>';
   document.body.classList.add('in-game');
   let closed = false, retry = 0;
@@ -1255,15 +1257,16 @@ function renderGame(id) {
     G.ws = ws;
     ws.onmessage = e => {
       const m = JSON.parse(e.data);
-      if (m.t === 'full') { const first = !G.view; G.view = m.view; G.lines = m.lines; G.cards = m.cards; if (m.specs) G.specs = m.specs; if (m.room) G.room = m.room; draw(first ? [] : null); if (first) preloadPics(m.cards);
+      if (m.t === 'full') { const first = !G.view; G.view = m.view; G.lines = m.lines; G.cards = m.cards; if (m.specs) G.specs = m.specs; if (m.schat) G.specChat = m.schat; if (m.room) G.room = m.room; draw(first ? [] : null); if (first) preloadPics(m.cards);
         if (first && m.room && m.view.me == null && m.view.phase !== 'over') api(`/api/rooms/${m.room}/follow`).then(r => { G.follow = !!r.follow; if (G.view) draw([]); }).catch(() => {}); }
-      else if (m.t === 'upd') { G.view = m.view; G.lines.push(...m.lines); draw(m.lines); }
+      else if (m.t === 'upd') { const was = G.view?.phase; G.view = m.view; G.lines.push(...m.lines); draw(m.lines); if (was !== 'over' && m.view.phase === 'over') ws.send(JSON.stringify({ t: 'specView', on: true })); } // 판이 끝나면 선수도 관전자 채팅을 봄
       else if (m.t === 'specs') { G.specs = m.specs; drawSpecs(); }
-      else if (m.t === 'spec') { (G.specChat ||= []).push(m); drawSide(); }
+      else if (m.t === 'spec') { (G.specChat ||= []).push({ name: m.name, text: m.text, t: m.ts }); drawSide(); if (m.name !== ME?.name) Sound.sfx('chat'); }
+      else if (m.t === 'specHist') { G.specChat = m.list || []; drawSide(); }
       else if (m.t === 'res') { const p = G.pend[m.id]; if (p) { delete G.pend[m.id]; p(m); } }
       else if (m.t === 'gone') { closed = true; toast('관리자가 이 판을 지웠어요.'); location.hash = '#lobby'; }
     };
-    ws.onopen = () => { retry = 0; sendVis(); };
+    ws.onopen = () => { retry = 0; sendVis(); if (specOn()) ws.send(JSON.stringify({ t: 'specView', on: true })); }; // 선수가 '대전 중에도 관전자 채팅 보기'를 켰으면
     ws.onclose = () => { if (!closed) setTimeout(connect, Math.min(8000, 500 * 2 ** retry++)); };
   };
   const sendVis = () => { try { G.ws.readyState === 1 && G.ws.send(JSON.stringify({ t: 'vis', v: document.hidden ? 0 : 1 })); } catch {} };
@@ -1272,6 +1275,7 @@ function renderGame(id) {
   const dockOut = e => { // 판정 창 바깥을 누르면 창만 접음 (누른 곳의 동작은 하지 않음). 손패는 그대로 눌림 (준비 때 '손패를 눌러 놓아 주세요' 안내가 떠 있으므로)
     if (BP) return; // 판 위에서 고르는 중 (bpClick이 받음)
     const d = document.querySelector('.arena .dock'); if (!d || !$('#sheet').hidden || e.target.closest('.dock, .dockfab, #sheet, #toast, .handbar')) return;
+    const zt = e.target.closest('[data-zone]'), me = meSeat(), lk = me != null && G.view?.p[me].look; if (zt && lk && lk.z === zt.dataset.zone && lk.p === +zt.dataset.p) return; // 보던 덱·손패를 다시 누르면 바로 크게 보기
     e.preventDefault(); e.stopPropagation(); G.ui.dockMode = 'shut'; draw([]);
   };
   app.addEventListener('click', dockOut, true); app.addEventListener('click', bpClick, true);
@@ -1329,7 +1333,7 @@ function benchAfter(bp) {
 }
 const meSeat = () => G.view.me;
 const oppSeat = () => G.view.me == null ? 1 : 1 - G.view.me;
-const bottomSeat = () => G.view.me == null ? 0 : G.view.me;
+const bottomSeat = () => { const v = G.view, base = v.me == null ? 0 : v.me; return (G.rw || v.me == null) && G.ui?.flip ? 1 - base : base; }; // 관전·리플레이: '시점 바꾸기'로 아래쪽 사람을 바꿈 (대전 중 내 판은 늘 내가 아래)
 
 // ----- 카드 한 장 -----
 function cardFace(x, cls = '', extra = '', over = null) { // over: 판 위 포켓몬의 이름·HP 알약 (있으면 영문 그림 이름표 대신)
@@ -1413,7 +1417,8 @@ function areaHtml(p, isBottom) {
   // 이름표와 '이번 차례에 쓴 것'은 벤치 칸 테두리에 걸쳐서 (가로 화면은 이름표 왼쪽·쓴 것 오른쪽, 세로 화면은 나란히)
   const lk = P.lock || {}, locks = v.phase === 'play' ? Object.keys(LOCK_KO).filter(k => lk[k] != null && v.turn <= lk[k]) : []; // 꼬몽울 '근질근질 꽃가루' 등: 그 사람의 다음 차례 끝까지
   const lockT = locks.map(k => `<b class="zst lock" title="${esc(lk[k + 'By'] ? `「${lk[k + 'By']}」 효과` : '상대 기술 효과')}: ${v.turn < lk[k] ? '다음' : '이번'} 차례에 손패의 ${LOCK_KO[k]}을(를) 쓸 수 없어요">${ICON.warn}${LOCK_KO[k]} 금지</b>`).join('');
-  const tag = `<div class="ztags"><span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><span class="zn">${esc(P.name)}</span></span>${state}${lockT}${v.phase === 'setup' && P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}</div>`; // 이름만 꾸민 상자에, 준비 상태는 옆에 따로
+  const nowc = now ? `<b class="zst nowc">${p === v.me ? '내 차례' : '차례'}</b>` : ''; // 누구 차례인지: 이름표 옆 칩 + 그 사람 판 쪽 빛나는 테두리(.area.now)
+  const tag = `<div class="ztags"><span class="ztag ${isBottom ? 'me' : 'opp'} ${now ? 'turn' : ''}"><span class="zn">${esc(P.name)}</span></span>${nowc}${state}${lockT}${v.phase === 'setup' && P.mull ? `<b class="zst">멀리건 ${P.mull}</b>` : ''}</div>`; // 이름만 꾸민 상자에, 준비 상태는 옆에 따로
   return `<section class="area ${isBottom ? 'bottom' : 'top'} ${now ? 'now' : ''}" data-area="${p}">
       <div class="g-pz zone">${prizesHtml(p)}</div>
       <div class="g-act">${slotHtml(P.active, { active: true })}</div>
@@ -1424,12 +1429,13 @@ function areaHtml(p, isBottom) {
 function handHtml(p) { // 내 손패: 아래쪽 일자 줄 (위쪽만 보이고, 누르면 올라옴). 볼 수 없는 손패는 뒷면
   const P = G.view.p[p], n = P.hand ? P.hand.length : P.handN, mine = G.view.me === p;
   if (!P.hand) return `<div class="handbar peek backs"><div class="fan" style="--n:${Math.min(n, 15)}">${Array.from({ length: Math.min(n, 15) }, (_, i) => cardBack('inhand', `style="--i:${i}"`)).join('')}</div></div>`;
-  return `<div class="handbar ${mine ? '' : 'peek'}"><div class="fan" style="--n:${n}">${P.hand.map((x, i) => cardFace(x, 'inhand', `${mine ? `data-hand="${x.i}"` : ''} style="--i:${i}"`)).join('') || '<span class="nohand">손패 없음</span>'}</div></div>`;
+  const turn = mine && G.view.phase === 'play' && G.view.current === p && !G.rw ? ' myturn' : ''; // 내 차례: 손패가 빛남
+  return `<div class="handbar ${mine ? '' : 'peek'}${turn}"><div class="fan" style="--n:${n}">${P.hand.map((x, i) => cardFace(x, 'inhand', `${mine ? `data-hand="${x.i}"` : ''} style="--i:${i}"`)).join('') || '<span class="nohand">손패 없음</span>'}</div></div>`;
 }
 function oppHandHtml(p) { // 상대 손패: 맨 위에 뒷면이 살짝 보임
   const P = G.view.p[p], n = P.hand ? P.hand.length : P.handN;
   const cards = P.hand ? P.hand.map((x, i) => cardFace(x, 'oh', `style="--i:${i}"`)).join('') : Array.from({ length: Math.min(n, 30) }, (_, i) => cardBack('oh', `style="--i:${i}"`)).join('');
-  return `<div class="ohand" data-zone="hand" data-p="${p}" title="상대 손패 ${n}장" style="--n:${Math.min(n, 30)}"><div class="ofan">${cards}</div></div>`;
+  return `<div class="ohand${P.hand ? ' up' : ''}" data-zone="hand" data-p="${p}" title="${P.hand ? `${esc(G.view.p[p].name)} 님 손패 ${n}장 (누르면 크게)` : `상대 손패 ${n}장`}" style="--n:${Math.min(n, 30)}"><div class="ofan">${cards}</div></div>`; // 보이는 손패(관전·리플레이)는 카드 윗부분을 똑바로
 }
 function midHtml(readOnly) {
   const v = G.view;
@@ -1447,10 +1453,11 @@ function rbarHtml(readOnly) { // 오른쪽 세로 막대: 위 사람 남은 사�
     <div class="pzc opp" title="${esc(v.p[os].name)} 님 남은 사이드"><b>${v.p[os].prizesN}</b></div>
     <div class="clock ${cur}" title="${v.deadline ? '이번 결정까지 남은 시간' : ''}"${U ? ' data-uses role="button" tabindex="0" aria-label="이번 차례에 한 것 보기"' : ''}>${mid}</div>
     <div class="pzc me" title="${esc(v.p[bs].name)} 님 남은 사이드"><b>${v.p[bs].prizesN}</b></div>
-    ${readOnly ? '' : '<span class="specs" id="specs"></span>'}</div>`;
+    </div>`;
 }
 // 오른쪽 둥근 버튼: 볼 줄무늬 링 (시안 6-약). 가만히 있어도 옅은 파동, 마우스를 올리면 살짝 갸웃, 누르면 가운데 단추가 빛나요.
 const FAB_ICON = {
+  swap: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 3.5 2.8 7.8l1.5 1.5 1.7-1.7V16h2.1V7.6l1.7 1.7 1.5-1.5Zm10 17-4.2-4.3 1.5-1.5 1.7 1.7V8h2.1v8.4l1.7-1.7 1.5 1.5Z"/></svg>',
   log: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm8 1.5V8h3.5L14 4.5ZM8 11v1.8h8V11H8Zm0 3.5v1.8h8v-1.8H8Zm0-7V9h4V7.5H8Z"/></svg>',
   coin: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.7" fill="none" stroke="currentColor" stroke-width="2.3"/><path fill="currentColor" d="M12 6.9l1.55 3.15 3.45.5-2.5 2.44.59 3.44L12 14.8l-3.09 1.63.59-3.44L7 10.55l3.45-.5z"/></svg>',
   hand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 3.5a1.3 1.3 0 0 1 2.6 0V11h.6V2.6a1.3 1.3 0 0 1 2.6 0V11h.6V4.2a1.3 1.3 0 0 1 2.6 0v9.6c0 4-2.7 7.2-6.6 7.2-2.4 0-4-1.2-5.3-3.1l-3-4.6a1.4 1.4 0 0 1 2.3-1.6L9 14V3.5Z"/></svg>',
@@ -1476,18 +1483,23 @@ const fabBtn = (t, ic, l, k, extra = '') => `<div class="fabw"><button class="fa
 function fabHtml() { // 왼쪽: 상대 턴·코인·효과 / 오른쪽: 더 보기·남은 사이드 막대·차례 끝내기 / 오른쪽 아래: 기록
   const v = G.view, me = meSeat();
   const pend = me == null ? 0 : v.groups.filter(g => g.who !== me && g.status !== 'ok').length;
-  const log = fabBtn('log', 'log', '기록', 'k-log', pend ? `<i class="badge">${pend}</i>` : '');
+  const unread = unreadChats();
+  const log = fabBtn('log', 'log', '기록', 'k-log' + (unread ? ' hasmsg' : ''), (pend ? `<i class="badge" title="확인할 판정 ${pend}개">${pend}</i>` : '') + (unread ? `<i class="cbadge" title="새 채팅 ${unread}개" aria-label="새 채팅 ${unread}개">${unread > 99 ? '99+' : unread}</i>` : '') + specBadge());
   const rwt = me == null ? null : lastOppTurn(), rwNew = rwt && !rwSeen(rwt); // 리플레이: 수가 하나라도 있으면 늘 보임, 안 본 상대 차례가 있으면 '새'
   const rw = (v.n || 0) > 0 ? `<div class="rwbtn">${fabBtn('rewatch', 'rewatch', '리플레이', 'k-rw' + (rwNew ? ' on nudge' : ''), rwNew ? '<i class="badge">새</i>' : '')}</div>` : '';
   const fol = me == null && v.phase !== 'over' && G.room && G.follow != null ? fabBtn('follow', 'bell', G.follow ? '알림 켬' : '알림 받기', 'k-fx' + (G.follow ? ' on' : '')) : ''; // 관전자: 두 사람이 차례를 끝낼 때마다 알림
-  if (me == null || v.phase === 'over') return { left: rw || fol ? `<div class="lbtns">${rw}${fol}</div>` : '', log: `<div class="rbtns">${log}</div>` };
+  const swp = me == null ? fabBtn('swap', 'swap', '시점 바꾸기', 'k-more' + (G.ui.flip ? ' on' : '')) : ''; // 관전자: 위·아래 사람 바꿔 보기 (11/18 링크 님)
+  if (me == null || v.phase === 'over') return { left: rw || fol || swp ? `<div class="lbtns">${rw}${swp}${fol}</div>` : '', log: `<div class="rbtns">${log}</div>` };
   const myTurn = v.phase === 'play' && v.current === me;
   const open = v.openGroup[me];
   const stop = fabBtn('stop', 'stop', v.stop ? '멈춤 중' : '잠깐!', 'k-stop' + (v.stop ? ' on' : '')); // 잠깐 멈추고 지적하기 (상대 차례에도)
   return { left: `<div class="lbtns">${rw}${fabBtn('coin', 'coin', '코인', 'k-coin')}${open ? fabBtn('effectEnd', 'check', '효과 끝', 'k-fx on') : fabBtn('effect', 'hand', '효과 쓰기', 'k-fx')}${stop}</div>`,
     more: fabBtn('more', 'more', '더 보기', 'k-more'), log: `<div class="rbtns">${log}</div>`,
-    end: myTurn ? `<button class="fab wide endturn" data-t="endTurn">${FAB_FX}${FAB_ICON.flag}<span>차례<br>끝내기</span></button>` : '' };
+    end: myTurn ? `<button class="fab wide endturn" data-t="endTurn">${FAB_FX}${FAB_ICON.flag}<span>차례<br>끝내기</span></button>`
+      : v.phase === 'setup' && v.first != null && !v.p[me].ready ? `<button class="fab wide endturn readyb${v.p[me].active ? ' go' : ' wait'}" data-t="setupDone">${FAB_FX}${FAB_ICON.check}<span>준비<br>완료</span></button>` : '' };
 }
+// 소리 켜기 안내: 아무 곳이나 한 번 누르면(소리가 켜지면) 바로 없앰
+['pointerdown', 'keydown'].forEach(t => document.addEventListener(t, () => setTimeout(() => { if (Sound.ready()) document.querySelectorAll('.sndhint').forEach(x => x.remove()); }, 0), true));
 // 누르면 버튼마다 '누를 때' 움직임을 한 번
 // 누르면 통 튀는 효과 + 소리 (버튼·탭·카드)
 document.addEventListener('pointerdown', e => {
@@ -1559,7 +1571,8 @@ function gameSounds(pv, lines) { // 새 기록 줄과 판 변화에 맞는 효�
   let hurt = false, heal = false;
   const dm = {}; for (const p of [0, 1]) for (const sl of [pv.p[p].active, ...pv.p[p].bench]) if (sl && !sl.hidden) dm[sl.sid] = sl.dmg;
   for (const p of [0, 1]) for (const sl of [v.p[p].active, ...v.p[p].bench]) { if (!sl || sl.hidden || dm[sl.sid] == null) continue; if (sl.dmg > dm[sl.sid]) hurt = true; if (sl.dmg < dm[sl.sid]) heal = true; }
-  for (const { txt: t } of lines || []) {
+  for (const { txt: t, chat } of lines || []) {
+    if (chat) continue; // 채팅 글자에 '코인' 같은 말이 있어도 카드 소리를 내지 않음
     if (/의 기술 「/.test(t)) q.push('attack');
     else if (/기절 → 트래시/.test(t)) q.push('ko');
     else if (/코인/.test(t)) q.push('coin');
@@ -1573,13 +1586,31 @@ function gameSounds(pv, lines) { // 새 기록 줄과 판 변화에 맞는 효�
     else if (/후퇴하고/.test(t)) q.push('retreat');
     else if (/냈어요/.test(t)) q.push('place');
     else if (/썼어요/.test(t)) q.push('play');
+    else if (/교체\)/.test(t)) q.push('retreat');
+    else if (/공개 —|보기 시작|봤어요/.test(t)) q.push('open');
+    else if (/손패\(으\)로|손패로/.test(t)) q.push('draw');
+    else if (/트래시\(으\)로|로스트존|덱 (위|아래)|벤치\(으\)로|배틀 포켓몬\(으\)로|에게$/.test(t)) q.push('place');
+    else if (/걸림|회복$/.test(t)) q.push('judge');
+    else if (/준비 완료|선공|후공/.test(t)) q.push('place');
   }
+  // 상대(또는 관전 중 누구든)가 한 행동은 소리가 꼭 나게: 맞는 소리가 없으면 채팅은 알림, 나머지는 카드 놓는 소리 (2026-11-18 링크 님)
+  const others = (lines || []).filter(l => l.k >= 0 && (v.me == null || l.who !== v.me));
+  if (!q.length && others.some(l => !l.chat)) q.push('place');
+  if (others.some(l => l.chat)) q.push('chat');
   if (hurt && !q.includes('attack')) q.push('damage');
   if (heal) q.push('heal');
   if (pv.phase === 'setup' && v.phase === 'play') q.push('start');
   else if (v.phase === 'play' && pv.current !== v.current) q.push(v.current === v.me ? 'turnMine' : 'turnTheirs');
   if (pv.phase !== 'over' && v.phase === 'over') q.push(v.me == null || v.winner === v.me ? 'win' : 'lose');
   [...new Set(q)].slice(0, 4).forEach((n, i) => setTimeout(() => Sound.sfx(n), i * 170));
+}
+// 상대(관전 중이면 누구든)가 한 행동: 바뀐 곳에 리플레이와 같은 강조 틀. 다음 행동까지 남아 있어서 비동기 판에서도 무엇을 했는지 보임
+function liveMarks(pv, lines) {
+  const v = G.view; if (!pv || G.rw) return;
+  const others = (lines || []).filter(l => l.k >= 0 && !l.chat && (v.me == null || l.who !== v.me));
+  if (!others.length) { if ((lines || []).some(l => l.k >= 0 && !l.chat)) G.ui.marks = null; else if (G.ui.marks) rwHighlight(G.ui.marks); return; } // 내 행동이면 지움, 채팅뿐이면 그대로
+  G.ui.marks = rwTargets(pv, v, others, others.some(l => /^⚑/.test(l.txt)));
+  rwHighlight(G.ui.marks);
 }
 function banner(text, kind, ms = 1300) {
   const b = document.createElement('div'); b.className = 'banner ' + kind; b.innerHTML = `<span>${esc(text)}</span>`;
@@ -1605,18 +1636,57 @@ function draw(newLines) {
   const me = meSeat();
   const waitingMe = me != null && v.waiting.includes(me);
   document.title = (waitingMe ? '● 내 차례 · ' : '') + '닌포케카';
-  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${BP ? '' : dockHtml()}</div>${lobbyBtn()}</div>`; // 판 위에서 고르는 중엔 판정 창을 숨김
+  const sndHint = !Sound.ready() && Sound.get('sfx') && !Sound.get('mute') ? `<button type="button" class="sndhint" data-sndon>${ICON.sound}눌러서 소리 켜기</button>` : ''; // 브라우저는 한 번 눌러야 소리가 남
+  app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${BP ? '' : dockHtml()}<div class="hl-layer"></div></div>${lobbyBtn()}${sndHint}</div>`; // 판 위에서 고르는 중엔 판정 창을 숨김
   drawSpecs(); drawSide(); bindBoard();
   app.querySelectorAll('[data-dock]').forEach(b => b.onclick = () => { G.ui.dockMode = b.dataset.dock; draw([]); });
-  flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); if (prevView) revealShow(newLines); }
+  flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); liveMarks(prevView, newLines); chatAlert(newLines); if (prevView) revealShow(newLines); }
+  else if (G.ui.marks) rwHighlight(G.ui.marks, true); // 창을 열고 닫아 다시 그려도 강조 틀은 그대로 (움직임 없이)
+  const sh = app.querySelector('[data-sndon]'); if (sh) sh.onclick = () => { Sound.unlock(); Sound.sfx('notify'); sh.remove(); };
   G.prev = JSON.parse(JSON.stringify(v));
   const lk = me != null && v.p[me].look, lkKey = lk ? `${lk.p}-${lk.z}-${lk.n}-${lk.bottom ? 'b' : 't'}` : '';
   if (ZV && !ZV.v) { const el = $('#sheet .zvsheet'); if (el) zvFill(el); else ZV = null; }
-  if (lkKey && lkKey !== G.ui.lookKey && !$('#sheet:not([hidden]) .in') && !BP) openZoneView({ look: 1 }); // 덱·손패·프라이즈를 보기 시작하면 바로 크게
+  if (lkKey && (lkKey !== G.ui.lookKey || G.ui.lookWant) && !$('#sheet:not([hidden]) .in') && !BP) { G.ui.lookWant = false; openZoneView({ look: 1 }); } // 덱·손패·프라이즈를 보기 시작하면(또는 다시 보기를 누르면) 바로 크게 (판 위에서 고르는 중엔 기다림)
   G.ui.lookKey = lkKey;
   bpApply();
 }
-function drawSpecs() { const el = $('#specs'); if (el) el.innerHTML = G.specs.length ? `${ICON.eye}관전 ${G.specs.length}` : ''; }
+function drawSpecs() { // 관전자 수: 기록 단추 왼쪽 아래 작은 눈 표시 + 기록 화면의 '관전' 칸 이름
+  const b = app.querySelector('.fab.k-log'); if (b) { b.querySelector('.specb')?.remove(); b.insertAdjacentHTML('beforeend', specBadge()); }
+  const t = document.querySelector('#sheet .lgt[data-st="spec"] span'); if (t) t.textContent = specTab();
+  const sl = document.querySelector('#sheet .speclist'); if (sl) sl.outerHTML = specList();
+}
+const specBadge = () => G.specs.length ? `<i class="specb" title="지금 관전 ${G.specs.length}명" aria-label="지금 관전 ${G.specs.length}명">${ICON.eye}${G.specs.length}</i>` : '';
+const specTab = () => `관전 ${G.specs.length}명`;
+const specList = () => `<div class="speclist"><b class="slh">${ICON.eye}지금 보는 사람 ${G.specs.length}명</b>${G.specs.length ? `<span class="slc">${G.specs.map(n => `<span class="spc${n === ME?.name ? ' me' : ''}">${ICON.user}${esc(n)}${n === ME?.name ? ' (나)' : ''}</span>`).join('')}</span>` : '<span class="muted">지금 관전하는 사람이 없어요.</span>'}</div>`; // 관전자 목록 (11/18 링크 님)
+// 채팅 읽음: 마지막으로 본 채팅 줄 번호를 판마다 이 기기에 저장. 처음 들어온 판은 예전 채팅을 읽은 것으로
+function chatSeen() {
+  if (G.ui.cseen == null) { let x = null; try { x = localStorage.getItem('cs:' + G.id); } catch {} G.ui.cseen = x != null && x !== '' ? +x : Math.max(-1, ...G.lines.filter(l => l.chat).map(l => l.k)); }
+  return G.ui.cseen;
+}
+function unreadChats() { const me = meSeat(), s = chatSeen(); return G.lines.filter(l => l.chat && l.k > s && (me == null || l.who !== me)).length; }
+function markChatSeen() {
+  const k = Math.max(-1, ...G.lines.filter(l => l.chat).map(l => l.k)); if (k <= chatSeen()) return;
+  G.ui.cseen = k; try { localStorage.setItem('cs:' + G.id, k); } catch {}
+  app.querySelectorAll('.fab .cbadge').forEach(b => b.remove()); app.querySelectorAll('.fab.hasmsg').forEach(b => b.classList.remove('hasmsg'));
+  document.querySelectorAll('.chatpeek').forEach(x => x.remove());
+}
+// 선수가 채팅하면(시스템 줄 말고): 기록 단추가 통 튀고, 옆에 말풍선으로 4초 동안 보여 줌. 기록을 보고 있으면 바로 읽음
+function chatAlert(lines) {
+  const me = meSeat(), ch = (lines || []).filter(l => l.chat && l.k >= 0 && (me == null || l.who !== me)); if (!ch.length) return;
+  if (document.querySelector('#sheet .lgs')?.dataset.tab === 'log') { markChatSeen(); return; }
+  const b = app.querySelector('.fab.k-log'); if (!b) return;
+  b.classList.remove('chatpop'); void b.offsetWidth; b.classList.add('chatpop'); clearTimeout(G.ui.popT); G.ui.popT = setTimeout(() => app.querySelector('.fab.k-log')?.classList.remove('chatpop'), 2200);
+  const l = ch[ch.length - 1], nm = l.who != null ? G.view.p[l.who].name : '';
+  document.querySelectorAll('.chatpeek').forEach(x => x.remove());
+  const r = b.getBoundingClientRect(), pk = document.createElement('button');
+  pk.type = 'button'; pk.className = 'chatpeek' + (l.who === bottomSeat() ? ' me' : ' op');
+  pk.innerHTML = `<b>${ICON.chat}${esc(nm)}</b><span>${esc(l.txt)}</span>`;
+  if (!$('#sheet').hidden || !r.width) pk.classList.add('top'); // 다른 창이 열려 있으면 위쪽 가운데에 보기만 (아래 단추를 가리지 않게)
+  else { pk.style.right = Math.max(8, innerWidth - r.left + 10) + 'px'; pk.style.bottom = Math.max(8, innerHeight - r.bottom) + 'px'; }
+  pk.onclick = () => { pk.remove(); openLog('log'); };
+  document.body.appendChild(pk);
+  setTimeout(() => pk.classList.add('out'), 4200); setTimeout(() => pk.remove(), 4700);
+}
 // ----- 확인할 것 -----
 // 내가 지금 답해야 하는 것(급함)만 판 위에 크게 열고, 상대 판정 동의·상대 확인 대기 같은 건 한 줄씩 작게. 기다리는 중 안내는 작은 알약으로.
 const qIcon = (ic, k = '') => `<i class="qi ${k}">${ICON[ic]}</i>`;
@@ -1640,11 +1710,10 @@ function dockItems() {
     const P = v.p[me], O = v.p[1 - me];
     if (v.first == null && v.coinWinner === me) out.push({ k: 'order', u: 1, h: `<div class="prompt"><div class="q">${qIcon('coin', 'gold')}코인에서 이겼어요! 선공·후공을 골라 주세요.</div><div class="bar"><button class="primary" data-order="1">선공</button><button data-order="0">후공</button></div></div>` });
     if (v.first == null && v.coinWinner !== me) out.push({ k: 'order-wait', info: '상대가 선공·후공을 고르는 중' });
-    if (!P.ready) out.push({ k: 'place', u: 1, h: `<div class="prompt"><div class="q">${qIcon('user')}배틀 포켓몬과 벤치를 놓아 주세요</div>
-      <p class="pq">손패의 기본 포켓몬을 눌러 배틀 포켓몬 1장과 벤치(최대 5장)를 놓아요. 상대에게는 뒷면으로 보여요.</p>
-      ${O.mull && !P.mullDrawn ? `<div class="row mullr"><span>${nm(1 - me)} 님 첫 손패에 기본 포켓몬이 없어서 ${O.mull}번 다시 나눠 줬어요(멀리건). 그만큼 카드를 더 뽑을 수 있어요.</span> ${Array.from({ length: O.mull + 1 }, (_, n) => `<button class="sm" data-mull="${n}">${n}장</button>`).join('')}</div>` : ''}
-      <div class="bar"><button class="primary" data-t="setupDone" ${P.active ? '' : 'disabled'}>준비 완료</button></div></div>` });
-    else out.push({ k: 'ready-wait', info: '상대 준비를 기다리는 중' });
+    if (!P.ready) { // 놓는 방법은 작은 안내만 (판을 가리지 않게), 준비 완료는 오른쪽 '차례 끝내기' 자리의 큰 단추 (2026-11-18 링크 님)
+      if (O.mull && !P.mullDrawn) out.push({ k: 'mull', u: 1, h: `<div class="prompt"><div class="q">${qIcon('user')}카드를 더 뽑을 수 있어요</div><div class="row mullr"><span>${nm(1 - me)} 님 첫 손패에 기본 포켓몬이 없어서 ${O.mull}번 다시 나눠 줬어요(멀리건). 그만큼 카드를 더 뽑을 수 있어요.</span> ${Array.from({ length: O.mull + 1 }, (_, n) => `<button class="sm" data-mull="${n}">${n}장</button>`).join('')}</div></div>` });
+      if (v.first != null) out.push({ k: 'place', info: P.active ? '벤치도 놓았으면 오른쪽 준비 완료를 눌러 주세요' : '손패의 기본 포켓몬을 눌러 배틀 포켓몬을 놓아 주세요' });
+    } else out.push({ k: 'ready-wait', info: '상대 준비를 기다리는 중' });
   }
   for (const q of v.prompts) {
     const ic = qIcon(Q_ICON[q.type] || 'check', q.type === 'ko' ? 'warn' : q.type === 'win' || q.type === 'deckout' ? 'gold' : '');
@@ -1700,6 +1769,9 @@ function dockHtml() {
     ${rows.length ? `<div class="drows">${urg.length || ag.length >= 2 ? `<div class="drh"><span>${urg.length ? '그 밖의 판정' : '상대 판정'} ${rows.length}</span>${ag.length >= 2 ? `<button class="good xs" data-agreeall="${ag.join(',')}">${ICON.check}모두 동의</button>` : ''}</div>` : ''}${rows.map(x => x.row).join('')}</div>` : ''}
   </div></div>`;
 }
+// 기록 줄 정렬 (11/18 링크 님): 내 행동·채팅은 오른쪽, 상대는 왼쪽, 확인용 줄(동의·섞기·보기)은 가운데 작게, 큰 사건(기술·기절·사이드·코인)은 가운데 크게, 관전자 채팅은 가운데 초록 말풍선
+const LOG_BIG = /의 기술 「|기절|프라이즈 \d+장을 손패로|프라이즈를 모두|항복|님이 이겼어요|판을 끝냈어요|덱이 없어요|코인/;
+const LOG_META = /판정에 동의했어요|경고를 넘기고 진행|덱을 섞었어요|덱을 봤어요|을\(를\) 봤어요|보던 카드를 닫았어요|보기 시작|차례를 끝냈어요|되돌리기를 거절|준비 완료/;
 // 기록을 차례마다 덩어리로: 머리(몇 번째 차례 · 누구 · 뽑은 카드) + 그 차례의 줄들. 줄마다 이름 대신 색 띠(나 파랑, 상대 빨강)
 function logBlocks(lines, lineHtml) {
   const v = G.view, names = [v.p[0].name, v.p[1].name], bs = bottomSeat();
@@ -1713,25 +1785,37 @@ function logBlocks(lines, lineHtml) {
   }
   const actorOf = l => { if (l.who != null && l.k >= 0) return l.who; const m = l.txt.match(/^(?:\S+ )?([^:]+): /); return m ? seatOf(m[1]) : null; };
   const strip = (txt, p) => { if (p == null) return txt; const n = names[p]; return txt.replace(new RegExp(`^((?:\\S+ )?)${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: `), '$1'); };
+  const kindOf = (l, txt, a) => l.spec ? 'spec' : l.chat ? 'chat' : a == null ? 'sys' : LOG_BIG.test(txt) ? 'big' : LOG_META.test(txt) ? 'meta' : 'act';
   return blocks.map(b => {
     const h = b.head;
     const head = h ? `<div class="th" ${h.l ? lineHtml(h.l, null, true) : ''}><span class="tno">${esc(h.no)}번째 차례</span><span class="tnm">${esc(h.nm)}</span><span class="tdr">1장 뽑음${h.own ? ` · <span class="own">${esc(h.own)}</span>` : ''}</span></div>` : '<div class="th"><span class="tno">준비</span><span class="tnm">대전 준비</span></div>';
-    return `<section class="tblk ${side(b.owner)}">${head}${b.items.map(l => { const a = actorOf(l); return lineHtml(l, { cls: 'a-' + side(a) + (a != null && a === b.owner ? ' ow' : ''), txt: strip(l.txt, a) }); }).join('')}</section>`;
+    return `<section class="tblk ${side(b.owner)}">${head}${b.items.map(l => { const a = l.spec ? null : actorOf(l), txt = l.spec ? l.txt : strip(l.txt, a); return lineHtml(l, { cls: 'a-' + side(a) + ' k-' + kindOf(l, txt, a) + (a != null && a === b.owner ? ' ow' : ''), txt }); }).join('')}</section>`;
   }).join('');
 }
 function logHtml() {
   const gs = Object.fromEntries(G.view.groups.map(g => [g.gid, g]));
   let lastG = null; // 같은 판정 묶음은 첫 줄에만 칩, 나머지는 보라 줄로만 (줄을 더 많이 보이게)
-  return logBlocks(G.lines, (l, o, headAttr) => {
+  return logBlocks(withSpec(G.lines), (l, o, headAttr) => {
     if (headAttr) return l.k >= 0 && !G.rw ? `data-vk="${l.k}" role="button" tabindex="0" title="이 차례부터 리플레이"` : '';
+    if (l.spec) return `<div class="ln chat spec ${o.cls}"><b class="snm">${ICON.eye}${esc(l.name)}</b>${esc(l.txt)}</div>`;
     const g = l.gid && gs[l.gid];
     const first = l.gid !== lastG; lastG = l.gid || null;
     const st = g ? (g.status === 'ok' ? ['ok', 'check', '동의함'] : g.status === 'disputed' ? ['warn', 'warn', '이의 있음'] : ['judge', 'judge', '사람 판정 · 동의 전']) : ['judge', 'judge', '사람 판정'];
     const jc = l.gid && first ? `<i class="lj ${st[0]}" title="${st[2]}" aria-label="${st[2]}">${ICON[st[1]]}</i>` : '';
     if (l.chat) return `<div class="ln chat ${o.cls} ${l.rw ? 'rw' : ''}">${esc(l.txt)}</div>`;
     const shw = l.show && l.show.length ? `<span class="lshow">${l.show.map(c => `<button type="button" class="lsc" data-ci="${esc(c)}" aria-label="${esc(cname(cinfo(c)))} 보기">${cardFace({ i: '', c }, 'lspc')}</button>`).join('')}</span>` : ''; // 보여준 카드: 작은 그림 (누르면 크게)
-    return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}">${jc}${esc(o.txt)}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}${shw}</div>`;
+    return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}">${esc(o.txt)}${jc}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}${shw}</div>`;
   });
+}
+// 관전자 채팅을 기록 사이에 시간 순서로 끼움. 관전자는 늘, 선수는 '대전 중에도 보기'를 켰거나 판이 끝났을 때만
+const specOn = () => { try { return localStorage.getItem('specView') === '1'; } catch { return false; } };
+const specVisible = () => meSeat() == null || specOn() || G.view?.phase === 'over';
+function withSpec(lines) {
+  const sc = specVisible() ? G.specChat || [] : []; if (!sc.length) return lines;
+  const out = []; let i = 0; const sl = m => ({ spec: true, name: m.name, txt: m.text, t: m.t, k: -2 });
+  for (const l of lines) { while (i < sc.length && l.t != null && (sc[i].t || 0) < l.t) out.push(sl(sc[i++])); out.push(l); }
+  while (i < sc.length) out.push(sl(sc[i++]));
+  return out;
 }
 // 코인 던지기: 횟수는 ▼▲ 단추로(키보드 없이), '무엇 때문에?'는 카드를 눌러서 고름 (내 포켓몬·상대 포켓몬·내 손패의 트레이너스·특수 상태)
 // 카드 고르기 (코인 '무엇 때문에?'·효과 쓰기): 내 포켓몬 · 상대 포켓몬 · 손패 · 스타디움. 다시 누르면 고르기 취소
@@ -1823,28 +1907,31 @@ function openLog(tab) { // 기록 화면: 기록·채팅 / 관전자 / 잠깐!(�
 }
 function drawSide(target) {
   const el = target || document.querySelector('#sheet .lgs'); if (!el || !G.view) return;
-  const sOk = stopOk(), tab = G.ui.tab === 'spec' ? 'spec' : G.ui.tab === 'stop' && sOk ? 'stop' : 'log', me = meSeat(), canType = tab === 'log' ? me != null : tab === 'spec' ? me == null : false;
+  const sOk = stopOk(), tab = G.ui.tab === 'spec' ? 'spec' : G.ui.tab === 'stop' && sOk ? 'stop' : 'log', me = meSeat(), canType = tab === 'log' || (tab === 'spec' && me == null);
   if (tab === 'stop' && el.dataset.tab === 'stop') return; // 고르는 중에는 다시 그리지 않음 (고른 줄·적던 글 그대로)
+  if (tab === 'log') markChatSeen(); // 기록을 열어 두면 채팅은 읽은 것
+  const specSw = () => me == null || G.view.phase === 'over' ? '' : `<button type="button" class="swb ${specOn() ? 'on' : ''}" role="switch" aria-checked="${specOn()}" data-specview><i class="swk" aria-hidden="true"></i><span>대전 중에도 관전자 채팅 보기</span></button>`;
   const logInner = () => tab === 'log' ? logHtml() || '<p class="muted">아직 기록이 없어요.</p>'
-    : (G.specChat || []).map(m => `<div class="ln chat"><b>${esc(m.name)}</b> ${esc(m.text)}</div>`).join('') || '<p class="muted">관전자 채팅이 없어요.</p>';
+    : specList() + specSw() + (specVisible() ? (G.specChat || []).map(m => `<div class="ln chat spec"><b class="snm">${ICON.eye}${esc(m.name)}</b>${esc(m.text)}</div>`).join('') || '<p class="muted">관전자 채팅이 아직 없어요.</p>'
+      : '<p class="muted">관전자 채팅은 숨겨 두었어요. 위 단추를 켜면 대전 중에도 기록에 함께 보여요.</p>');
   const lg0 = el.querySelector('.log');
   if (lg0 && el.dataset.tab === tab && el.dataset.sok === String(sOk)) { // 새 줄만 다시 그림 (입력 중인 글자는 그대로)
     const atEnd = lg0.scrollHeight - lg0.scrollTop - lg0.clientHeight < 40;
-    lg0.innerHTML = logInner(); bindLog(lg0); if (atEnd) lg0.scrollTop = lg0.scrollHeight; return;
+    lg0.innerHTML = logInner(); bindLog(lg0); if (atEnd) lg0.scrollTop = lg0.scrollHeight; const t0 = el.querySelector('.lgt[data-st="spec"] span'); if (t0) t0.textContent = specTab(); return;
   }
   el.dataset.tab = tab; el.dataset.sok = String(sOk);
-  const nSpec = (G.specChat || []).length, st = tab === 'stop' ? stopParts() : null;
+  const st = tab === 'stop' ? stopParts() : null;
   el.innerHTML = `<nav class="lgrail" aria-label="기록 종류">
       <button type="button" class="lgx" data-close aria-label="닫기">${ICON.x}</button>
       <button type="button" class="lgt ${tab === 'log' ? 'on' : ''}" data-st="log">${ICON.chat}<span>기록·채팅</span></button>
-      <button type="button" class="lgt ${tab === 'spec' ? 'on' : ''}" data-st="spec">${ICON.eye}<span>관전자${nSpec ? ` ${nSpec}` : ''}</span></button>
+      <button type="button" class="lgt ${tab === 'spec' ? 'on' : ''}" data-st="spec">${ICON.eye}<span>${specTab()}</span></button>
       ${sOk ? `<button type="button" class="lgt lgstop ${tab === 'stop' ? 'on' : ''}" data-st="stop">${ICON.pause}<span>잠깐!</span></button>` : ''}
       ${(G.view.n || 0) > 0 ? `<button type="button" class="lgt vwgo" data-vwgo>${ICON.rewind}<span>리플레이</span></button>` : ''}
     </nav>
     ${st ? `<div class="stlogw"><p class="small muted stoph">잘못된 행동을 눌러 고르고 이유를 적으면 판이 멈춰요. 상대가 되돌리기·직접 고치기·이대로 계속 중에서 골라요.</p><div class="log stoplog">${st.html}</div><button type="button" class="stjump" hidden></button></div>
       <div class="lgin stgo"><input name="text" maxlength="200" aria-label="무엇이 잘못됐나요?" placeholder="무엇이 잘못됐나요? 예: 에너지를 두 장 붙였어요" autocomplete="off"><button class="bad" data-stopgo>${ICON.pause}<span>멈추고 지적하기</span></button></div>`
     : `<div class="log">${logInner()}</div>
-    ${canType ? `<form class="lgin"><textarea name="t" rows="2" maxlength="${tab === 'log' ? 300 : 200}" placeholder="${tab === 'log' ? '채팅 (기록에 남아요)' : '응원 한마디'}" enterkeyhint="send">${esc(G.ui.draft || '')}</textarea><button class="blue" aria-label="보내기">${ICON.next}<span>보내기</span></button></form>` : ''}`}`;
+    ${canType ? `<form class="lgin"><textarea name="t" rows="2" maxlength="${me != null ? 300 : 200}" placeholder="${me != null ? '채팅 (기록에 남아요)' : '응원 한마디 (관전자 채팅)'}" enterkeyhint="send">${esc(G.ui.draft || '')}</textarea><button class="blue" aria-label="보내기">${ICON.next}<span>보내기</span></button></form>` : ''}`}`;
   el.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { G.ui.tab = b.dataset.st; drawSide(el); });
   if (st) { bindStop(el, st); const vg0 = el.querySelector('[data-vwgo]'); if (vg0) vg0.onclick = () => { G.ui.tab = 'log'; closeSheet(); setTimeout(() => startRewatch(), 0); }; return; }
   const vg = el.querySelector('[data-vwgo]'); if (vg) vg.onclick = () => { closeSheet(); setTimeout(() => startRewatch(), 0); };
@@ -1852,7 +1939,7 @@ function drawSide(target) {
   const f = el.querySelector('.lgin'); if (!f) return;
   const ta = f.t, sendIt = () => {
     const t = ta.value.trim(); if (!t) return;
-    if (tab === 'log') send({ type: 'chat', text: t }); else G.ws.send(JSON.stringify({ t: 'specChat', text: t }));
+    if (me != null) send({ type: 'chat', text: t }); else G.ws.send(JSON.stringify({ t: 'specChat', text: t }));
     ta.value = ''; G.ui.draft = '';
   };
   ta.oninput = () => { G.ui.draft = ta.value; };
@@ -1860,6 +1947,7 @@ function drawSide(target) {
   f.onsubmit = e => { e.preventDefault(); sendIt(); ta.focus(); };
 }
 function bindLog(lg) { // 차례 머리를 누르면 그 차례부터 리플레이
+  const sw = lg.querySelector('[data-specview]'); if (sw) sw.onclick = () => { const on = !specOn(); try { localStorage.setItem('specView', on ? '1' : '0'); } catch {} G.ws?.send(JSON.stringify({ t: 'specView', on })); drawSide(); };
   lg.querySelectorAll('[data-vk]').forEach(h => h.onclick = () => { const k = +h.dataset.vk; closeSheet(); setTimeout(() => startRewatch({ k }), 0); });
   bindCardPeek(lg); // 보여준 카드 작은 그림
 }
@@ -1952,7 +2040,7 @@ async function fxStepRun(id, k) {
 const fxDrop = id => { G.ui.steps = (G.ui.steps || []).filter(x => x.id !== +id); draw([]); };
 const moveOpts = me => [
   { label: '손패로', value: { z: 'hand', p: me }, cls: 'primary' }, { label: '트래시로', value: { z: 'discard', p: me } },
-  { label: '덱 위로', value: { z: 'deck', p: me, pos: 'top' } }, { label: '덱 아래로', value: { z: 'deck', p: me, pos: 'bottom' } },
+  { label: '덱 위로', value: { z: 'deck', p: me, pos: 'top' } }, { label: '덱 아래로', value: { z: 'deck', p: me, pos: 'bottom' } }, { label: '덱에 넣고 섞기', value: { z: 'deck', p: me, pos: 'shuffle' } },
   { label: '벤치에 내기', value: { z: 'bench', p: me } }, { label: '포켓몬에게 붙이기', value: 'attach' },
   { label: '로스트존으로', value: { z: 'lost', p: me } }, { label: '프라이즈로', value: { z: 'prizes', p: me } }, { label: '공개하기', value: 'reveal' },
 ];
@@ -1999,6 +2087,7 @@ async function onHandCard(iid) {
       opts.push(mate ? { label: '좌측·우측 함께 내기', value: 'play', cls: 'primary' } : { label: `사용하기 (${c.side === 'L' ? '우측' : '좌측'} 없음)`, value: 'play', cls: '' }); }
     else if (c.st === 'T') opts.push({ label: '사용하기', value: 'play', cls: 'primary' });
     opts.push({ label: '다른 곳으로 옮기기' + FX, value: 'move', cls: 'judge' });
+    opts.push({ label: `${ICON.check}여러 장 골라 옮기기`, value: 'multi' }, { label: '무작위로 골라 옮기기', value: 'rand' }); // 손패 전부·몇 장 → 덱 위·아래, 넣고 섞기, 트래시 (11/18 링크 님)
   }
   openSheet(`<button class="x sm" data-close>닫기</button>${cardActHtml(c, actsHtml(opts.map((o, i) => ({ ...o, i })), '', cactW()), { cid: x.c })}`, el => {
     el.classList.add('cactsheet'); bindCardPeek(el);
@@ -2010,8 +2099,23 @@ async function onHandCard(iid) {
       if (k === 'attach') { const sid = await pickSlot('어느 포켓몬에게 붙일까요?', [me, 1 - me]); if (sid) send({ type: 'attach', iid, sid }); return; }
       if (k === 'play') { send({ type: 'play', iid }); return; }
       if (k === 'move') moveMenu([iid], cname(c));
+      if (k === 'multi') openZoneView({ z: 'hand', p: me }, G.view, { sel: [iid] });
+      if (k === 'rand') randomHand(me);
     });
   });
+}
+// 손패에서 무작위로 N장 (보지 않고): 서버가 골라서 옮김. 기록에 '무작위로'가 남음. 상대 손패도 됨 (상대 카드 효과로 버릴 때)
+async function randomHand(p) {
+  const v = G.view, me = meSeat(); if (me == null) return;
+  const n = (v.p[p].hand || []).length || v.p[p].handN || 0; if (!n) return toast('손패가 없어요.');
+  const mine = p === me, who = mine ? '' : '상대 ';
+  const opts = [['discard', `${who}트래시로`], ['shuffle', `${who}덱에 넣고 섞기`], ['bottom', `${who}덱 아래로`], ['top', `${who}덱 위로`]];
+  const f = await ask(`${mine ? '내' : '상대'} 손패에서 무작위로`, `<p class="small muted">${mine ? '' : '상대 손패를 보지 않고 '}무작위로 고른 카드를 옮겨요. 기록에 '무작위로'라고 남아요. 지금 손패 ${n}장.</p>
+    <label class="h">몇 장</label>${stepHtml('n', 1, { min: 1, max: n, unit: '장' })}
+    <label class="h">어디로</label><div class="rseg n4" role="radiogroup">${opts.map(([k, l], i) => `<label class="ropt"><input type="radio" name="to" value="${k}" ${i ? '' : 'checked'}><span><b>${l}</b></span></label>`).join('')}</div>`, '옮기기', 'judge');
+  if (!f) return;
+  const to = f.to === 'discard' ? { z: 'discard', p } : { z: 'deck', p, pos: f.to };
+  if (await send({ type: 'move', random: { p, n: Math.min(n, Math.max(1, +f.n || 1)) }, to })) Sound.sfx(f.to === 'discard' ? 'place' : 'shuffle');
 }
 // 포켓몬에 붙은 카드(도구·에너지·진화 전)를 작은 카드로: 누르면 그 카드 설명 (창 안에서 겹쳐 보기)
 function attachedHtml(sl) {
@@ -2166,18 +2270,28 @@ async function onZone(z, p) {
   if (z === 'discard' || z === 'lost') return openZoneView({ z, p });
   if (me == null) { if (zvCards({ z, p }, v)) openZoneView({ z, p }); else toast('이 카드들은 볼 수 없어요.'); return; } // 관전·리플레이: 보이는 것이면 큰 창
   if (me == null || v.phase !== 'play') return;
+  const lk = v.p[me].look, lkHere = lk && lk.z === z && lk.p === p; // 보는 중인 곳을 누르면: 덱은 메뉴 맨 위에 '다시 크게 보기', 손패·프라이즈는 바로 크게
+  if (lkHere && z !== 'deck') return openZoneView({ look: 1 });
   if (z === 'deck') {
     const opts = mine ? [{ label: '1장 뽑기', value: ['draw', 1] }, { label: '여러 장 뽑기', value: ['drawN'] }, { label: '덱 전체 보기 (검색)', value: ['look', null] }, { label: '위에서 몇 장 보기', value: ['lookN'] }, { label: '아래에서 몇 장 보기', value: ['lookB'] }, { label: '섞기', value: ['shuffle'] }]
       : [{ label: '상대 덱 위에서 몇 장 보기', value: ['lookN'] }, { label: '상대 덱 아래에서 몇 장 보기', value: ['lookB'] }, { label: '상대 덱 섞기', value: ['shuffle'] }];
+    if (lkHere) opts.unshift({ label: `${ICON.eye}보던 카드 다시 크게 보기`, value: ['resume'], cls: 'primary' });
     const k = await pick(mine ? '내 덱' : '상대 덱', opts); if (!k) return;
+    if (k[0] === 'resume') return openZoneView({ look: 1 });
     if (k[0] === 'draw') return send({ type: 'draw', n: 1 });
     if (k[0] === 'drawN') { const f = await ask('몇 장 뽑을까요?', stepHtml('n', 2, { min: 1, max: 60, unit: '장' }), '뽑기'); if (f) send({ type: 'draw', n: +f.n }); return; }
-    if (k[0] === 'look') return send({ type: 'look', p, z: 'deck' });
-    if (k[0] === 'lookN' || k[0] === 'lookB') { const b = k[0] === 'lookB', f = await ask(`${b ? '아래' : '위'}에서 몇 장 볼까요?`, stepHtml('n', 3, { min: 1, max: 60, unit: '장' }), '보기'); if (f) send({ type: 'look', p, z: 'deck', n: +f.n, ...(b ? { from: 'bottom' } : {}) }); return; }
+    if (k[0] === 'look') return askLook(p, 'deck');
+    if (k[0] === 'lookN' || k[0] === 'lookB') { const b = k[0] === 'lookB', f = await ask(`${b ? '아래' : '위'}에서 몇 장 볼까요?`, stepHtml('n', 3, { min: 1, max: 60, unit: '장' }), '보기'); if (f) askLook(p, 'deck', +f.n, b); return; }
     if (k[0] === 'shuffle') return send({ type: 'shuffle', p });
   }
-  if (z === 'prizes') { const ok = await pick(mine ? '내 프라이즈' : '상대 프라이즈', [{ label: '앞면 확인하기' + FX, value: 1, cls: 'judge' }]); if (ok) send({ type: 'look', p, z: 'prizes' }); return; }
-  if (z === 'hand' && !mine) { const ok = await pick('상대 손패', [{ label: '상대 손패 보기' + FX, value: 1, cls: 'judge' }]); if (ok) send({ type: 'look', p, z: 'hand' }); }
+  if (z === 'prizes') { const ok = await pick(mine ? '내 프라이즈' : '상대 프라이즈', [{ label: '앞면 확인하기' + FX, value: 1, cls: 'judge' }]); if (ok) askLook(p, 'prizes'); return; }
+  if (z === 'hand' && !mine) { const ok = await pick('상대 손패', [{ label: '상대 손패 보기' + FX, value: 1, cls: 'judge' }, { label: '보지 않고 무작위로 골라 옮기기' + FX, value: 2, cls: 'judge' }]); if (ok === 1) askLook(p, 'hand'); if (ok === 2) randomHand(p); }
+}
+// 덱·손패·프라이즈 보기: 이미 같은 것을 보고 있으면(큰 창만 닫았던 경우) 바로 큰 창, 아니면 보기 시작 후 큰 창 (2026-11-18 '덱이 안 보여요' 고침)
+function askLook(p, z, n = null, bottom = false) { // 이미 같은 것을 보는 중이면 서버에 다시 묻지 않고 바로 큰 창 (예전엔 창이 안 열려 '덱이 안 보임')
+  const me = meSeat(), lk = me != null && G.view.p[me].look;
+  if (lk && lk.p === p && lk.z === z && (lk.n || null) === (n || null) && !!lk.bottom === !!bottom) return openZoneView({ look: 1 });
+  G.ui.lookWant = true; send({ type: 'look', p, z, ...(n ? { n } : {}), ...(bottom ? { from: 'bottom' } : {}) });
 }
 // ---------- 카드 묶음 크게 보기: 화면(매트) 거의 전체 크기 창에 큰 카드 ----------
 // 덱 보기·트래시·로스트존·프라이즈·손패 모두 같은 기준. 대전·관전·리플레이 공통. 열어 둔 채 판이 바뀌면 다시 채움
@@ -2266,6 +2380,7 @@ function zvBarActs(opts, fx, n = 0, total = 0) { // 아래 줄 단추: 자주 �
   let pri;
   if (fx && fx.sp.top && (fx.sp.to || fx.sp.rest)) { const r = fxRest(fx.sp, total - n); pri = [{ label: `${ICON.check}${n && fx.sp.to && r ? `<span class="b2"><span>${fxPri(fx.sp)}</span><small>+ ${r}</small></span>` : n && fx.sp.to ? fxPri(fx.sp) : r || fxPri(fx.sp)}`, fx: 1, cls: 'primary', zero: !!fx.sp.rest }]; } // 두 줄: 고른 카드 옮기기 / + 나머지 // 위에서 N장: 고른 카드 옮기고 나머지까지 한 번에 (못 찾았으면 나머지만)
   else if (fx && fx.sp.to) pri = [{ label: `${ICON.check}${fxPri(fx.sp)}`, fx: 1, cls: 'primary' }, ...(fx.skipLabel ? [{ label: fx.skipLabel, skip: 1 }] : [])];
+  else if (ZV && !ZV.look && ZV.z === 'hand' && ZV.p === me) { const k = o => o.value && o.value.z === 'discard' ? 0 : o.value && o.value.z === 'deck' ? { top: 1, bottom: 2, shuffle: 3 }[o.value.pos] : 9; pri = opts.filter(o => k(o) < 9).sort((a, b) => k(a) - k(b)); if (pri[0]) pri[0] = { ...pri[0], cls: 'primary' }; } // 내 손패: 트래시·덱 위·덱 아래·덱에 넣고 섞기 (11/18 링크 님)
   else { const want = o => o.show || (o.value && (o.value.z === 'hand' || o.value.z === 'discard')); pri = opts.filter(want).slice(0, 3); if (pri.length < 3) pri = [...pri, ...opts.filter(o => !pri.includes(o)).slice(0, 3 - pri.length)]; if (pri[0]) pri[0] = { ...pri[0], cls: 'primary' }; }
   const rest = opts.filter(o => !pri.some(p => p.label === o.label));
   return rest.length ? [...pri, { label: '다른 곳으로…', more: rest }] : pri;
@@ -2276,8 +2391,12 @@ function zvFill(el, barOnly = false) {
   let title, btns = '';
   if (ZV.look) { const lk = v.p[me].look; title = `${lk.p === me ? '내' : '상대'} ${ZNAME[lk.z]}${lkSide(lk)} 보는 중`; btns = `<button class="sm" data-zlook="end">닫기</button>${lk.z === 'deck' ? '<button class="sm" data-zlook="shuffle">섞고 닫기</button>' : ''}`; }
   else title = `${ZV.p === viewer ? '내' : esc(v.p[ZV.p].name) + ' 님'} ${ZNAME[ZV.z]}`;
+  const myHand = !ZV.look && ZV.z === 'hand' && ZV.p === me && me != null && v.phase === 'play' && !ZV.v;
+  if (myHand && cards.length) { const all = cards.every(x => ZV.sel.includes(x.i)); btns = `<button class="sm" data-zall>${all ? '모두 풀기' : `${ICON.check}모두 고르기`}</button><button class="sm judge" data-zrand>${ICON.shuffle || ''}무작위로…</button>`; } // 손패 전부 / 무작위
   el.querySelector('.zvt').innerHTML = `${title} <span class="chip">${cards.length}장</span>`;
   const bb = el.querySelector('.zvb'); bb.innerHTML = btns;
+  const za = bb.querySelector('[data-zall]'); if (za) za.onclick = () => { const all = cards.every(x => ZV.sel.includes(x.i)); ZV.sel = all ? [] : cards.map(x => x.i); Sound.sfx('tap'); zvFill(el); };
+  const zr = bb.querySelector('[data-zrand]'); if (zr) zr.onclick = () => { closeSheet(); setTimeout(() => randomHand(me), 40); };
   bb.querySelectorAll('[data-zlook]').forEach(b => b.onclick = () => send(b.dataset.zlook === 'end' ? { type: 'lookEnd' } : { type: 'shuffle', p: me }));
   const fx = zvFx(v), opts = zvOpts(v), selable = opts.length > 0;
   ZV.sel = ZV.sel.filter(i => cards.some(x => x.i === i));
@@ -2728,13 +2847,15 @@ function bindBoard() {
   app.querySelectorAll('[data-rwok]').forEach(el => el.onclick = async () => { if (await ask('이 판정 바로 전으로 되돌릴까요?', '<p>그 뒤에 한 행동이 모두 취소되고, 기록에는 줄을 그어 남겨요.</p><p class="small"><span class="chip warn">이미 본 카드가 있어요</span> 덱이나 손패에서 본 카드는 잊을 수 없어요. 덱은 다시 섞여요.</p>', '되돌리기', 'bad')) send({ type: 'rewindOk', to: +el.dataset.rwok }); });
   app.querySelectorAll('[data-uses]').forEach(el => { el.onclick = openUses; el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUses(); } }; });
   app.querySelectorAll('[data-stadium]').forEach(el => el.onclick = () => openStadium());
-  app.querySelectorAll('[data-t]').forEach(el => el.onclick = async () => {
+  app.querySelectorAll('[data-t]').forEach(el => el.onclick = async e => {
     const t = el.dataset.t;
+    if (t === 'setupDone' && !G.view.p[me].active) return toast('먼저 손패의 기본 포켓몬을 눌러 배틀 포켓몬을 놓아 주세요.');
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
     if (t === 'rewatch') return startRewatch();
+    if (t === 'swap') { swapView(); G.ui.marks = null; draw(null); swapToast(); return; }
     if (t === 'follow') { const f = await setFollow(G.room, !G.follow); if (f != null) { G.follow = f; draw([]); } return; }
     if (t === 'shuffleMine') return send({ type: 'shuffle', p: me });
-    if (t === 'log') return openLog();
+    if (t === 'log') return openLog(e?.target?.closest?.('.specb') ? 'spec' : undefined); // 눈 표시(관전자 수)를 누르면 관전자 목록 칸으로
     if (t === 'stop') { if (G.view.stop) { G.ui.dockMode = 'open'; draw([]); return; } return openStop(); }
     if (t === 'coin') return openCoin();
     if (t === 'effect') return openEffect();
@@ -2802,6 +2923,8 @@ const rwKey = t => `rw:${G.id}:${t.k0}:${t.k1}`;
 function rwSeen(t) { try { return localStorage.getItem(rwKey(t)) === '1'; } catch { return false; } }
 // ---------- 리플레이 (판 위에서 그대로, 판 크기는 그대로) ----------
 // 차례 단위로 이동(이전 차례 · 다음 차례), 그 안에서 한 수씩(‹ ›), 재생·멈춤. 위에는 지금 수의 설명, 아래에는 조작 막대
+function swapView() { G.ui.flip = !G.ui.flip; try { localStorage.setItem('flip:' + G.id, G.ui.flip ? '1' : ''); } catch {} }
+const swapToast = () => toast(`${G.view.p[bottomSeat()].name} 님 쪽에서 보는 중`, 1600);
 const turnStartsOf = lines => [...new Set(lines.filter(l => l.turn && l.k >= 0).map(l => l.k))].sort((a, b) => a - b);
 async function startRewatch(opt = {}) { // 대전 중: 기본은 상대의 마지막 차례 처음부터
   if (G.rw) return;
@@ -2941,8 +3064,9 @@ function hlCloud(w, h, f, x0, y0, x1, y1) {
   const dr = Math.max(1.8, 2.55 * sd), dots = [6, 11.5, 17].map((x, i) => `<circle class="hdot" style="animation-delay:${(i * .22).toFixed(2)}s" cx="${f(gS + x * u)}" cy="${f(y0)}" r="${f(dr)}" fill="#a6deff"/>`).join('');
   return `<svg viewBox="0 0 ${f(w)} ${f(h)}" aria-hidden="true"><defs>${air}</defs><g filter="url(#${id})"><path class="hd" pathLength="1" d="${dA}" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${anim}</path><g class="hlate">${dots}</g></g></svg>`;
 }
-function rwHighlight(sels) {
+function rwHighlight(sels, quiet = false) { // quiet: 다시 그릴 때 같은 틀을 움직임 없이 바로
   const layer = app.querySelector('.hl-layer'), tb = app.querySelector('.table'); if (!layer || !tb) return;
+  layer.classList.toggle('still', quiet);
   sels.forEach(t => app.querySelectorAll(t.s).forEach(el => el.classList.add('rwon')));
   setTimeout(() => { // 카드가 다 움직인 뒤에 틀을 그림
     if (!layer.isConnected) return;
@@ -2954,7 +3078,7 @@ function rwHighlight(sels) {
       const w = r.width + m * 2, h = bot - top + m * 2;
       return `<div class="hlf${kind === 'judge' ? ' soft' : ''}" style="left:${(r.left - T.left - m).toFixed(1)}px;top:${(top - T.top - m).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px">${hlFrame(w, h, kind)}</div>`;
     }).join('');
-  }, reduceMotion() ? 0 : 520);
+  }, reduceMotion() || quiet ? 0 : 520);
 }
 // 리플레이 행동 기록 전체: 지금 수는 주황 테두리, 앞으로 올 수는 흐리게. 줄을 누르면 그 장면으로
 function scrollInside(box, el) { // 상자 안에서만 el이 가운데 오게 (scrollIntoView는 창까지 굴려서 제목이 숨음). el이 없으면 맨 아래
@@ -2970,9 +3094,9 @@ function openRwLog() {
     if (headAttr) return at(l);
     const st = (l.k ?? -1) + 1 === curK && !l.turn ? 'cur' : (l.k ?? -1) + 1 > rw.k ? 'later' : '';
     const g = l.gid && gs[l.gid], jc = l.gid ? `<i class="lj ${g && g.status === 'ok' ? 'ok' : g && g.status === 'disputed' ? 'warn' : 'judge'}">${ICON[g && g.status === 'ok' ? 'check' : g && g.status === 'disputed' ? 'warn' : 'judge']}</i>` : '';
-    return `<div class="ln ${o.cls} ${l.chat ? 'chat' : ''} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''} ${st}" ${at(l)}><b class="lk">${(l.k ?? -1) + 1}</b>${jc}${esc(l.chat ? l.txt : o.txt)}${l.own ? ` <span class="own">(${esc(l.own)})</span>` : ''}</div>`;
+    return `<div class="ln ${o.cls} ${l.chat ? 'chat' : ''} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''} ${st}" ${at(l)}><b class="lk">${(l.k ?? -1) + 1}</b>${esc(l.chat ? l.txt : o.txt)}${jc}${l.own ? ` <span class="own">(${esc(l.own)})</span>` : ''}</div>`;
   });
-  openSheet(`<button class="x sm" data-close>닫기</button><h3>행동 기록 <small class="muted">${rw.k} / ${rw.n}수</small></h3><p class="small muted rwlh">줄을 누르면 그 장면으로 가요. 지금 보는 수는 주황 테두리예요.</p><div class="log rwlog">${html || '<p class="muted">아직 기록이 없어요.</p>'}</div>`, el => {
+  openSheet(`<button class="x sm" data-close>닫기</button><div class="rwlhd"><h3>행동 기록</h3><small class="muted rwlk">${rw.k} / ${rw.n}수</small><span class="small muted rwlh">줄을 누르면 그 장면으로 가요</span></div><div class="log rwlog">${html || '<p class="muted">아직 기록이 없어요.</p>'}</div>`, el => {
     el.classList.add('rwlogsheet');
     const cur = el.querySelector('.ln.cur') || [...el.querySelectorAll('.ln:not(.later)')].pop(); scrollInside(el.querySelector('.rwlog'), cur);
     el.querySelectorAll('[data-k2]').forEach(r => { const go = () => { const k = +r.dataset.k2; closeSheet(); setTimeout(() => { rw.playing = false; rwGo(k); }, 40); }; r.onclick = go; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
@@ -2984,7 +3108,7 @@ function drawRw(forward) {
   const cur = rw.views[rw.k], before = rw.k > 0 ? rw.views[rw.k - 1] : null;
   const ts = turnStartsOf(rw.lines), ti = ts.filter(t => t <= rw.k).length - 1; // 지금 몇 번째 차례 안인지
   const tl = ti >= 0 ? rw.lines.find(l => l.turn && l.k === ts[ti]) : null, tm = tl ? tl.txt.match(/(\d+)번째 차례: (.+) \(/) : null;
-  const owner = tm ? names.indexOf(tm[2]) : -1, side = owner < 0 ? 'sys' : owner === (rw.me == null ? 0 : rw.me) ? 'me' : 'op';
+  const owner = tm ? names.indexOf(tm[2]) : -1, side = owner < 0 ? 'sys' : owner === bottomSeat() ? 'me' : 'op';
   const stepLines = rw.k > 0 ? rw.lines.filter(l => l.k === rw.k - 1) : [];
   const who = owner >= 0 ? names[owner] : '';
   const caps = stepLines.filter(l => l.txt && !l.turn).map(l => esc(who ? stripWho(l.txt, who) : l.txt) + (l.own ? ` <span class="muted">(${esc(l.own)})</span>` : ''));
@@ -2994,24 +3118,29 @@ function drawRw(forward) {
   G.view = cur; G.lines = rw.lines.filter(l => l.k < rw.k);
   // 판·두 사람 손패·모든 카드는 대전 때와 똑같이 보임 (가리는 것 없음).
   // 조작은 판 왼쪽 가운데 리모컨 두 줄(왼쪽 줄 = 뒤로, 오른쪽 줄 = 앞으로), 설명은 배틀 포켓몬 오른쪽 빈자리의 카드 한 장
-  const rf = (k, ic, l, lb, dis, cls = '') => `<div class="fabw"><button class="fab k-rw2 ${cls}" data-rw="${k}" aria-label="${l}" ${dis ? 'disabled' : ''}>${FAB_FX}<span class="core">${FAB_ICON[ic]}</span></button><span class="fl">${lb}</span></div>`;
+  const rf = (k, ic, l, lb, dis, cls = '') => `<div class="fabw"><button class="fab k-rw2 ${cls}" data-rw="${k}" aria-label="${l}" ${dis ? 'disabled' : ''}>${FAB_FX}<span class="core">${FAB_ICON[ic]}</span></button><span class="fl">${lb.replace(/<br>/g, "<br> ")}</span></div>`; // 가로 폰에서 줄바꿈을 숨겨도 띄어쓰기는 남게
   const playB = end ? (rw.mode === 'game' ? rf('close', 'check', '판으로 돌아가기', '판으로', false, 'k-go on') : rf('play', 'play', '재생', '재생', true, 'k-play'))
     : rf('play', rw.playing ? 'pause' : 'play', rw.playing ? '멈춤' : '재생', rw.playing ? '멈춤' : '재생', false, 'k-play' + (rw.playing ? ' on' : ''));
   const turnTxt = tm ? `${tm[1]}번째 차례` : '대전 준비';
+  // 시점 바꾸기 · 전체 기록: 세로 화면은 리모컨 넷째 줄, 가로 화면은 대전 때 '기록' 자리(오른쪽 아래) — 가로에서 넷째 줄은 왼쪽 사이드 칸과 겹침
+  const xb = `${rf('swap', 'swap', '시점 바꾸기', '시점<br>바꾸기', false, G.ui.flip ? 'on' : '')}${rf('log', 'log', '전체 기록', '전체<br>기록', false)}`;
   const ctl = `<div class="rwpad" role="group" aria-label="리플레이 조작">${rf('close', 'x', '리플레이 닫기', '닫기', false, 'k-close')}${playB}
       ${rf('tprev', 'rwfirst', '이전 차례로', '이전<br>차례', rw.k <= 0)}${rf('tnext', 'rwlast', '다음 차례로', '다음<br>차례', end)}
-      ${rf('prev', 'rwprev', '한 수 뒤로', '한 수<br>뒤로', rw.k <= 0)}${rf('next', 'rwnext', '한 수 앞으로', '한 수<br>앞으로', end)}</div>
+      ${rf('prev', 'rwprev', '한 수 뒤로', '한 수<br>뒤로', rw.k <= 0)}${rf('next', 'rwnext', '한 수 앞으로', '한 수<br>앞으로', end)}
+      <div class="rwx4">${xb}</div></div>
     <div class="vwbox"><div class="vwcap ${side}" role="button" tabindex="0" aria-label="행동 기록 전체 보기" title="누르면 행동 기록 전체"><div class="vwtop">${who ? `<b class="vwh">${esc(who)}</b>` : ''}<span class="vwn">${esc(turnTxt)}</span><span class="vwk">${rw.k} / ${rw.n}수</span><span class="vwlg" aria-hidden="true">${ICON.chat}<span>전체 기록</span></span></div><div class="vwt">${cap}</div></div></div>`;
-  app.innerHTML = `<div class="arena rwmode"><div class="table">${matHtml(true, ctl)}<div class="hl-layer"></div>
+  app.innerHTML = `<div class="arena rwmode"><div class="table">${matHtml(true, ctl)}<div class="rbtns rwxr">${xb}</div><div class="hl-layer"></div>
     </div>${lobbyBtn()}</div>`;
   app.querySelectorAll('[data-rw]').forEach(b => b.onclick = () => {
     const k = b.dataset.rw;
     if (k === 'close') return endRewatch();
     if (k === 'play') { rw.playing = !rw.playing; drawRw(false); rwPlan(); return; }
+    if (k === 'swap') { swapView(); drawRw(false); swapToast(); return; }
+    if (k === 'log') return openRwLog();
     if (k === 'prev' || k === 'next') return rwGo(rw.k + (k === 'next' ? 1 : -1));
     rwTurnJump(k === 'tnext' ? 1 : -1);
   });
-  app.querySelectorAll('.handbar [data-hand]').forEach(el => el.onclick = () => { const x = (cur.p[bottomSeat()].hand || []).find(h => String(h.i) === el.dataset.hand); if (x) openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(x.c))}`); });
+  app.querySelectorAll('.handbar .pc[data-hand], .handbar .pc[data-k]').forEach(el => { el.classList.add('peekable'); el.onclick = () => { const id = el.dataset.hand || el.dataset.k, x = (cur.p[bottomSeat()].hand || []).find(h => String(h.i) === id); if (x) openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(x.c))}`); }; }); // 관전 화면처럼 아래 손패도 눌러서 보기
   const onCur = fn => e => { const sv = G.view; G.view = cur; try { fn(e); } finally { G.view = sv; } }; // 대전 중 리플레이: 누를 때도 그 장면 기준
   app.querySelectorAll('.mat [data-sid]').forEach(el => el.onclick = onCur(() => { const f = findSlot(el.dataset.sid); if (f) openSheet(`<button class="x sm" data-close>닫기</button>${slotInfoHtml(f)}`, bindCardPeek); }));
   bindToolPeek(() => cur);
@@ -3038,6 +3167,7 @@ async function renderReplay(id, k0) {
   let info; try { info = await api(`/api/games/${id}/info`); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
   const k = k0 >= 0 ? Math.min(k0, info.n) : info.over ? 0 : info.n;
   G = { id, view: null, lines: info.lines, cards: info.cards, specs: [], ui: {} };
+  try { G.ui.flip = localStorage.getItem('flip:' + id) === '1'; } catch {}
   const rw = { mode: 'page', id, me: info.me, n: info.n, k, lines: info.lines, views: {}, playing: false, timer: null, prev: null, start: k, over: info.over };
   G.rw = rw;
   leaveGame = () => { if (G.rw) clearTimeout(G.rw.timer); G.rw = null; document.body.classList.remove('in-game'); };

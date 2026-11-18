@@ -173,4 +173,22 @@ assert.deepEqual(R2.s.p[0].deck, st2.s.p[0].deck);
   if (Sx.current === me) assert.ok(!(Sx.p[me].used.ab || []).length, '차례가 바뀌면 지워짐');
   console.log('ability mark ok');
 }
+// 손패 여러 장·무작위 (11/18): 덱에 넣고 섞기, 무작위로 트래시, 상대 손패 무작위로 덱 아래
+{
+  const L4 = log.slice(0, 12); const S = replay(init, L4).s; const me = S.current, op = 1 - me;
+  const ap = (who, a, ok = true) => { const r = apply(S, who, a, L4.length); if (r.ok) L4.push({ who, a }); assert.equal(!!r.ok, ok, JSON.stringify(r)); return r; };
+  const h0 = [...S.p[me].hand], d0 = S.p[me].deck.length;
+  let r = ap(me, { type: 'move', iids: h0.slice(0, 2), to: { z: 'deck', p: me, pos: 'shuffle' } });
+  assert.equal(S.p[me].deck.length, d0 + 2); assert.equal(S.p[me].hand.length, h0.length - 2); assert.ok(/덱에 넣고 섞었어요/.test(r.ev[0].pub), r.ev[0].pub);
+  const h1 = S.p[me].hand.length, t1 = S.p[me].discard.length;
+  r = ap(me, { type: 'move', random: { p: me, n: 2 }, to: { z: 'discard', p: me } });
+  assert.equal(S.p[me].hand.length, h1 - 2); assert.equal(S.p[me].discard.length, t1 + 2); assert.ok(/손패에서 무작위로/.test(r.ev[0].pub), r.ev[0].pub);
+  const oh = S.p[op].hand.length, od = S.p[op].deck.length;
+  r = ap(me, { type: 'move', random: { p: op, n: 1 }, to: { z: 'deck', p: op, pos: 'bottom' } });
+  assert.equal(S.p[op].hand.length, oh - 1); assert.equal(S.p[op].deck.length, od + 1);
+  assert.ok(/상대 손패에서 무작위로 1장/.test(r.ev[0].pub), r.ev[0].pub); assert.equal(r.ev[0].ownBy, op, '이름은 손패 주인만');
+  const R = replay(init, L4); assert.deepEqual(R.s.p[op].deck, S.p[op].deck, '다시 돌려도 같은 카드'); assert.deepEqual(R.s.p[me].discard, S.p[me].discard);
+  ap(me, { type: 'move', random: { p: me, n: 1 }, to: { z: 'discard', p: me }, iids: [] }); // iids 없이도 됨
+  console.log('hand random ok');
+}
 console.log('waiting', waitingOn(state), 'log', log.length, 'OK');

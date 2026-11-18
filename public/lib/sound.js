@@ -64,6 +64,7 @@ const FX = {
   pop: t => { noise(t, 0.02, { ft: 'highpass', f: 4000, vol: 0.07 }); tone(900, t, 0.06, { to: 600, vol: 0.06 }); },
   open: t => { noise(t, 0.13, { f: 1200, to: 2600, vol: 0.06, q: 0.9, a: 0.02 }); },
   notify: t => { bell(N(84), t, 0.7, 0.05); },
+  chat: t => { noise(t, 0.03, { f: 2400, q: 1.5, vol: 0.05 }); bell(N(81), t, 0.45, 0.05); bell(N(88), t + 0.11, 0.7, 0.05); }, // 선수 채팅: 짧은 '띠링' 두 음
   error: t => { tone(180, t, 0.1, { to: 120, vol: 0.22 }); noise(t, 0.05, { ft: 'lowpass', f: 700, vol: 0.12 }); tone(160, t + 0.13, 0.12, { to: 100, vol: 0.2 }); },
   draw: t => { noise(t, 0.2, { f: 1600, to: 3800, vol: 0.13, q: 0.9, a: 0.03 }); noise(t + 0.17, 0.03, { ft: 'highpass', f: 5000, vol: 0.06 }); },
   place: t => { noise(t, 0.07, { ft: 'lowpass', f: 900, vol: 0.32 }); tone(130, t, 0.12, { to: 55, vol: 0.32 }); noise(t, 0.012, { ft: 'highpass', f: 6000, vol: 0.12 }); },
@@ -151,4 +152,4 @@ function set(k, v) {
   S[k] = v; save(); if (ctx) applyVol();
   if (k === 'bgm' || k === 'mute') { if (S.bgm && !S.mute) { if (unlocked) { ensure(); startLoop(); } } else stopLoop(); }
 }
-export default { sfx, music, set, get: k => S[k], unlock, names: Object.keys(FX) };
+export default { sfx, music, set, get: k => S[k], unlock, ready: () => unlocked, names: Object.keys(FX) };
