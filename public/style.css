@@ -1,7 +1,7 @@
 [hidden] { display: none !important; }
 /* 밝고 둥근 화면 + 볼 줄무늬 링 (고른 버튼 시안 6-약을 화면 전체에) */
 :root {
-  color-scheme: light; --hh: 62px;
+  color-scheme: light; --hh: 62px; --pw: #fff; --pw-hot: #fff7e0; /* --pw: 흰 상자·단추 바탕 (다크 모드에서 바뀜) */
   --sky1: #cfeeff; --sky2: #eef9ff; --sky3: #fffaf1;
   --panel: #ffffff; --panel2: #f2f7fb; --line: #dfe9f1; --text: #2e3a46; --muted: #7c8a99;
   --head: #1f6f8b; --accent: #ff8a3d; --teal: #22b8a0; --teal2: #18a08b; --blue: #3d8ef0; --good: #2fbf71; --warn: #ffb020; --bad: #f05a4f; --judge: #8f6bff;
@@ -15,7 +15,7 @@
   --m-edge: #cfe7dc; --m-line: rgba(255,255,255,.75); --m-zone: rgba(255,255,255,.28); --m-label: #2f7f64; --m-labelbg: #eafff4; --m-empty: rgba(255,255,255,.8); --m-ink: #24584a; --m-cnt: rgba(255,255,255,.9); --m-glow: rgba(30, 90, 70, .25);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; color: var(--text); font-family: var(--fb); font-size: 15px; line-height: 1.5; overflow-x: hidden; word-break: keep-all; overflow-wrap: break-word; } /* 한글 낱말 가운데서 줄이 바뀌지 않게 */
+html, body { margin: 0; color: var(--text); font-family: var(--fb); font-size: 15px; line-height: 1.5; overflow-x: clip; /* hidden 이면 body 가 따로 스크롤 상자가 돼서 머리줄(sticky)이 같이 올라가 버림 */ word-break: keep-all; overflow-wrap: break-word; } /* 한글 낱말 가운데서 줄이 바뀌지 않게 */
 html { background: #04121f; }
 body { background: transparent; min-height: 100vh; }
 /* 전체 배경 '디지털 경기장' (11/18 링크 님 고름): 어두운 청록 바탕 + 육각 격자 + 가운데 빛, 빛 띠가 천천히 지나가고 격자 위 점이 깜빡임.
@@ -51,6 +51,7 @@ a { color: var(--blue); }
 /* 머리 */
 body.nohdr { --hh: 0px; }
 body.nohdr header.top { display: none; }
+@media (max-width: 760px) { body.deckedit { --hh: 0px; } body.deckedit header.top { display: none; } } /* 덱 고치기: 폰에서만 머리줄을 숨기고 PC는 그대로 */
 header.top { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: rgba(255, 255, 255, .96); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 40; flex-wrap: wrap; box-shadow: 0 2px 14px rgba(40, 90, 140, .1); height: var(--hh); }
 .brand { font-family: var(--fh); font-size: 1.25rem; color: var(--head); text-decoration: none; display: flex; align-items: center; gap: 9px; }
 .ball { --c: var(--r2); width: 30px; height: 30px; border-radius: 50%; flex: none; position: relative; display: inline-block; background: linear-gradient(#fff 0 44%, var(--band) 44% 56%, #fff 56%); box-shadow: inset 0 0 0 3px var(--r2); }
@@ -60,7 +61,7 @@ header.top { display: flex; align-items: center; gap: 8px; padding: 8px 14px; ba
 #nav a { font-family: var(--fh); text-decoration: none; color: var(--text); padding: 4px 14px 4px 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; border: 2.5px solid transparent; transition: translate .18s cubic-bezier(.3,.7,.4,1.5); }
 #nav a .ic { color: var(--muted); }
 @media (hover: hover) { #nav a:hover { translate: 0 -1px; } }
-#nav a.on { background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--r1), var(--r2)) border-box; color: var(--teal2); box-shadow: 0 3px 8px rgba(40, 90, 140, .14); }
+#nav a.on { background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(135deg, var(--r1), var(--r2)) border-box; color: var(--teal2); box-shadow: 0 3px 8px rgba(40, 90, 140, .14); }
 #nav a.on .ic { color: var(--r2); }
 .sndbtn { width: 42px; height: 42px; min-height: 0; padding: 0; border-radius: 50%; }
 .sndbtn svg { width: 22px; height: 22px; }
@@ -73,11 +74,11 @@ main { max-width: 1180px; margin: 0 auto; padding: 16px; }
 body.in-game main { max-width: none; padding: 0; }
 
 /* 공통: 상자 */
-.card-box { background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, #c9efe3, #cbe6f8) border-box; border: 2px solid transparent; border-radius: 24px; padding: 18px; box-shadow: var(--shadow); margin-bottom: 14px; }
+.card-box { background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(135deg, #c9efe3, #cbe6f8) border-box; border: 2px solid transparent; border-radius: 24px; padding: 18px; box-shadow: var(--shadow); margin-bottom: 14px; }
 
 /* 공통: 버튼 = 흰 알약 + 링 테두리. 마우스를 올리면 살짝 뜨고, 누르면 통 튀며 링이 퍼짐 */
 button, .btn { --c: var(--r2); --c2: var(--r1); position: relative; font-size: 1rem; border: 2.5px solid transparent; border-radius: 999px; padding: 7px 18px; min-height: 44px;
-  background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--c2), var(--c)) border-box;
+  background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(135deg, var(--c2), var(--c)) border-box;
   color: color-mix(in srgb, var(--c) 78%, #0b2a3a); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none;
   box-shadow: 0 3px 8px rgba(40, 90, 140, .13); transition: translate .18s cubic-bezier(.3,.7,.4,1.5), box-shadow .18s, filter .18s; }
 @media (hover: hover) { button:hover, .btn:hover { translate: 0 -2px; box-shadow: 0 7px 14px rgba(40, 90, 140, .18); } }
@@ -117,7 +118,7 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 .tab { padding: 5px 16px; border-radius: 999px; background: transparent; cursor: pointer; border: 2.5px solid transparent; min-height: 40px; color: var(--text); text-decoration: none; display: inline-flex; align-items: center; gap: 7px; box-shadow: none; }
 .tab::before { content: ''; width: 9px; height: 9px; border-radius: 50%; flex: none; background: #fff; box-shadow: 0 0 0 2px #c5d3df; transition: box-shadow .2s; }
 @media (hover: hover) { .tab:hover { box-shadow: none; } }
-.tab.on { background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--r1), var(--r2)) border-box; color: var(--teal2); box-shadow: 0 3px 8px rgba(40, 90, 140, .14); }
+.tab.on { background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(135deg, var(--r1), var(--r2)) border-box; color: var(--teal2); box-shadow: 0 3px 8px rgba(40, 90, 140, .14); }
 .tab.on::before { box-shadow: 0 0 0 2.5px var(--r2), inset 0 0 0 2px #fff; background: var(--r1); }
 /* 좁은 화면: 탭을 같은 크기 2칸 격자로 (3+1, 3+2처럼 혼자 남는 줄 없이). 방 만들기는 한 줄 전체 */
 @media (max-width: 620px) {
@@ -186,11 +187,11 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 .dlrow[hidden] { display: none; }
 @media (max-width: 400px) { .rseg.n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .item { display: flex; gap: 12px; align-items: center; padding: 12px 16px 12px 12px; border-radius: 26px; flex-wrap: wrap; min-height: 74px; border: 2.5px solid transparent;
-  background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, #dcf1ea, #dbe9f5) border-box; box-shadow: var(--shadow); transition: translate .2s cubic-bezier(.3,.7,.4,1.5), box-shadow .2s; }
+  background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(135deg, #dcf1ea, #dbe9f5) border-box; box-shadow: var(--shadow); transition: translate .2s cubic-bezier(.3,.7,.4,1.5), box-shadow .2s; }
 @media (hover: hover) { .item:hover { translate: 0 -2px; box-shadow: 0 12px 26px rgba(40, 90, 140, .16); } }
 .item > .ring { width: 50px; height: 50px; }
 .item .t { font-family: var(--fh); color: var(--head); font-size: 1.12rem; }
-.item.hot { background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, #ffc46b, #ff7a2f) border-box; box-shadow: 0 0 0 4px rgba(255, 150, 70, .14), var(--shadow); }
+.item.hot { background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(135deg, #ffc46b, #ff7a2f) border-box; box-shadow: 0 0 0 4px rgba(255, 150, 70, .14), var(--shadow); }
 .k-turn { --c: #ff8a3d; } .k-wait { --c: var(--r2); } .k-open { --c: var(--r1); } .k-watch { --c: #6a8cf0; } .k-done { --c: #f2b32b; } .k-ok { --c: var(--good); } .k-warn { --c: var(--warn); }
 .empty-note { display: flex; align-items: center; gap: 10px; color: var(--muted); padding: 18px; border-radius: 22px; background: rgba(255,255,255,.95); border: 2px dashed #cfe0ec; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #fff; color: var(--text); padding: 10px 20px 10px 12px; border-radius: 999px; z-index: 200; max-width: calc(100vw - 32px); font-family: var(--fh); box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--r2) 45%, #fff), 0 10px 30px rgba(40, 90, 140, .25); animation: rise .3s cubic-bezier(.2,.9,.3,1.3); display: flex; align-items: center; gap: 10px; }
@@ -280,7 +281,7 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 .dtile.new .ring { width: 64px; height: 64px; }
 .dtile.new .ring svg { width: 30px; height: 30px; }
 /* 덱 고치기 */
-.dk-top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; padding: 8px 0 6px; background: linear-gradient(#06233a 80%, transparent); }
+.dk-top { position: sticky; top: var(--hh); z-index: 20; display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; padding: 8px 0 6px; background: linear-gradient(#06233a 80%, transparent); }
 .dk-top #dn { flex: 1 1 120px; min-width: 0; height: 40px; padding: 6px 12px; font-family: var(--fh); font-size: 1rem; border-radius: 14px; }
 .dk-top > button { flex: none; min-height: 40px; height: 40px; }
 .dk-top svg, .sheet [data-cv] svg { width: 18px; height: 18px; flex: none; }
@@ -555,7 +556,7 @@ body.mat-custom.mat-light, .mt-img.mt-light { --m-veil: rgba(255, 255, 255, .2);
 .cuses i .ic { width: 12px; height: 12px; } .cuses i.done { background: #3ccf86; }
 .ztags > * { pointer-events: auto; }
 .ztag { --pc: #3484e6; --pc2: #6fb6ff; display: inline-flex; align-items: center; padding: 3px 13px 3px; border-radius: 999px; font-family: var(--fh); font-size: .84rem; line-height: 1.25; color: var(--pc); white-space: nowrap;
-  background: linear-gradient(#fff, #f3f8fd) padding-box, linear-gradient(135deg, var(--pc2), var(--pc)) border-box; border: 2px solid transparent; box-shadow: 0 2px 6px rgba(0,0,0,.16), inset 0 -2px 0 color-mix(in srgb, var(--pc) 10%, transparent); }
+  background: linear-gradient(var(--pw), var(--pw2, #f3f8fd)) padding-box, linear-gradient(135deg, var(--pc2), var(--pc)) border-box; border: 2px solid transparent; box-shadow: 0 2px 6px rgba(0,0,0,.16), inset 0 -2px 0 color-mix(in srgb, var(--pc) 10%, transparent); }
 .ztag .zn { position: relative; letter-spacing: .01em; }
 .ztag.turn { color: #fff; background: linear-gradient(135deg, var(--pc2), var(--pc)) padding-box, linear-gradient(135deg, #fff, color-mix(in srgb, var(--pc) 40%, #fff)) border-box; box-shadow: 0 0 0 3px color-mix(in srgb, var(--pc) 22%, transparent), 0 3px 8px rgba(0,0,0,.2); animation: tagglow 2s ease-in-out infinite; }
 @keyframes tagglow { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--pc) 14%, transparent), 0 3px 8px rgba(0,0,0,.2); } }
@@ -655,7 +656,7 @@ input.wide { width: 100%; box-sizing: border-box; }
 .pzstack .zone-mark { width: var(--pw); }
 
 /* 알약 (리플레이 막대 등) */
-.pill { font-size: .9rem; padding: 3px 14px; border-radius: 999px; border: 2px solid transparent; background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, #c9efe3, #cbe6f8) border-box; color: var(--head); white-space: nowrap; box-shadow: var(--shadow2); }
+.pill { font-size: .9rem; padding: 3px 14px; border-radius: 999px; border: 2px solid transparent; background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(135deg, #c9efe3, #cbe6f8) border-box; color: var(--head); white-space: nowrap; box-shadow: var(--shadow2); }
 .pill.main { background: linear-gradient(90deg, var(--r1), var(--r2)); border-color: transparent; color: #fff; box-shadow: inset 0 0 0 2px rgba(255,255,255,.38), var(--shadow2); }
 .pill.warn { color: #b26a00; } .pill.ghost { color: var(--muted); }
 /* 오른쪽 세로 막대 (PTCGL처럼 화면 오른쪽 끝): 위 사람 남은 사이드(빨강) · 몇 번째 차례·남은 시간 · 아래 사람 남은 사이드(파랑) */
@@ -944,9 +945,9 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .addib { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 2px 8px; }
 .addia { display: flex; gap: 8px; } .addia button { flex: 1; min-height: 48px; font-family: var(--fh); } .addia .ic { width: 18px; height: 18px; }
 .artrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-top: 4px; }
-.artc { flex-direction: column; gap: 4px; min-height: 0; padding: 5px; border-radius: 12px; border-width: 2px; background: linear-gradient(#fff, #fff) padding-box, linear-gradient(#e3ebf2, #e3ebf2) border-box; box-shadow: none; }
+.artc { flex-direction: column; gap: 4px; min-height: 0; padding: 5px; border-radius: 12px; border-width: 2px; background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(#e3ebf2, #e3ebf2) border-box; box-shadow: none; }
 .artc .cpic { width: 100%; border-radius: 6px; overflow: hidden; } .artc small { font-size: .7rem; color: var(--muted); }
-.artc.on { background: linear-gradient(#fff7e0, #fff7e0) padding-box, linear-gradient(135deg, #ffd45c, #ff9d2e) border-box; box-shadow: 0 0 0 3px rgba(255, 170, 40, .25); }
+.artc.on { background: linear-gradient(var(--pw-hot), var(--pw-hot)) padding-box, linear-gradient(135deg, #ffd45c, #ff9d2e) border-box; box-shadow: 0 0 0 3px rgba(255, 170, 40, .25); }
 @media (max-width: 640px) {
   .sheet > .in.addsheet { height: 94vh; padding: 12px 10px calc(8px + env(safe-area-inset-bottom)) 8px; border-radius: 24px 24px 0 0; }
   .adds { grid-template-columns: 58px minmax(0, 1fr); gap: 8px; }
@@ -964,11 +965,11 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .cwg { display: flex; flex-direction: column; gap: 5px; }
 .cwl { font-family: var(--fh); font-size: .86rem; color: var(--muted); }
 .cwrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
-.cwc { --cw: 100%; flex-direction: column; justify-content: flex-start; gap: 3px; min-height: 0; padding: 5px 5px 6px; border-radius: 14px; border-width: 2px; background: linear-gradient(#fff, #fff) padding-box, linear-gradient(#e3ebf2, #e3ebf2) border-box; box-shadow: none; }
+.cwc { --cw: 100%; flex-direction: column; justify-content: flex-start; gap: 3px; min-height: 0; padding: 5px 5px 6px; border-radius: 14px; border-width: 2px; background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(#e3ebf2, #e3ebf2) border-box; box-shadow: none; }
 .cwc .pc.cwpc { width: 100%; box-shadow: 0 2px 5px rgba(20, 50, 80, .18); pointer-events: none; }
 .cwc .cwn { font-family: var(--fh); font-size: .78rem; line-height: 1.2; color: var(--text); text-align: center; word-break: keep-all; overflow-wrap: anywhere; }
 .cwc small { font-size: .68rem; color: var(--muted); line-height: 1; }
-.cwc[aria-pressed=true], .cws[aria-pressed=true] { background: linear-gradient(#fff7e0, #fff7e0) padding-box, linear-gradient(135deg, #ffd45c, #ff9d2e) border-box; box-shadow: 0 0 0 3px rgba(255, 170, 40, .25); }
+.cwc[aria-pressed=true], .cws[aria-pressed=true] { background: linear-gradient(var(--pw-hot), var(--pw-hot)) padding-box, linear-gradient(135deg, #ffd45c, #ff9d2e) border-box; box-shadow: 0 0 0 3px rgba(255, 170, 40, .25); }
 .cws { min-height: 40px; padding: 4px 14px; font-family: var(--fh); }
 .cwg .cwrow:has(.cws) { display: flex; flex-wrap: wrap; gap: 8px; }
 .acts1 { display: flex; margin-top: 14px; position: sticky; bottom: 0; } .acts1 .primary { flex: 1; min-height: 50px; font-family: var(--fh); font-size: 1.05rem; } .acts1 .ic { width: 20px; height: 20px; }
@@ -1323,3 +1324,7 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .prompt.look .lkbar { justify-content: center; }
 .k-admin { --c: #7b5cd6; }
 .pushmsg.warnmsg { color: #b26a00; } .sw:disabled { opacity: .45; cursor: default; }
+.loadwait { display: grid; place-items: center; padding: 18vh 0; } /* 아주 늦을 때만 보이는 작은 볼 (글자 없이) */
+.thmseg { display: flex; gap: 6px; flex-wrap: wrap; } .thmseg button[aria-pressed=true] { --c: var(--accent); --c2: #ffc35c; background: linear-gradient(var(--pw-hot), var(--pw-hot)) padding-box, linear-gradient(135deg, var(--c2), var(--c)) border-box; } .thmseg .ic { width: 18px; height: 18px; }
+@media (max-width: 380px) { #nav a { padding: 3px 6px; } header.top { gap: 4px; } } /* 360px 폰에서도 밝기 단추까지 한 줄에 */
+@media (max-width: 335px) { .thmbtn { display: none; } } /* 아주 좁은 폰: 머리줄이 넘치지 않게 (설정에서 바꿈) */

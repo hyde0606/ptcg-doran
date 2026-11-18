@@ -88,7 +88,7 @@ export default {
     if ((path === '/api/login' || path === '/api/signup') && req.method === 'POST') {
       const b = await req.json().catch(() => ({})), ip = req.headers.get('cf-connecting-ip') || 'local', dev = devOf(req.headers.get('user-agent') || '');
       const name = nameOk(b.name), pw = String(b.pw || '');
-      const r = path === '/api/login' ? await lobby.signin(name, pw, dev)
+      const r = path === '/api/login' ? await lobby.signin(name, pw, ip, dev)
         : await lobby.signup(name, pw, !!env.GROUP_CODE && String(b.code || '') === env.GROUP_CODE, ip, dev);
       if (r.error) return json(r, r.status || 400);
       const tok = await makeToken(key, r.user.uid, r.tv);
@@ -249,8 +249,9 @@ export class Lobby extends DurableObject {
     let r = this.one("SELECT v FROM kv WHERE k='secret'"); if (r) return JSON.parse(r.v);
     const v = b64(crypto.getRandomValues(new Uint8Array(32))); this.sql.exec("INSERT OR REPLACE INTO kv VALUES('secret',?)", JSON.stringify(v)); return v;
   }
-  locked(key) { const x = this.lim.get(key); return x && x.until > Date.now() ? Math.ceil((x.until - Date.now()) / 60e3) : 0; }
+  locked(key) { const x = key && this.lim.get(key); return x && x.until > Date.now() ? Math.ceil((x.until - Date.now()) / 60e3) : 0; }
   failed(key, max = 6) { // 10분 안에 여러 번 틀리면 5분 쉬기
+    if (!key) return;
     const now = Date.now(); let x = this.lim.get(key);
     if (!x || now - x.t0 > 10 * 60e3) x = { n: 0, t0: now, until: 0 };
     if (++x.n >= max) Object.assign(x, { n: 0, t0: now, until: now + 5 * 60e3 });
@@ -262,14 +263,14 @@ export class Lobby extends DurableObject {
     this.sql.exec('INSERT INTO logins VALUES(?,?,?)', uid, now, dev);
     this.sql.exec('DELETE FROM logins WHERE uid=? AND t NOT IN (SELECT t FROM logins WHERE uid=? ORDER BY t DESC LIMIT 20)', uid, uid);
   }
-  async signin(name, pw, dev) {
+  async signin(name, pw, ip, dev) {
     if (!name || !pw) return { error: '닉네임과 비밀번호를 넣어 주세요.' };
-    const key = 'p:' + name, wait = this.locked(key);
+    const key = 'p:' + name, ik = ip === 'local' ? '' : 'i:' + ip, wait = Math.max(this.locked(key), this.locked(ik)); // 닉네임별 6번, 같은 곳(접속 주소)에서 여러 닉네임 합쳐 20번
     if (wait) return { error: `비밀번호를 여러 번 틀렸어요. ${wait}분 뒤에 다시 해 주세요.`, status: 429 };
     const u = this.one('SELECT uid,name,pw,tv,temp FROM users WHERE name=?', name);
-    if (!u) return { error: "그 닉네임은 아직 없어요. 처음 왔다면 '처음 왔어요'에서 가입해 주세요.", status: 404, need: 'signup' };
+    if (!u) { this.failed(ik, 20); return { error: "그 닉네임은 아직 없어요. 처음 왔다면 '처음 왔어요'에서 가입해 주세요.", status: 404, need: 'signup' }; }
     if (!u.pw) return { error: "이 닉네임은 아직 비밀번호가 없어요. '처음 왔어요'에서 모임 코드와 새 비밀번호를 넣으면 이 닉네임 그대로 쓸 수 있어요.", status: 409, need: 'claim' };
-    if (!await pwCheck(u.pw, pw)) { this.failed(key); return { error: '비밀번호가 맞지 않아요.', status: 403 }; }
+    if (!await pwCheck(u.pw, pw)) { this.failed(key); this.failed(ik, 20); return { error: '비밀번호가 맞지 않아요.', status: 403 }; }
     this.lim.delete(key); this.logged(u.uid, dev);
     return { user: { uid: u.uid, name: u.name, must: !!u.temp }, tv: u.tv | 0 };
   }
@@ -295,7 +296,10 @@ export class Lobby extends DurableObject {
   }
   async setPw(uid, old, pw) {
     const u = this.one('SELECT pw,tv,temp FROM users WHERE uid=?', uid); if (!u) return { error: '로그인이 필요해요.', status: 401 };
-    if (!u.temp && u.pw && !await pwCheck(u.pw, old)) return { error: '지금 비밀번호가 맞지 않아요.', status: 403 };
+    const key = 'o:' + uid, wait = this.locked(key);
+    if (wait) return { error: `비밀번호를 여러 번 틀렸어요. ${wait}분 뒤에 다시 해 주세요.`, status: 429 };
+    if (!u.temp && u.pw && !await pwCheck(u.pw, old)) { this.failed(key); return { error: '지금 비밀번호가 맞지 않아요.', status: 403 }; }
+    this.lim.delete(key);
     if (pw.length < 4 || pw.length > 64) return { error: '새 비밀번호는 4자 이상으로 정해 주세요.' };
     const tv = (u.tv | 0) + 1;
     this.sql.exec('UPDATE users SET pw=?, temp=0, tv=? WHERE uid=?', await pwHash(pw), tv, uid);

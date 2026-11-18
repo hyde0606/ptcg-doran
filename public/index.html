@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>닌포케카 · 닌도란 포켓몬 카드 게임</title>
 <meta name="theme-color" content="#f6efe3">
+<meta name="color-scheme" content="only light">
+<script>try{var t=localStorage.getItem('theme')==='dark'?'dark':'light';document.documentElement.dataset.theme=t;document.querySelector('meta[name=color-scheme]').content='only '+t}catch(e){document.documentElement.dataset.theme='light'}</script>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/icons/apple-180.png">
@@ -20,12 +22,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Jua&family=Rubik:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/skins.css">
+<link rel="stylesheet" href="/dark.css">
 </head>
 <body>
 <header class="top">
   <a class="brand" href="#lobby"><span class="ball" aria-hidden="true"></span><span class="bt">닌포케카</span></a>
   <nav id="nav"></nav>
   <button class="instbtn" id="inst" aria-label="앱으로 설치" hidden></button>
+  <button class="sndbtn thmbtn" id="thm" aria-label="다크 모드로" hidden></button>
   <button class="sndbtn" id="snd" aria-label="소리 켜고 끄기" hidden></button>
 </header>
 <main id="app"><p class="muted pad">불러오는 중…</p></main>

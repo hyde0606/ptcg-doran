@@ -14,6 +14,8 @@ let ME = null, ALL = null, IDX = null;
 // ---------- 아이콘 (선 그림) ----------
 const svg = d => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICON = {
+  sun: svg('<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>'),
+  moon: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
   battle: svg('<path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/>'),
   deck: svg('<rect x="8" y="3" width="12" height="16" rx="2"/><path d="M5 6.5V19a2 2 0 0 0 2 2h9"/>'),
   gear: svg('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/>'),
@@ -265,7 +267,22 @@ function ask(title, html, okLabel = '확인', cls = 'primary') {
 
 // ---------- 화면 이동 ----------
 const NAV = [['#lobby', 'battle', '대전'], ['#decks', 'deck', '덱'], ['#record', 'trophy', '전적'], ['#settings', 'gear', '설정']];
-function nav(cur) { $('#nav').innerHTML = ME ? NAV.map(([h, ic, l]) => `<a href="${h}" class="${cur === h ? 'on' : ''}" aria-label="${l}">${ICON[ic]}<span class="lb">${l}</span></a>`).join('') : ''; drawSnd(); drawInst(); }
+function nav(cur) { $('#nav').innerHTML = ME ? NAV.map(([h, ic, l]) => `<a href="${h}" class="${cur === h ? 'on' : ''}" aria-label="${l}">${ICON[ic]}<span class="lb">${l}</span></a>`).join('') : ''; drawSnd(); drawThm(); drawInst(); }
+// 화면 밝기: 일반(기본) / 다크. 기기 설정은 따르지 않고 이 기기에 저장
+const THEME = { get() { try { return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; } }, set(t) { try { localStorage.setItem('theme', t); } catch {} applyTheme(t); } };
+function applyTheme(t = THEME.get()) {
+  document.documentElement.dataset.theme = t;
+  const m = document.querySelector('meta[name=color-scheme]'); if (m) m.content = 'only ' + t;
+  const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = t === 'dark' ? '#0f1926' : '#f6efe3';
+  drawThm(); document.querySelectorAll('[data-thm]').forEach(b => b.setAttribute('aria-pressed', b.dataset.thm === t));
+}
+function drawThm() {
+  const b = $('#thm'); if (!b) return;
+  const d = THEME.get() === 'dark';
+  b.hidden = false; b.innerHTML = d ? ICON.sun : ICON.moon;
+  b.setAttribute('aria-label', d ? '일반 모드로 바꾸기' : '다크 모드로 바꾸기'); b.title = d ? '일반 모드' : '다크 모드';
+  b.onclick = () => THEME.set(d ? 'light' : 'dark');
+}
 function drawSnd() { // 머리의 소리 단추: 누르면 효과음·배경음악 모두 끄고 켬
   const b = $('#snd'); if (!b) return;
   const off = Sound.get('mute');
@@ -283,7 +300,7 @@ async function route() {
   if (!ME && h !== '#login') { location.hash = '#login'; return; }
   const [base, arg] = h.split('/');
   armFs(base);
-  document.body.classList.toggle('nohdr', base === '#game' || base === '#replay'); // 맨 위 머리줄은 로비·덱 목록·설정에서만 (덱 고치기는 deckEditor에서 숨김)
+  document.body.classList.toggle('nohdr', base === '#game' || base === '#replay'); document.body.classList.remove('deckedit'); // 맨 위 머리줄은 대전·리플레이 말고 모두. 덱 고치기는 폰에서만 숨김 (deckEditor)
   nav(base === '#me' || base === '#members' ? '#settings' : base);
   Sound.music(base === '#game' ? 'battle' : 'lobby');
   if (base === '#login') return renderLogin();
@@ -411,11 +428,11 @@ async function pushOffer() { // 비동기 판을 만들거나 들어갈 때 한 
   if (ok) PUSH.on().then(() => toast('알림을 켰어요.'), e => toast(e.message));
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.t === 'go' && e.data.url) location.href = e.data.url; });
-function screenHtml() { // 설정 → 폰 화면
-  const rows = [];
+function screenHtml() { // 설정 → 화면 (밝기 + 폰 화면)
+  const t = THEME.get(), rows = [`<div class="r"><span class="nm">화면 밝기</span><div class="thmseg" role="group" aria-label="화면 밝기"><button class="sm" data-thm="light" aria-pressed="${t === 'light'}">${ICON.sun}일반</button><button class="sm" data-thm="dark" aria-pressed="${t === 'dark'}">${ICON.moon}다크</button></div></div>`];
   if (fsOk()) rows.push(`<div class="r"><span class="nm">전체 화면</span><button class="sw" data-fsauto aria-label="대전판에 들어가면 전체 화면으로"></button><button class="sm" data-fsnow>${inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}지금 전체 화면`}</button></div>`);
   rows.push(`<div class="r"><span class="nm">홈 화면 추가</span>${isApp() ? '<span class="small muted">지금 앱으로 열려 있어요</span>' : `<button class="sm" data-a2hs>${ICON.homeAdd}${installEvt ? '설치하기' : '방법 보기'}</button>`}</div>`);
-  return `<section class="set"><h3>폰 화면</h3><div class="snd">${rows.join('')}
+  return `<section class="set"><h3>화면</h3><div class="snd">${rows.join('')}
     <p class="small muted" style="margin:0">홈 화면에 추가하면 주소창 없이 앱처럼 열려요.${fsOk() ? ' 전체 화면을 켜 두면 폰에서 대전판에 들어가 처음 누를 때 주소창이 사라져요(아이폰 사파리는 지원하지 않아요).' : ''} 이 설정은 이 기기에만 저장돼요.</p></div></section>`;
 }
 document.addEventListener('fullscreenchange', () => document.querySelectorAll('[data-fsnow]').forEach(b => b.innerHTML = inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}지금 전체 화면`));
@@ -485,15 +502,26 @@ function openPwSheet() {
     el.querySelector('form').onsubmit = async e => { e.preventDefault(); try { await savePw(el); closeSheet(); toast('비밀번호를 바꿨어요.'); } catch (er) { toast(er.message, 3200); } };
   });
 }
+// ---------- 목록 화면 깜빡임 없이: 받아 둔 자료로 바로 그리고, 새 자료가 다를 때만 다시 그림 ----------
+const VIEW = {};
+async function viewData(key, load, draw, { hash = location.hash || '#lobby', drawn = false } = {}) {
+  const old = VIEW[key]; let shown = drawn;
+  if (old && !drawn) { draw(old.v); shown = true; }
+  const slow = old ? 0 : setTimeout(() => { if (!shown && (location.hash || '#lobby') === hash) app.innerHTML = '<div class="loadwait"><div class="spin-ball"></div></div>'; }, 600); // 아주 늦을 때만 작게
+  try {
+    const v = await load(), sv = JSON.stringify(v); clearTimeout(slow);
+    if ((location.hash || '#lobby') !== hash) { VIEW[key] = { v, s: sv }; return; }
+    if (!old || old.s !== sv) { VIEW[key] = { v, s: sv }; if (old) keepScroll(() => draw(v)); else draw(v); }
+  } catch (e) { clearTimeout(slow); if (!shown) app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; }
+}
+function keepScroll(fn) { const y = scrollY; fn(); if (scrollY !== y) scrollTo(0, y); }
 // ---------- 전적 (내 승패, 상대별, 최근 판) ----------
 const fmtDay = t => { if (!t) return '—'; const d = new Date(t); return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString('ko-KR', { year: d.getFullYear() === new Date().getFullYear() ? undefined : '2-digit', month: 'numeric', day: 'numeric' }); };
 const fmtFull = t => t ? new Date(t).toLocaleString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 const fmtAgo = t => { if (!t) return '—'; const s = (Date.now() - t) / 1000; return s < 90 ? '방금' : s < 3600 ? `${Math.round(s / 60)}분 전` : s < 86400 ? `${Math.round(s / 3600)}시간 전` : s < 86400 * 30 ? `${Math.round(s / 86400)}일 전` : new Date(t).toLocaleDateString('ko-KR'); };
 const wld = o => `<em class="w">${o.w}승</em><em class="l">${o.l}패</em>${o.d ? `<em class="d">${o.d}무</em>` : ''}`;
-async function renderRecord() {
-  app.innerHTML = '<p class="muted pad">전적을 불러오는 중…</p>';
-  let s; try { s = await api('/api/stats'); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
-  if (location.hash !== '#record') return;
+function renderRecord() { return viewData('record', () => api('/api/stats'), drawRecord); }
+function drawRecord(s) {
   const T = s.total, n = T.w + T.l + T.d, rate = T.w + T.l ? Math.round(T.w * 100 / (T.w + T.l)) : null;
   const tile = (k, ic, l, v) => `<div class="rtile ${k}">${ringIcon(ic, 'k-' + k)}<span class="rl">${l}</span><b class="rv">${v}</b></div>`;
   const resChip = r => r === 'w' ? '<span class="chip ok">이김</span>' : r === 'l' ? '<span class="chip lose">짐</span>' : '<span class="chip">승부 없음</span>';
@@ -506,11 +534,11 @@ async function renderRecord() {
     <section class="set"><h3>최근 대전</h3>${rec ? `<div class="glist">${rec}</div>` : '<p class="muted small">끝난 판이 여기에 쌓여요.</p>'}${T.d ? '<p class="small muted">승부 없음: 관리자가 끝낸 판이에요. 승률에는 넣지 않아요.</p>' : ''}</section></div>`;
 }
 // ---------- 회원 관리 (관리자): 가입일, 마지막 접속, 로그인 기록, 비밀번호 초기화 ----------
-async function renderMembers() {
+function renderMembers() {
   if (!SK.admin) { location.hash = '#settings'; return; }
-  app.innerHTML = '<p class="muted pad">회원 목록을 불러오는 중…</p>';
-  let d; try { d = await api('/api/admin/users'); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
-  if (location.hash !== '#members') return;
+  return viewData('members', () => api('/api/admin/users'), drawMembers);
+}
+function drawMembers(d) {
   const us = d.users.slice().sort((a, b) => (b.seen || 0) - (a.seen || 0) || a.created - b.created);
   const pwChip = p => p === 'temp' ? '<span class="chip warn">임시 비밀번호</span>' : p === 'none' ? '<span class="chip">비밀번호 없음</span>' : '';
   const row = u => `<div class="mrow" data-u="${esc(u.uid)}" role="button" tabindex="0" aria-label="${esc(u.name)} 자세히">
@@ -680,6 +708,7 @@ function bindSettings(root, onArt, inSheet) {
   const tr = root.querySelector('[data-try]');
   if (tr) tr.onclick = () => ['draw', 'place', 'attack', 'coin', 'turnMine'].forEach((n, i) => setTimeout(() => Sound.sfx(n), i * 450));
   root.querySelectorAll('[data-pw]').forEach(b => b.onclick = openPwSheet);
+  root.querySelectorAll('[data-thm]').forEach(b => b.onclick = () => THEME.set(b.dataset.thm));
   const lo = root.querySelector('#lo');
   if (lo) lo.onclick = async () => { await api('/api/logout', {}); ME = null; try { localStorage.removeItem('skin'); } catch {} setSkin({}); location.hash = '#login'; };
 }
@@ -693,10 +722,8 @@ function openSettings(onArt) { openSheet(`<button class="x sm" data-close>닫기
 const fmtLeft = ms => { if (ms <= 0) return '기한 지남'; const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3); return h ? `${h}시간 ${m}분 남음` : `${m}분 남음`; };
 const modeKo = c => (c.mode === 'async' ? `비동기 · 결정마다 ${c.deadlineH}시간` : '실시간') + ` · ${c.bestOf === 3 ? '3판 2선승' : '1판'}` + (c.spectate === 'no' ? ' · 관전 끔' : '');
 let lobbyTab = (() => { try { return localStorage.getItem('lobbyTab') || 'mine'; } catch { return 'mine'; } })();
-async function renderLobby() {
-  app.innerHTML = '<p class="muted pad">방 목록을 불러오는 중…</p>';
-  let data, decks;
-  try { [data, decks] = await Promise.all([api('/api/rooms'), api('/api/decks')]); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
+function renderLobby() { return viewData('lobby', () => Promise.all([api('/api/rooms'), api('/api/decks')]), drawLobby); }
+function drawLobby([data, decks]) {
   const rooms = data.rooms;
   const mine = rooms.filter(r => r.mine && r.status !== 'done'), open = rooms.filter(r => r.status === 'open' && !r.mine), watch = rooms.filter(r => !r.mine && r.status === 'playing'), done = rooms.filter(r => r.status === 'done' || r.status === 'between');
   const myTurnN = mine.filter(r => r.myTurn).length;
@@ -730,7 +757,7 @@ async function renderLobby() {
   // 위쪽은 한 줄: 탭(내 대전·들어갈 방·관전·끝난 판) + 오른쪽 '방 만들기' (머리의 '대전'과 겹치는 제목은 뺌)
   app.innerHTML = `<div class="lobh"><div class="ltabs" role="tablist">${tabs.map(([k, l, n]) => `<button class="ltab ${lobbyTab === k ? 'on' : ''}" role="tab" aria-selected="${lobbyTab === k}" data-tab="${k}">${l}<b>${n}</b>${k === 'mine' && myTurnN ? `<i class="dot" title="내 차례 ${myTurnN}"></i>` : ''}</button>`).join('')}</div><button class="primary newroom" data-tab="new">${ICON.plus}<span>방 만들기</span></button></div>
     ${cur.length ? `<div class="rlist">${cur.map(roomCard).join('')}</div>` : `<div class="empty-note">${ringIcon('wait', 'k-wait')}<p>${emptyMsg}</p></div>`}`;
-  app.querySelectorAll('.ltab[data-tab]').forEach(b => b.onclick = () => { lobbyTab = b.dataset.tab; try { localStorage.setItem('lobbyTab', lobbyTab); } catch {} renderLobby(); });
+  app.querySelectorAll('.ltab[data-tab]').forEach(b => b.onclick = () => { lobbyTab = b.dataset.tab; try { localStorage.setItem('lobbyTab', lobbyTab); } catch {} drawLobby(VIEW.lobby ? VIEW.lobby.v : [data, decks]); viewData('lobby', () => Promise.all([api('/api/rooms'), api('/api/decks')]), drawLobby, { drawn: true }); });
   const chooseDeck = async () => {
     const ok = decks.decks; if (!ok.length) { toast('먼저 덱을 만들어 주세요.'); location.hash = '#decks'; return null; }
     return pick('어떤 덱으로 할까요?', ok.map(d => ({ label: esc(d.name) + (d.ok ? '' : ` <span class="chip warn">규칙 확인</span>`), value: d.id })));
@@ -778,10 +805,17 @@ function newRoomForm(decks) { // 고르는 것은 모두 단추로 (선택 상�
 
 // ---------- 덱 ----------
 async function renderDecks(editId) {
-  app.innerHTML = '<p class="muted pad">카드 자료를 불러오는 중…</p>';
-  await loadCards();
-  const { decks } = await api('/api/decks');
-  if (editId) return deckEditor(decks.find(d => d.id === editId) || { name: '새 덱', list: [] });
+  const h = location.hash, t = setTimeout(() => { if (location.hash === h && !app.querySelector('.dtiles, .dk-top')) app.innerHTML = '<div class="loadwait"><div class="spin-ball"></div></div>'; }, 600); // 아주 늦을 때만
+  try { await loadCards(); } catch (e) { clearTimeout(t); app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
+  if (editId) { // 고치기는 늘 새 자료로 (방금 저장한 내용이 보이게)
+    let decks; try { ({ decks } = await api('/api/decks')); } catch (e) { clearTimeout(t); app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
+    clearTimeout(t); if (location.hash !== h) return; delete VIEW.decks;
+    return deckEditor(decks.find(d => d.id === editId) || { name: '새 덱', list: [] });
+  }
+  clearTimeout(t);
+  return viewData('decks', () => api('/api/decks'), drawDecks);
+}
+function drawDecks({ decks }) {
   app.innerHTML = `<div class="dtiles"><button class="dtile new" id="nd"><span class="fan">${ringIcon('plus', 'k-ok')}</span><span class="dtl"><span class="dtr"><b>새 덱 만들기</b></span><small>카드를 골라 60장을 채워요</small></span></button>${decks.map(d => { const ch = checkDeck(d.list, IDX);
       return `<a class="dtile" href="#decks/${d.id}">${coverFan(deckCover(d.list))}<span class="dtl"><span class="dtr"><b>${esc(d.name)}</b>${ch.ok ? '<span class="chip ok">사용 가능</span>' : '<span class="chip warn">확인 필요</span>'}</span><small>${ch.total}장 · ${ch.ok ? '규칙 통과' : esc(ch.problems[0])}</small></span></a>`; }).join('')}</div>`;
   $('#nd').onclick = () => go('#decks/new');
@@ -821,7 +855,7 @@ function printsOf(c) { // 같은 카드의 다른 그림들 (보이는 그림이
 const picKey = x => D.dimg === 'en' || !x.kimg ? x.img || x.id : x.kimg;
 function deckEditor(deck) {
   let list = deck.list.map(x => ({ ...x }));
-  document.body.classList.add('nohdr');
+  document.body.classList.add('deckedit');
   const snap = () => JSON.stringify([($('#dn') || {}).value ?? deck.name, list.map(x => [x.id, x.n, x.c || 0]).sort()]);
   const saved0 = JSON.stringify([deck.name, deck.list.map(x => [x.id, x.n, x.c || 0]).sort()]);
   const dirty = () => snap() !== saved0 && !(deck.id == null && !list.length);
