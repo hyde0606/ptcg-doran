@@ -34,7 +34,7 @@ jobs:
           echo "$r" | grep -q '"cards":true' || { echo "::error::사이트에 보관된 카드 자료가 없어요. PC에서 git pull 뒤 npx.cmd wrangler deploy 를 한 번 하고, 로그인해서 사이트를 한 번 열어 주세요."; exit 1; }
       - name: 사이트에 반영
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
-        run: npx wrangler deploy --message "${GITHUB_SHA::7} $(git log -1 --format=%s | cut -c1-80)"
+        run: npx wrangler deploy
       - name: 반영 확인
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: |
