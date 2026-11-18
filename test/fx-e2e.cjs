@@ -157,8 +157,11 @@ const svgFor = u => { let h = 0; for (const ch of u) h = (h * 31 + ch.charCodeAt
     await rq.click({ position: { x: 8, y: 12 } }); await cur.waitForSelector('.sheet .acts button');
     for (const bt of await cur.$$('.sheet .acts button')) if (/벤치에 내기/.test(await bt.textContent())) { await bt.click(); break; }
     await cur.waitForTimeout(700); await closeAll(cur);
-    const sl = (await cur.$$('.area.bottom .g-bench [data-sid]')).pop(); await sl.click(); await cur.waitForSelector('.sheet .acts button.blue');
-    await cur.click('.sheet .acts button.blue'); await cur.waitForTimeout(800);
+    // 패에서 벤치로 내면 판정 창 맨 위에 '특성 쓰기' 단추가 뜸 (접혀 있으면 펼쳐서)
+    if (await cur.$('.dockfab [data-dock=open]')) { await cur.click('.dockfab [data-dock=open]'); await cur.waitForTimeout(200); }
+    let abb = null; for (const bt of await cur.$$('.dock [data-fxs]')) if (/특성 쓰기/.test(await bt.textContent())) abb = bt;
+    if (!abb) errs.push('메가레쿠쟈: 판정 창에 특성 쓰기 단추 없음');
+    else { await abb.click(); await cur.waitForTimeout(800); }
     await cur.waitForSelector(zv + ' .zvfx', { timeout: 5000 }).catch(() => errs.push('메가레쿠쟈 도우미 안 열림'));
     log('레쿠쟈 도우미:', (await cur.textContent(zv + ' .zvfx').catch(() => '')).trim(), '/ 카드', (await cur.$$(zv + ' .zc')).length);
     await selByName(cur, /에너지/, 1);

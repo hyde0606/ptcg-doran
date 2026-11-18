@@ -142,11 +142,12 @@ const check = (ok, msg) => { if (!ok) { errs.push(msg); log('  ✗ ' + msg); } e
   // 1) 릴리에의 결심: 남은 프라이즈 6장 → 8장 뽑기 단추 한 번
   log('1) 릴리에의 결심');
   await fromDeck(P, 'me1-119', { z: 'hand' });
+  v = await V(P); const lpz = v.p[v.me].prizesN, lex = lpz === 6 ? 8 : 6; // 릴리에가 프라이즈에 있었으면 꺼내서 5장 → 6장
   await playHand(P, 'me1-119');
-  let st = await stepTexts(P); check(st.some(t => /8장 뽑기/.test(t)), '릴리에: 8장 뽑기 단추 (' + st.join(' / ') + ')');
+  let st = await stepTexts(P); check(st.some(t => new RegExp(`${lex}장 뽑기`).test(t)), `릴리에: 프라이즈 ${lpz}장 → ${lex}장 뽑기 단추 (` + st.join(' / ') + ')');
   await P.screenshot({ path: OUT + '01-lillie.png' }); await sizes(P, '단계단추');
-  await step(P, /8장 뽑기/);
-  v = await V(P); check(v.p[v.me].hand.length === 8, '릴리에: 손패 8장 (' + v.p[v.me].hand.length + ')');
+  await step(P, new RegExp(`${lex}장 뽑기`));
+  v = await V(P); check(v.p[v.me].hand.length === lex, `릴리에: 손패 ${lex}장 (` + v.p[v.me].hand.length + ')');
   check(!(await stepTexts(P)).length, '릴리에: 단추가 사라짐');
   // 2) 저지맨 (서포트 두 번째 → 경고 넘기고) : 서로 4장
   log('2) 저지맨');
@@ -199,17 +200,18 @@ const check = (ok, msg) => { if (!ok) { errs.push(msg); log('  ✗ ' + msg); } e
   await P.waitForTimeout(300);
   let dk = (await V(P)).p[(await V(P)).me].deck.cards;
   const pickId = async id => { await P.click(`.sheet .zvsheet .zc[data-zc="${id}"] .zsel`); await P.waitForTimeout(150); };
-  await pickId(dk.find(x => x.c === 'sv6-128').i); await pickId(dk.find(x => x.c === 'sv6-129').i);
+  const BASICS = ['sv5-128', 'sv8pt5-4', 'sv6-95', 'sv6-128', 'sv6pt5-38', 'me3-62', 'me1-104', 'sv6-25'], b1 = dk.find(x => BASICS.includes(x.c)).i;
+  await pickId(b1); await pickId(dk.find(x => x.c === 'sv6-129').i);
   const zvn = await P.textContent('.sheet .zvbar .zvn'); check(/아직 2진화 포켓몬/.test(zvn), '빛나: 남은 종류 표시 (' + zvn + ')');
   await P.screenshot({ path: OUT + '07-cynthia.png' });
-  await pickId(dk.filter(x => x.c === 'sv6-128')[1].i); // 같은 종류 두 장 → 물어봄
+  const b2 = dk.find(x => BASICS.includes(x.c) && x.i !== b1).i; await pickId(b2); // 같은 종류(기본 포켓몬) 두 장 → 물어봄
   for (const bt of await P.$$('.sheet .zvbar button')) if (/손패로/.test(await bt.textContent())) { await bt.click(); break; }
   await P.waitForTimeout(400);
   const askT = await P.textContent('#sheet:not([hidden]) .in').catch(() => '');
   check(/같은 종류를 더 골랐어요/.test(askT), '빛나: 같은 종류 2장이면 물어봄');
   await P.click('#sheet .askr [data-close]'); await P.waitForTimeout(400);
   check(!!(await P.$('.sheet .zvsheet')), '빛나: 취소하면 덱 창으로 돌아옴');
-  await pickId(dk.filter(x => x.c === 'sv6-128')[1].i);
+  await pickId(b2); // 두 번째 기본 포켓몬은 빼고
   for (const bt of await P.$$('.sheet .zvbar button')) if (/손패로/.test(await bt.textContent())) { await bt.click(); break; }
   await P.waitForTimeout(700);
   check(!!(await handOf(P, 'sv6-129')), '빛나: 손패로 가져옴');
