@@ -105,6 +105,7 @@ function applyDisp() {
   if (p.disp === 'mine') D = validDisp(DISP_OPTS, p, g);
   else if (!p.disp && (p.art === 'en' || p.art === 'kr')) D = { ...g, dimg: p.art }; // 예전 '카드 그림' 설정
   else D = g;
+  if (!SK.admin) D = g; // 카드 표시 설정은 잠시 관리자만 (11/18 링크 님: 일반 참가자에게는 숨기고 쓰지 않음)
 }
 function applySkin() {
   const b = document.body;
@@ -184,7 +185,7 @@ function openSheet(html, onMount) {
   const inn = sh.firstElementChild, x = inn.querySelector(':scope > .x[data-close]');
   if (x) { x.className = 'xo'; x.innerHTML = ICON.x; x.setAttribute('aria-label', '닫기'); sh.appendChild(x); inn.classList.add('hasxo'); }
   onMount && onMount(inn);
-  if (x) { placeX(); inn.addEventListener('animationend', placeX, { once: true }); }
+  if (x) { placeX(); const h = e => { if (e.target !== inn) return; inn.removeEventListener('animationend', h); placeX(); }; inn.addEventListener('animationend', h); setTimeout(placeX, 360); }
 }
 function placeX() { // 창 위 오른쪽 바깥 (위에 자리가 없으면 창 안 오른쪽 위)
   const sh = $('#sheet'), x = sh.querySelector(':scope > .xo'), inn = sh.querySelector(':scope > .in'); if (!x || !inn || sh.hidden) return;
@@ -369,11 +370,10 @@ function settingsHtml(inSheet) {
   const opt = (kind, k, label, pv, extra = '') => `<button class="opt" data-set="${kind}" data-v="${k}" ${extra}>${pv}<span>${esc(label)}</span></button>`;
   const vol = k => Math.round(Sound.get(k) * 100);
   const pv = kind => kind === 'back' ? backPv : matPv;
-  // 내 것: 모임 기본 + 기본 7종 + 내 사진 = 9칸 (3×3)
+  // 내 것: 기본 7종 + 내 사진 = 8칸 (4×2). '모임 기본' 칸은 없앰 (아무것도 안 고른 사람은 관리자가 정한 모양 = 그 칸이 켜져 보임)
   const mine = (kind, title) => {
-    const list = kind === 'back' ? BACKS : MATS, my = SK.imgs?.[kind], g = groupSkin(kind);
-    return `<section class="set"><h3>${title}</h3><div class="opts n9">
-      ${opt(kind, 'group', '모임 기본', pv(kind)(g), `title="관리자가 정한 모임 기본 (지금: ${esc(skinLabel(kind, g))})"`)}
+    const list = kind === 'back' ? BACKS : MATS, my = SK.imgs?.[kind];
+    return `<section class="set"><h3>${title}</h3><div class="opts n8">
       ${list.map(([k, l]) => opt(kind, k, l, pv(kind)({ preset: k }))).join('')}
       ${opt(kind, 'mine', '내 사진', my ? pv(kind)({ img: my }) : addPv(kind))}</div>
       <div class="photo-row">${my ? `<button class="sm" data-up="${kind}" data-scope="me">${ICON.plus}사진 바꾸기</button><button class="sm" data-del="${kind}" data-scope="me">사진 지우기</button>` : `<span class="small muted">'내 사진' 칸을 누르면 휴대폰이나 PC의 사진으로 ${kind === 'back' ? '카드 뒷면' : '매트'}을 꾸밀 수 있어요.</span>`}</div></section>`;
@@ -385,7 +385,7 @@ function settingsHtml(inSheet) {
       <div class="photo-row">${gi ? `<button class="sm" data-up="${kind}" data-scope="group">${ICON.plus}사진 바꾸기</button><button class="sm" data-del="${kind}" data-scope="group">사진 지우기</button>` : `<span class="small muted">'모임 사진' 칸을 누르면 사진을 올려 모두의 기본으로 쓸 수 있어요.</span>`}</div>`;
   };
   return `${mine('back', '카드 뒷면')}${mine('mat', '매트')}
-    ${dispHtml(false)}
+    ${SK.admin ? dispHtml(false) : ''}
     <section class="set"><h3>소리</h3><div class="snd">
       <div class="r"><span class="nm">효과음</span><button class="sw" data-sw="sfx" aria-label="효과음 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('sfxVol')}" style="--v:${vol('sfxVol')}%" data-vol="sfxVol" aria-label="효과음 크기"><button class="sm" data-try>${ICON.play}들어 보기</button></div>
       <div class="r"><span class="nm">배경음악</span><button class="sw" data-sw="bgm" aria-label="배경음악 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('bgmVol')}" style="--v:${vol('bgmVol')}%" data-vol="bgmVol" aria-label="배경음악 크기"></div>
@@ -401,10 +401,9 @@ function settingsHtml(inSheet) {
 function dispHtml(admin) {
   const cur = admin ? groupDisp() : D, g = groupDisp(), mineOn = !admin && SK.prefs?.disp === 'mine';
   const pre = DISP_PRESETS.find(x => sameDisp(x.v, cur));
-  const nowName = !admin && !mineOn && SK.prefs?.disp !== 'mine' ? '모임 기본' : pre ? pre.l : '직접 고름';
-  const rows = [...(admin ? [] : [{ k: 'group', l: '모임 기본 따르기', d: `관리자가 정한 모양이에요. 지금: ${(DISP_PRESETS.find(x => sameDisp(x.v, g)) || { l: '직접 고른 조합' }).l}` }]), ...DISP_PRESETS];
-  const on = r => admin ? pre && pre.k === r.k : r.k === 'group' ? !mineOn : mineOn && pre && pre.k === r.k;
-  return `${admin ? '<h4>카드 표시</h4>' : `<section class="set disp"><h3>카드 표시 <span class="chip">${esc(nowName)}</span></h3>`}
+  const nowName = pre ? pre.l : '직접 고름', rows = DISP_PRESETS; // '모임 기본 따르기'는 없앰
+  const on = r => pre && pre.k === r.k;
+  return `${admin ? '<h4>카드 표시</h4>' : `<section class="set disp"><h3>카드 표시 <span class="chip">${esc(nowName)}</span><span class="chip k-admin">관리자만 보여요</span></h3>`}
     <div class="seg dpre">${rows.map(r => `<button class="opt ${r.k === 'group' ? 'wide' : ''} ${on(r) ? 'on' : ''}" aria-pressed="${!!on(r)}" data-dpre="${r.k}" data-scope="${admin ? 'group' : 'me'}"><span>${esc(r.l)}<small class="sub">${esc(r.d)}</small></span></button>`).join('')}</div>
     ${[['판과 카드 정보', ['dimg', 'dtext', 'ddet']], ['덱 만들기', ['dinfo', 'dsize']]].map(([gt, ks]) => `<div class="dgh">${esc(gt)}</div><div class="dopts n${ks.length}">${DISP_OPTS.filter(o => ks.includes(o.k)).map(o => `<div class="dopt"><h5 id="do-${admin ? 'g' : 'm'}-${o.k}">${esc(o.t)}</h5>${o.d && !admin ? `<p class="small muted">${esc(o.d)}</p>` : ''}<div class="seg2 n${o.o.length}" role="group" aria-labelledby="do-${admin ? 'g' : 'm'}-${o.k}">${o.o.map(([v, l]) => `<button class="sm ${cur[o.k] === v ? 'on' : ''}" aria-pressed="${cur[o.k] === v}" data-dk="${o.k}" data-v="${v}" data-scope="${admin ? 'group' : 'me'}">${esc(l)}</button>`).join('')}</div></div>`).join('')}</div>`).join('')}
     ${admin ? '' : '</section>'}`;
@@ -442,7 +441,8 @@ async function uploadSkin(kind, scope, file) {
 }
 function bindSettings(root, onArt, inSheet) {
   const refresh = () => { root.innerHTML = settingsHtml(inSheet); bindSettings(root, onArt, inSheet); };
-  const curOf = { back: () => SK.prefs?.back || 'group', mat: () => SK.prefs?.mat || 'group', art: () => SK.prefs?.art || 'group',
+  const own = k => { const v = SK.prefs?.[k] || 'group'; return v === 'group' ? groupSkin(k).preset || '' : v; }; // 안 고른 사람은 모임 기본값이 켜져 보임
+  const curOf = { back: () => own('back'), mat: () => own('mat'), art: () => SK.prefs?.art || 'group',
     'g-back': () => SK.group?.back || SKIN_DEF.back, 'g-mat': () => SK.group?.mat || SKIN_DEF.mat, 'g-art': () => SK.group?.art || SKIN_DEF.art };
   const mark = () => {
     root.querySelectorAll('[data-set]').forEach(b => { const on = b.dataset.v === curOf[b.dataset.set](); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
@@ -500,7 +500,7 @@ function bindSettings(root, onArt, inSheet) {
   if (lo) lo.onclick = async () => { await api('/api/logout', {}); ME = null; try { localStorage.removeItem('skin'); } catch {} setSkin({}); location.hash = '#login'; };
 }
 function renderSettings() {
-  app.innerHTML = `<div class="card-box" style="max-width:860px;margin:0 auto"><h2>설정</h2><p class="muted small" style="margin-top:0">고르면 바로 바뀌어요. 카드 뒷면·매트·카드 표시는 내 계정에 저장돼서 다른 기기에서도 그대로예요.</p><div class="setwrap">${settingsHtml(false)}</div></div>`;
+  app.innerHTML = `<div class="card-box" style="max-width:860px;margin:0 auto"><h2>설정</h2><p class="muted small" style="margin-top:0">고르면 바로 바뀌어요. ${SK.admin ? '카드 뒷면·매트·카드 표시는' : '카드 뒷면과 매트는'} 내 계정에 저장돼서 다른 기기에서도 그대로예요.</p><div class="setwrap">${settingsHtml(false)}</div></div>`;
   bindSettings(app.querySelector('.setwrap'), null, false);
 }
 function openSettings(onArt) { openSheet(`<button class="x sm" data-close>닫기</button><h3>설정</h3><div class="setwrap">${settingsHtml(true)}</div>`, el => bindSettings(el.querySelector('.setwrap'), onArt, true)); }
@@ -948,8 +948,8 @@ function handHtml(p) { // 내 손패: 아래쪽 일자 줄 (위쪽만 보이고,
 }
 function oppHandHtml(p) { // 상대 손패: 맨 위에 뒷면이 살짝 보임
   const P = G.view.p[p], n = P.hand ? P.hand.length : P.handN;
-  const cards = P.hand ? P.hand.map((x, i) => cardFace(x, 'oh', `style="--i:${i}"`)).join('') : Array.from({ length: Math.min(n, 15) }, (_, i) => cardBack('oh', `style="--i:${i}"`)).join('');
-  return `<div class="ohand" data-zone="hand" data-p="${p}" title="상대 손패 ${n}장" style="--n:${Math.min(n, 15)}"><div class="ofan">${cards}</div></div>`;
+  const cards = P.hand ? P.hand.map((x, i) => cardFace(x, 'oh', `style="--i:${i}"`)).join('') : Array.from({ length: Math.min(n, 30) }, (_, i) => cardBack('oh', `style="--i:${i}"`)).join('');
+  return `<div class="ohand" data-zone="hand" data-p="${p}" title="상대 손패 ${n}장" style="--n:${Math.min(n, 30)}"><div class="ofan">${cards}</div></div>`;
 }
 function midHtml(readOnly) {
   const v = G.view;
@@ -1169,8 +1169,9 @@ function dockItems() {
   const lk = v.p[me].look;
   if (lk) {
     const P = v.p[lk.p], cards = (lk.z === 'deck' ? P.deck.cards : lk.z === 'hand' ? P.hand : P.prizes) || [];
-    out.push({ k: 'look', u: 1, h: `<div class="prompt look"><div class="row"><div class="q grow">${qIcon('search', 'judge')}${lk.p === me ? '내' : '상대'} ${({ deck: '덱', hand: '손패', prizes: '프라이즈' })[lk.z]} 보는 중 <span class="chip">${cards.length}장</span></div><button class="sm" data-t="lookEnd">닫기</button>${lk.z === 'deck' ? '<button class="sm" data-t="shuffleMine">섞고 닫기</button>' : ''}</div>
-      <p class="pq">카드를 눌러 옮겨요.</p><div class="lookrow">${cards.map(x => cardFace(x, 'lk', `data-pile="${x.i}"`)).join('')}</div></div>` });
+    const ttl = `${lk.p === me ? '내' : '상대'} ${({ deck: '덱', hand: '손패', prizes: '프라이즈' })[lk.z]} 보는 중 <span class="chip">${cards.length}장</span>`;
+    const body = `<div class="lkbar"><p class="pq grow">카드를 누르면 자세히 보고 옮길 수 있어요.</p><button class="sm" data-t="lookEnd">닫기</button>${lk.z === 'deck' ? '<button class="sm" data-t="shuffleMine">섞고 닫기</button>' : ''}</div><div class="lookrow">${cards.map(x => cardFace(x, 'lk', `data-pile="${x.i}" role="button" tabindex="0"`)).join('')}</div>`;
+    out.push({ k: 'look', u: 1, hd: ttl, hb: `<div class="prompt look">${body}</div>`, h: `<div class="prompt look"><div class="q">${qIcon('search', 'judge')}${ttl}</div>${body}</div>` }); // 맨 위 항목이면 머리줄이 곧 제목 (같은 글을 두 번 쓰지 않음)
   }
   for (const g of v.groups) {
     if (g.status === 'ok') continue;
@@ -1200,10 +1201,11 @@ function dockHtml() {
     const fab = n ? `<div class="dockfab${enter}"><div class="fabw"><button class="fab k-dock ${urg.length ? 'on nudge' : 'j' + bump}" data-dock="open" aria-label="${l} ${n}개 펼치기">${FAB_FX}<span class="core">${FAB_ICON[urg.length ? 'bell' : 'hand']}</span><i class="badge">${n}</i></button><span class="fl">${l}</span></div></div>` : '';
     return fab + (infos ? `<div class="dinfos">${infos}</div>` : '');
   }
-  const ag = rows.filter(x => x.agree).map(x => x.agree);
+  const ag = rows.filter(x => x.agree).map(x => x.agree), top = urg.find(x => x.hd), me = meSeat();
+  const hd = top ? top.hd : urg.length ? (G.view.waiting.includes(me) ? '상대가 대답을 기다려요' : '확인해 주세요') : '상대 판정 살펴보기'; // 상대가 정말 기다릴 때만 '기다려요'
   return `<div class="dock${enter}"><div class="dockin">
-    <div class="dockh"><b class="dtt">${urg.find(x => x.hd)?.hd || (urg.length ? '상대가 대답을 기다려요' : '상대 판정 살펴보기')}</b>${infos}<button class="dockx sm" data-dock="shut">${ICON.down}접기</button></div>
-    ${urg.map(x => x.h).join('')}
+    <div class="dockh"><b class="dtt">${hd}</b>${infos}<button class="dockx sm" data-dock="shut">${ICON.down}접기</button></div>
+    ${urg.map(x => x === top && x.hb ? x.hb : x.h).join('')}
     ${rows.length ? `<div class="drows">${urg.length || ag.length >= 2 ? `<div class="drh"><span>${urg.length ? '그 밖의 판정' : '상대 판정'} ${rows.length}</span>${ag.length >= 2 ? `<button class="good xs" data-agreeall="${ag.join(',')}">${ICON.check}모두 동의</button>` : ''}</div>` : ''}${rows.map(x => x.row).join('')}</div>` : ''}
   </div></div>`;
 }
@@ -1273,33 +1275,42 @@ function openCoin() {
   });
 }
 // 잠깐! 멈추고 지적하기: 상대가 최근에 한 행동 중 잘못된 것을 고르고(없어도 됨) 이유를 적으면 판이 멈춤
-async function openStop() { // 기록 화면과 같은 모양으로 두 사람의 행동을 모두 보여 주고, 잘못된 행동 줄을 눌러 고름
+async function openStop() { // 기록 화면과 같은 모양으로 두 사람의 행동을 모두 보여 주고, 잘못된 행동 줄을 눌러 고름. 고른 것은 기록 안에서만 표시
   const v = G.view, me = meSeat(); if (me == null || v.phase === 'over') return;
-  const op = 1 - me, opn = v.p[op].name, txtOf = {};
+  const op = 1 - me, txtOf = {};
   const can = l => l.k != null && l.k >= 0 && !l.chat && !l.rw && !/^(⏸|▶|↺)/.test(l.txt || '');
   let pick = null; for (const l of G.lines) if (can(l) && l.who === op) pick = l.k; // 처음엔 상대의 마지막 행동
   const html = logBlocks(G.lines, (l, o, headAttr) => {
     if (headAttr) return '';
     if (l.chat) return `<div class="ln chat ${o.cls}">${esc(l.txt)}</div>`;
     const ok = can(l); if (ok) (txtOf[l.k] ||= []).push(o.txt);
-    return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}" ${ok ? `data-pk="${l.k}" role="button" tabindex="0"` : ''}>${ok ? '<i class="pkr" aria-hidden="true"></i>' : ''}${esc(o.txt)}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}</div>`;
+    return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}" ${ok ? `data-pk="${l.k}" role="button" tabindex="0"` : ''}>${ok ? '<i class="pkr" aria-hidden="true"></i>' : ''}<span>${esc(o.txt)}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}</span></div>`;
   });
+  const none = `<div class="ln nopk" data-pk="none" role="button" tabindex="0"><i class="pkr" aria-hidden="true"></i><span>행동은 고르지 않고 이유만 알리기</span></div>`; // '고르지 않기'도 기록 맨 끝의 한 줄로
   openSheet(`<button class="x sm" data-close>닫기</button><h3>잠깐! 멈추고 지적하기</h3>
-    <p class="small muted stoph">아래 기록에서 잘못된 행동을 눌러 고르고 이유를 적으면 판이 잠깐 멈춰요. 상대가 '그 행동 전으로 되돌리기', '직접 고치기', '이대로 계속' 중에서 골라요. 멈춘 동안에는 둘 다 카드를 움직일 수 없어요.</p>
-    <div class="log stoplog">${html || '<p class="muted">아직 기록이 없어요.</p>'}</div>
-    <div class="stsel"><span class="chip warn">고른 행동</span><span class="stselt"></span><button type="button" class="sm" data-nopick>고르지 않기</button></div>
-    <label class="h">무엇이 잘못됐나요?</label><div class="stgo"><input name="text" maxlength="200" placeholder="예: 이번 차례에 에너지를 두 장 붙였어요"><div class="stbtn"><button class="bad" data-stopgo>${ICON.pause}멈추고 지적하기</button><button data-close>취소</button></div></div>`, el => {
+    <p class="small muted stoph">잘못된 행동을 기록에서 눌러 고르고 이유를 적으면 판이 멈춰요. 상대가 되돌리기·직접 고치기·이대로 계속 중에서 골라요.</p>
+    <div class="stlogw"><div class="log stoplog">${html}${none}</div><button type="button" class="stjump" hidden></button></div>
+    <div class="stgo"><input name="text" maxlength="200" aria-label="무엇이 잘못됐나요?" placeholder="무엇이 잘못됐나요? 예: 에너지를 두 장 붙였어요"><div class="stbtn"><button class="bad" data-stopgo>${ICON.pause}멈추고 지적하기</button><button data-close>취소</button></div></div>`, el => {
     el.classList.add('stopsheet');
-    const lg = el.querySelector('.stoplog'), selT = el.querySelector('.stselt'), noB = el.querySelector('[data-nopick]');
+    const lg = el.querySelector('.stoplog'), jump = el.querySelector('.stjump');
     const what = k => (txtOf[k] || []).join(' · ');
-    const mark = () => {
-      lg.querySelectorAll('[data-pk]').forEach(r => { const on = +r.dataset.pk === pick; r.classList.toggle('pick', on); r.setAttribute('aria-pressed', on); });
-      selT.textContent = pick == null ? '고르지 않음 (말로만 알리기)' : what(pick); noB.hidden = pick == null;
+    const cur = () => lg.querySelector('.ln.pick');
+    const where = () => { // 고른 줄이 보이는 칸 밖이면 위나 아래 가장자리에 '고른 행동' 단추 (누르면 그 줄로)
+      const r = cur(); if (!r) { jump.hidden = true; return; }
+      const a = r.getBoundingClientRect(), b = lg.getBoundingClientRect(), up = a.bottom < b.top + 6, down = a.top > b.bottom - 6;
+      jump.hidden = !(up || down); if (jump.hidden) return;
+      jump.classList.toggle('up', up); jump.classList.toggle('down', down);
+      jump.innerHTML = `${up ? ICON.up : ICON.down}<span>${pick == null ? '고르지 않음' : '고른 행동'}</span>`;
     };
-    lg.querySelectorAll('[data-pk]').forEach(r => { const f = () => { pick = +r.dataset.pk; mark(); }; r.onclick = f; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f(); } }; });
-    noB.onclick = () => { pick = null; mark(); };
+    const mark = () => {
+      lg.querySelectorAll('[data-pk]').forEach(r => { const on = r.dataset.pk === 'none' ? pick == null : +r.dataset.pk === pick; r.classList.toggle('pick', on); r.setAttribute('aria-pressed', on); });
+      where();
+    };
+    lg.querySelectorAll('[data-pk]').forEach(r => { const f = () => { pick = r.dataset.pk === 'none' ? null : +r.dataset.pk; mark(); }; r.onclick = f; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f(); } }; });
+    lg.addEventListener('scroll', where, { passive: true });
+    jump.onclick = () => { lg.scrollTo({ top: lg.scrollTop + cur().getBoundingClientRect().top - lg.getBoundingClientRect().top - (lg.clientHeight - cur().offsetHeight) / 2, behavior: 'smooth' }); };
     mark();
-    const sel = lg.querySelector('.ln.pick'); requestAnimationFrame(() => scrollInside(lg, sel)); // 창 전체는 그대로, 기록 칸 안에서만 굴림
+    requestAnimationFrame(() => { scrollInside(lg, cur()); where(); }); // 창 전체는 그대로, 기록 칸 안에서만 굴림
     el.querySelector('[data-stopgo]').onclick = () => { const text = el.querySelector('[name=text]').value; closeSheet(); send({ type: 'stop', text, to: pick ?? undefined, what: pick != null ? what(pick).slice(0, 140) : undefined }); };
   });
 }
@@ -1365,19 +1376,35 @@ async function pickSlot(title, ps = [meSeat()]) {
   if (!opts.length) { toast('고를 포켓몬이 없어요.'); return null; }
   return pick(title, opts);
 }
+const moveOpts = me => [
+  { label: '손패로', value: { z: 'hand', p: me }, cls: 'primary' }, { label: '트래시로', value: { z: 'discard', p: me } },
+  { label: '덱 위로', value: { z: 'deck', p: me, pos: 'top' } }, { label: '덱 아래로', value: { z: 'deck', p: me, pos: 'bottom' } },
+  { label: '벤치에 내기', value: { z: 'bench', p: me } }, { label: '포켓몬에게 붙이기', value: 'attach' },
+  { label: '로스트존으로', value: { z: 'lost', p: me } }, { label: '프라이즈로', value: { z: 'prizes', p: me } }, { label: '공개하기', value: 'reveal' },
+];
 async function moveMenu(iids, label) {
+  const to = await pick(`${label} 옮기기`, moveOpts(meSeat()).map(o => ({ ...o, cls: '' })));
+  if (to) doMove(iids, to);
+}
+async function doMove(iids, to) {
   const me = meSeat();
-  const to = await pick(`${label} 옮기기`, [
-    { label: '손패로', value: { z: 'hand', p: me } }, { label: '트래시로', value: { z: 'discard', p: me } },
-    { label: '덱 위로', value: { z: 'deck', p: me, pos: 'top' } }, { label: '덱 아래로', value: { z: 'deck', p: me, pos: 'bottom' } },
-    { label: '벤치로 (새 포켓몬)', value: { z: 'bench', p: me } }, { label: '포켓몬에게 붙이기', value: 'attach' },
-    { label: '로스트존으로', value: { z: 'lost', p: me } }, { label: '프라이즈로', value: { z: 'prizes', p: me } }, { label: '공개하기', value: 'reveal' },
-  ]);
-  if (!to) return;
   if (to === 'reveal') return send({ type: 'reveal', iids });
   if (to === 'attach') { const sid = await pickSlot('어느 포켓몬에게?', [me, 1 - me]); if (!sid) return; const part = (await pick('무엇으로 붙일까요?', [{ label: '에너지로', value: 'en' }, { label: '도구로', value: 'tl' }, { label: '진화 카드로 (위에 겹치기)', value: 'cards' }])); if (!part) return; return send({ type: 'move', iids, to: { z: 'slot', sid, part } }); }
   return send({ type: 'move', iids, to });
 }
+// PC 마우스 휠로 가로 줄도 굴리기: 세로로 굴릴 곳이 먼저 없고, 가로로 넘치는 칸이면 휠을 가로로 바꿈. 끝에 닿으면 바깥이 굴러감
+addEventListener('wheel', e => {
+  if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  for (let el = e.target; el && el.nodeType === 1 && el !== document.body; el = el.parentElement) {
+    const cs = getComputedStyle(el);
+    if (/auto|scroll/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1) return;
+    if (/auto|scroll/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1) {
+      const d = e.deltaY * (e.deltaMode === 1 ? 32 : e.deltaMode === 2 ? el.clientWidth : 1), max = el.scrollWidth - el.clientWidth;
+      if ((d > 0 && el.scrollLeft >= max - 1) || (d < 0 && el.scrollLeft <= 0)) return;
+      el.scrollLeft = Math.max(0, Math.min(max, el.scrollLeft + d)); e.preventDefault(); return;
+    }
+  }
+}, { passive: false });
 async function onHandCard(iid) {
   const v = G.view, me = meSeat(); const x = v.p[me].hand.find(h => h.i === iid); const c = cinfo(x.c);
   const isBasic = c.st === 'P' && (c.sub || []).includes('Basic');
@@ -1423,9 +1450,30 @@ function subView(inn, html, onMount) { // 창 안에서 겹쳐 보기: '목록�
 function bindCardPeek(root) { // data-ci(카드 번호)를 누르면 카드 설명
   root.querySelectorAll('[data-ci]').forEach(b => b.onclick = e => { e.stopPropagation(); const inn = b.closest('.sheet > .in'); const html = cardInfoHtml(cinfo(b.dataset.ci)); if (inn) subView(inn, html); else openSheet(`<button class="x sm" data-close>닫기</button>${html}`); });
 }
-function slotInfoHtml(f) { // 포켓몬 정보 창 윗부분 (대전·리플레이 같음)
+function balanceRows(box) { // 단추 줄 고르게: 줄 수는 가장 적게, 그 안에서 가장 긴 줄이 가장 짧도록 나눔 (3+1 대신 2+2). 줄마다 꽉 채움
+  if (!box || !box.isConnected) return;
+  box.querySelectorAll(':scope > .slrow').forEach(r => { r.replaceWith(...r.childNodes); }); box.classList.remove('bald');
+  const kids = [...box.children], W = box.clientWidth, gap = 10; if (kids.length < 2 || !W) return;
+  const ws = kids.map(k => { k.style.flex = '0 0 auto'; const w = k.getBoundingClientRect().width; k.style.flex = ''; return w; });
+  const lineW = (a, b) => ws.slice(a, b).reduce((t, w) => t + w, 0) + gap * (b - a - 1);
+  let K = 1, cur = 0; for (const w of ws) { if (cur && cur + gap + w > W) { K++; cur = w; } else cur = cur ? cur + gap + w : w; }
+  if (K < 2) return;
+  let best = null; const n = ws.length;
+  const go = (start, left, cuts) => { // 남은 것을 left 줄로 나누는 모든 방법 (단추가 몇 개 안 됨)
+    if (left === 1) { const all = [...cuts, n], mx = Math.max(...all.map((e, i) => { const a = i ? all[i - 1] : 0; return e - a === 1 && kids[a].classList.contains('hprow') ? W : lineW(a, e); })); /* 체력 상자가 혼자 줄을 차지하면 속이 비어 보이니 되도록 단추와 같은 줄에 */ const ls = all.map((e, i) => lineW(i ? all[i - 1] : 0, e)), avg = ls.reduce((t, x) => t + x, 0) / ls.length, vr = ls.reduce((t, x) => t + (x - avg) ** 2, 0); /* 같으면 줄 길이가 더 고른 쪽 */
+      if (lineW(cuts.length ? cuts[cuts.length - 1] : 0, n) <= W && (!best || mx < best.mx - .5 || (Math.abs(mx - best.mx) <= .5 && vr < best.vr))) best = { mx, vr, cuts: [...cuts] }; return; }
+    for (let e = start + 1; e <= n - left + 1; e++) { if (lineW(start, e) > W) break; go(e, left - 1, [...cuts, e]); }
+  };
+  go(0, K, []); if (!best) return;
+  const ends = [...best.cuts, n]; box.classList.add('bald');
+  ends.forEach((e, i) => { const row = document.createElement('div'); row.className = 'slrow'; kids.slice(i ? ends[i - 1] : 0, e).forEach(k => row.appendChild(k)); box.appendChild(row); });
+}
+window.addEventListener('resize', () => requestAnimationFrame(() => document.querySelectorAll('.sheet .slacts').forEach(balanceRows)));
+function slotInfoHtml(f, live) { // 포켓몬 정보 창 윗부분 (대전·리플레이 같음). live = 아래에 체력 단추가 있음 → 체력 글줄은 빼고, 붙은 카드도 있을 때만
   const c = cinfo(topOf(f.sl).c), hpMax = c.hp || 0, left = hpMax ? Math.max(0, hpMax - f.sl.dmg) : 0;
-  return `${cardInfoHtml(c)}<div class="small slinfo">${hpMax ? `남은 체력 ${left} / ${hpMax}` : `데미지 ${f.sl.dmg}`}</div>${attachedHtml(f.sl)}`;
+  const has = f.sl.tl.length || f.sl.en.length || f.sl.cards.length > 1;
+  if (live) return `${cardInfoHtml(c)}${has ? attachedHtml(f.sl) : ''}`;
+  return `${cardInfoHtml(c)}<div class="small slinfo">${hpMax ? `남은 체력 ${left} / ${hpMax}` : `데미지 ${f.sl.dmg}`}${has ? '' : ' · 붙은 카드 없음'}</div>${has ? attachedHtml(f.sl) : ''}`;
 }
 async function onSlot(sid) {
   const v = G.view, me = meSeat(); const f = findSlot(sid); if (!f) return;
@@ -1444,8 +1492,9 @@ async function onSlot(sid) {
   const hpMax = c.hp || 0, left = hpMax ? Math.max(0, hpMax - f.sl.dmg) : 0, hv0 = hpMax ? left : f.sl.dmg;
   const hpRow = me != null && v.phase === 'play' ? `<div class="hprow"><span class="hpl">${hpMax ? '체력' : '데미지'}</span>${stepHtml('hp', hv0, hpMax ? { min: 0, max: hpMax, by: 10, unit: `<small class="hpm">/${hpMax}</small>` } : { min: 0, max: 990, by: 10 })}<button class="judge" data-hpgo disabled>적용<i class="hpd" hidden></i></button></div>` : ''; // 한 줄: 이름표 · ▼ 값/최대 ▲ · 적용(바뀐 만큼은 작은 배지, 단추 크기 그대로)
   const ix = opts.map((o, i) => ({ ...o, i }));
-  openSheet(`<button class="x sm" data-close>닫기</button>${slotInfoHtml(f)}${actsHtml(ix.filter(o => o.row === 1), 'r1')}${hpRow}${actsHtml(ix.filter(o => o.row !== 1), 'r3')}`, el => {
-    bindCardPeek(el);
+  const r3 = ix.filter(o => o.row !== 1).map(o => `<button class="${o.cls || ''}" data-i="${o.i}">${o.label}</button>`).join('');
+  openSheet(`<button class="x sm" data-close>닫기</button>${slotInfoHtml(f, !!hpRow)}${actsHtml(ix.filter(o => o.row === 1), 'r1')}${hpRow || r3 ? `<div class="slacts">${hpRow}${r3}</div>` : ''}`, el => {
+    bindCardPeek(el); balanceRows(el.querySelector('.slacts'));
     const hgo = el.querySelector('[data-hpgo]');
     if (hgo) { const hd = hgo.querySelector('.hpd'); bindSteps(el, nv => { hgo.disabled = nv === hv0; hd.hidden = nv === hv0; hd.textContent = (nv > hv0 ? '+' : '−') + Math.abs(nv - hv0); });
       hgo.onclick = () => { const nv = +el.querySelector('[name=hp]').value; closeSheet(); send({ type: 'damage', sid, n: hpMax ? (hpMax - nv) - f.sl.dmg : nv - f.sl.dmg }); }; }
@@ -1531,12 +1580,13 @@ async function onZone(z, p) {
   if (z === 'prizes') { const ok = await pick(mine ? '내 프라이즈' : '상대 프라이즈', [{ label: '앞면 확인하기' + FX, value: 1, cls: 'judge' }]); if (ok) send({ type: 'look', p, z: 'prizes' }); return; }
   if (z === 'hand' && !mine) { const ok = await pick('상대 손패', [{ label: '상대 손패 보기' + FX, value: 1, cls: 'judge' }]); if (ok) send({ type: 'look', p, z: 'hand' }); }
 }
-async function onPile(iid) {
-  const v = G.view, me = meSeat(), lk = v.p[me].look; const P = v.p[lk.p];
-  const arr = lk.z === 'deck' ? P.deck.cards : lk.z === 'hand' ? P.hand : P.prizes; const x = arr.find(y => y.i === iid);
-  if (lk.p === me) return moveMenu([iid], cname(cinfo(x.c)));
-  const to = await pick('상대 카드 옮기기', [{ label: '상대 트래시로', value: { z: 'discard', p: lk.p } }, { label: '상대 덱 아래로', value: { z: 'deck', p: lk.p, pos: 'bottom' } }, { label: '상대 덱 위로', value: { z: 'deck', p: lk.p, pos: 'top' } }, { label: '상대 손패로', value: { z: 'hand', p: lk.p } }]);
-  if (to) send({ type: 'move', iids: [iid], to });
+async function onPile(iid) { // 보고 있는 덱·손패·프라이즈의 카드: 카드 설명(그림 크게) + 옮길 곳 단추
+  const v = G.view, me = meSeat(), lk = v.p[me].look; if (!lk) return; const P = v.p[lk.p];
+  const arr = lk.z === 'deck' ? P.deck.cards : lk.z === 'hand' ? P.hand : P.prizes; const x = arr.find(y => y.i === iid); if (!x) return;
+  const opts = (lk.p === me ? moveOpts(me) : [{ label: '상대 트래시로', value: { z: 'discard', p: lk.p } }, { label: '상대 덱 아래로', value: { z: 'deck', p: lk.p, pos: 'bottom' } }, { label: '상대 덱 위로', value: { z: 'deck', p: lk.p, pos: 'top' } }, { label: '상대 손패로', value: { z: 'hand', p: lk.p } }]).map((o, i) => ({ ...o, i }));
+  openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(x.c))}<div class="small muted mvh">어디로 옮길까요?</div>${actsHtml(opts)}`, el => {
+    el.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => { const to = opts[+b.dataset.i].value; closeSheet(); await new Promise(r => setTimeout(r, 30)); doMove([iid], to); });
+  });
 }
 function bindToolPeek(view = () => G.view) { // 포켓몬 뒤로 보이는 도구 카드를 누르면 그 카드 설명
   app.querySelectorAll('.mat [data-tool]').forEach(b => b.onclick = e => { e.stopPropagation(); const x = { i: b.dataset.tool }, V = view(); for (const p of [0, 1]) for (const sl of [V.p[p].active, ...V.p[p].bench]) { const t = sl && sl.tl && sl.tl.find(y => y.i === x.i); if (t) return openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(t.c))}`); } });
@@ -1547,7 +1597,7 @@ function bindBoard() {
   app.querySelectorAll('.mat [data-sid]').forEach(el => { el.onclick = () => onSlot(el.dataset.sid); });
   bindToolPeek();
   app.querySelectorAll('[data-zone]').forEach(el => el.onclick = () => onZone(el.dataset.zone, +el.dataset.p));
-  app.querySelectorAll('[data-pile]').forEach(el => el.onclick = () => onPile(el.dataset.pile));
+  app.querySelectorAll('[data-pile]').forEach(el => { el.onclick = () => onPile(el.dataset.pile); el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPile(el.dataset.pile); } }; });
   app.querySelectorAll('[data-order]').forEach(el => el.onclick = () => send({ type: 'order', first: el.dataset.order === '1' }));
   app.querySelectorAll('[data-mull]').forEach(el => el.onclick = () => send({ type: 'mullDraw', n: +el.dataset.mull }));
   app.querySelectorAll('[data-confirm]').forEach(el => el.onclick = () => send({ type: 'confirm', pid: el.dataset.confirm }));

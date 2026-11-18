@@ -735,9 +735,10 @@ body.mat-night .hlf.soft svg, body.mat-dark .hlf.soft svg { filter: drop-shadow(
 .hcnt { display: none; }
 /* 상대 손패: 맨 위에 뒷면이 살짝 */
 .ohand { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; align-items: flex-start; height: calc(var(--cw) * var(--peek)); cursor: pointer; }
-.ofan { display: flex; }
-.pc.oh { width: calc(var(--cw) * .8); margin-left: calc(var(--cw) * -.42); transform: translateY(calc(var(--cw) * (var(--peek) - 1.118))); box-shadow: 0 3px 6px rgba(0,0,0,.25); }
-.pc.oh.back { padding: calc(var(--cw) * .036); }
+.ofan { display: flex; height: 100%; align-items: flex-start; /* 상자는 보이는 띠 높이만큼만: 아래 상대 벤치(도구 카드)를 누르는 걸 막지 않게 */ --oav: min(calc(100vw - var(--gut) * 2 - 16px), calc(var(--cw) * 10.5)); }
+/* 상대 손패: PTCGL처럼 벤치 카드만 한 크기로 나란히 펼침 (아래쪽만 보임). 칸이 모자랄 때만 겹침 */
+.pc.oh { width: var(--cw); margin-left: min(calc(var(--cw) * .07), calc((var(--oav) - var(--n) * var(--cw)) / max(var(--n) - 1, 1))); transform: translateY(calc(var(--cw) * (var(--peek) - 1.397))); box-shadow: 0 3px 6px rgba(0,0,0,.25); }
+.pc.oh.back { padding: calc(var(--cw) * .045); }
 .pc.oh:first-child { margin-left: 0; }
 .nohand { pointer-events: auto; color: #24584a; font-family: var(--fh); padding: 10px 18px; background: rgba(255,255,255,.85); border-radius: 999px; margin-bottom: 8px; }
 
@@ -1112,20 +1113,54 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .log.rwlog .tblk .ln.cur, .log.rwlog .ln.cur { box-shadow: inset 3px 0 0 var(--lc, var(--accent)), 0 0 0 2.5px var(--accent); background: #fff4e6; }
 .log.rwlog .tblk .ln.later { opacity: .45; }
 /* '잠깐!' 창: 기록 화면과 같은 묶음, 줄을 눌러 고름 */
-.sheet > .in.stopsheet { width: min(760px, 100%); }
-.stopsheet .stoph { margin: 0 0 8px; }
-.stopsheet .stoplog { max-height: min(46vh, 440px); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 3px; font-size: .9rem; padding: 3px; border-radius: 16px; background: #f7fafc; box-shadow: inset 0 0 0 1.5px #e3ecf3; }
+/* 잠깐! 창: 기록 칸이 남는 높이를 모두 씀 (기록이 적으면 창도 작게). 고른 줄은 기록 안에서만 빨간 테두리, 안 보이면 가장자리 단추 */
+.sheet > .in.stopsheet { width: min(760px, 100%); display: flex; flex-direction: column; overflow: hidden; }
+.stopsheet > h3 { flex: none; }
+.sheet > .in.stopsheet.xin > h3:first-of-type { min-height: 40px; margin-bottom: 8px; }
+.stopsheet .stoph { flex: none; margin: 0 0 8px; }
+.stopsheet .stlogw { position: relative; flex: 1 1 auto; min-height: 110px; display: flex; flex-direction: column; }
+.stopsheet .stoplog { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 3px; font-size: .9rem; padding: 3px; border-radius: 16px; background: #f7fafc; box-shadow: inset 0 0 0 1.5px #e3ecf3; }
 .stoplog .ln[data-pk] { cursor: pointer; display: flex; align-items: flex-start; gap: 7px; }
+.stoplog .ln[data-pk] > span { min-width: 0; overflow-wrap: anywhere; word-break: keep-all; }
 .stoplog .ln[data-pk]:hover { filter: brightness(.97); }
 .stoplog .pkr { flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 50%; box-shadow: inset 0 0 0 2px #b8c6d2; background: #fff; }
 .log.stoplog .tblk .ln.pick { box-shadow: inset 3px 0 0 var(--lc), 0 0 0 2.5px #e0394b; background: #fff1f2; }
 .stoplog .ln.pick .pkr { box-shadow: inset 0 0 0 2px #e0394b, inset 0 0 0 5px #fff; background: #e0394b; }
-.stopsheet .stsel { display: flex; align-items: flex-start; gap: 6px 8px; margin: 10px 2px 2px; line-height: 1.45; word-break: keep-all; overflow-wrap: anywhere; }
-.stopsheet .stsel .chip { flex: none; margin-top: 1px; }
-.stopsheet .stselt { flex: 1; min-width: 0; font-family: var(--fh); color: var(--text); }
-.stopsheet .stsel [data-nopick] { flex: none; }
-.sheet > .in.hasxo.xin > h3:first-of-type + p { padding-right: 40px; } /* 닫기 단추가 창 안 오른쪽 위에 있을 때 첫 설명 글이 가려지지 않게 */
-.stopsheet .stgo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.stoplog .ln.nopk { flex: none; margin: 4px 3px 3px; padding: 8px 12px; border-radius: 14px; border: 2px dashed #c9d5e0; background: #fff; color: #557086; font-family: var(--fh); }
+.stoplog .ln.nopk.pick { border: 2px solid #e0394b; background: #fff1f2; color: var(--text); }
+.stopsheet .stjump { position: absolute; left: 50%; transform: translateX(-50%); z-index: 2; min-height: 0; height: 32px; padding: 0 14px 0 10px; gap: 5px; font-size: .84rem; color: #fff; background: #e0394b; border: 0; box-shadow: 0 4px 12px rgba(160, 30, 50, .35); white-space: nowrap; }
+.stopsheet .stjump.up { top: 8px; } .stopsheet .stjump.down { bottom: 8px; }
+.stopsheet .stjump .ic { width: 16px; height: 16px; }
+.stopsheet .stjump[hidden] { display: none; }
+.stopsheet .stl { flex: none; }
+.stopsheet .stgo { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .stopsheet .stgo input { flex: 1 1 280px; min-width: 0; }
 .stopsheet .stbtn { flex: 1 0 auto; display: flex; justify-content: center; gap: 8px; }
-@media (max-height: 520px) { .stopsheet .stoph { display: none; } .stopsheet .stoplog { max-height: 34vh; } } /* 키 낮은 가로 화면: 설명 글은 빼고 기록 칸을 줄여 입력·단추까지 한 화면에 */
+@media (max-height: 560px) { /* 키 낮은 가로 화면: 설명·이름표는 빼고(입력 칸 안내 글이 대신) 창을 화면 높이만큼 → 기록 칸이 가장 크게 */
+  .sheet:has(.stopsheet) { padding: 6px; }
+  .sheet > .in.stopsheet { max-height: calc(100vh - 12px); padding-top: 14px; padding-bottom: 12px; }
+  .stopsheet .stoph, .stopsheet .stl { display: none; }
+  .stopsheet .stlogw { margin-bottom: 8px; min-height: 90px; }
+}
+@media (min-height: 561px) { .stopsheet .stlogw { margin-bottom: 4px; } }
+.sheet > .in.hasxo.xin > h3:first-of-type + p { padding-right: 40px; }
+@media (max-height: 560px) { .sheet > .in.stopsheet::before { top: -14px; margin-top: -14px; } }
+/* 단추 묶음: 마지막 줄이 모자라도 빈 칸을 남기지 않고 그 줄을 꽉 채움 (3개를 2칸에 → 아래 하나는 줄 전체) */
+.sheet .acts.bal { display: flex; flex-wrap: wrap; }
+.sheet .acts.bal > button { flex: 1 1 calc((100% - (var(--cols) - 1) * 10px) / var(--cols)); width: auto; min-width: 0; }
+/* 포켓몬 창: 체력 줄과 나머지 단추가 한 덩어리. 줄마다 꽉 채우고(빈 칸 없음) 체력 상자는 글자만큼만 */
+.slacts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.sheet .acts.r1 + .slacts { margin-top: 10px; }
+.slacts > .hprow { margin: 0; flex: 0 0 auto; }
+.slacts > button { flex: 1 1 auto; white-space: nowrap; word-break: keep-all; }
+.slacts.bald { flex-direction: column; flex-wrap: nowrap; }
+.slacts .slrow { display: flex; gap: 10px; }
+.slacts .slrow > button { flex: 1 1 auto; white-space: nowrap; word-break: keep-all; }
+.slacts .slrow > .hprow { margin: 0; flex: 0 0 auto; }
+.slacts .slrow > .hprow:only-child { flex: 1 1 auto; }
+/* 덱 보기: 안내 글과 닫기 단추가 한 줄 */
+.prompt.look .lkbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.prompt.look .lkbar .pq { flex: 1 1 180px; min-width: 0; word-break: keep-all; }
+.dockh .dtt .chip { font-family: var(--fb, inherit); font-size: .8rem; }
+.mvh { margin: 12px 0 -6px; text-align: center; font-family: var(--fh); }
+@media (max-aspect-ratio: 5/4), (max-width: 560px) { .ohand { left: calc(50% + 22px); } .ofan { --oav: calc(100vw - 58px); } } /* 세로 화면: 왼쪽 위 로비 단추만 비키고 폭을 다 씀 */
