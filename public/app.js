@@ -2607,10 +2607,10 @@ function fxSpecial(pre, sp, gid, search) {
 function resetStep(base, r) {
   const v = G.view, me = meSeat(), my = v.p[me].prizesN, n = resetCount(r, my, v.p[1 - me].prizesN), on = esc(v.p[1 - me].name);
   const HOW = { deck: '덱에 넣고 섞은 뒤', bottom: '섞어서 덱 아래로 넣은 뒤', discard: '모두 트래시하고' };
-  const label = r.who === 'me' ? `내 패를 ${HOW[r.how]} ${n[0]}장 뽑기` : r.who === 'both' ? `내 패를 덱에 넣고 섞은 뒤 ${n[0]}장 뽑기 · 상대에게 ${n[1]}장 요청` : `상대에게 요청: 패를 ${r.how === 'bottom' ? '섞어서 덱 아래로' : '덱에 넣고 섞기'} · ${n[1]}장 뽑기`;
+  const label = r.who === 'me' ? `내 패를 ${HOW[r.how]} ${n[0]}장 뽑기` : r.who === 'both' ? `서로 패를 덱에 넣고 섞기 · 나 ${n[0]}장 · 상대 ${n[1]}장 뽑기` : `상대 패를 ${r.how === 'bottom' ? '섞어서 덱 아래로' : '덱에 넣고 섞기'} · 상대 ${n[1]}장 뽑기`;
   const more = r.more ? `${r.more.side === 'me' ? '내' : '상대'} 남은 프라이즈가 ${r.more.side === 'me' ? my : v.p[1 - me].prizesN}장이라 ${n[0]}장을 뽑아요. ` : '';
-  const opp = r.who !== 'me' ? `${on} 님 손패는 ${on} 님이 판정 창의 단추를 눌러 처리해요. 누르지 않으면 ${on} 님 차례가 시작될 때 뽑기 전에 먼저 처리돼요.` : ''; // 11/18 링크 님: 상대가 눌러서 처리
-  fxStep({ ...base, desc: more + opp, items: [{ label, run: () => send({ type: 'handReset', who: r.who, how: r.how, n, why: base.short, ask: true }) }] });
+  const opp = r.who !== 'me' ? `${on} 님 손패도 누르는 즉시 처리돼요. ${on} 님은 판정 목록에서 동의하거나 이의를 걸 수 있어요.` : ''; // 11/19 링크 님: 내 차례 일은 내가 다 처리 (상대가 누를 때까지 기다리지 않음)
+  fxStep({ ...base, desc: more + opp, items: [{ label, run: () => send({ type: 'handReset', who: r.who, how: r.how, n, why: base.short }) }] });
 }
 function hpLeftOf(sl) { const c = cinfo(topOf(sl).c); return c.hp ? Math.max(0, c.hp - sl.dmg) : null; }
 function openSpread(title, total, sids) { // 카운터 나누기: 포켓몬마다 ▼▲, 합이 정확히 total 이어야 올릴 수 있음

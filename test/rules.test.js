@@ -100,13 +100,17 @@ const W = r => (r.warn || []).join(' / ');
   act(f, { type: 'handReset', who: 'opp', how: 'bottom', n: [0, 3] });
   assert.deepEqual([...S.p[o].deck.slice(-h.length)].sort(), [...h].sort(), '덱 아래에'); assert.deepEqual(S.p[o].hand, top3);
   { const R = replay(g.init, g.log).s; assert.deepEqual(R.p[o].hand, S.p[o].hand); assert.deepEqual(R.p[f].deck, S.p[f].deck); assert.deepEqual(R.p[o].deck, S.p[o].deck); } // 기록 다시 돌리기가 같은 결과
+  // 지금 단추 (why 있음, ask 없음): 내가 누르면 상대 손패도 바로, 기록에 카드 이름
+  { const r5 = act(f, { type: 'handReset', who: 'both', how: 'deck', n: [4, 4], why: '저지맨' });
+    assert.equal(S.p[f].hand.length, 4); assert.equal(S.p[o].hand.length, 4); assert.ok(!S.prompts.some(x => x.type === 'handReset'), '요청 없이 바로');
+    assert.ok(r5.ev.length === 2 && r5.ev.every(e => /「저지맨」 — /.test(e.pub)), JSON.stringify(r5.ev)); assert.deepEqual(waitingOn(S), [S.current]); }
   // 덱이 모자라면 있는 만큼
   S.p[f].deck.splice(2); const r4 = act(f, { type: 'handReset', who: 'me', how: 'discard', n: [5, 0] });
   assert.ok(r4.ev.some(e => /덱이 모자라/.test(e.pub))); assert.ok(/트래시하고/.test(r4.ev[0].pub));
   act(f, { type: 'handReset', who: 'x', how: 'deck', n: [1, 0] }, false);
   console.log('handReset ok');
 }
-// ----- 상대 손패는 상대가 눌러서 처리 (ask): 요청 → 상대가 누름 / 안 누르면 상대 차례 시작 때 뽑기 전에 -----
+// ----- ask (11/19 잠깐 쓰던 방식, 그때 기록 재생용으로 엔진에 남김): 요청 → 상대가 누름 / 안 누르면 상대 차례 시작 때 뽑기 전에 -----
 {
   const g = game(2, 'r3'); const { S, f, o, act } = g;
   const oh0 = [...S.p[o].hand];

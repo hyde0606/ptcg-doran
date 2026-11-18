@@ -694,14 +694,15 @@ export function apply(s, who, a, idx = 0, opt = {}) {
       const src = a.why ? String(a.why).slice(0, 40) : '';
       for (const p of ps) {
         const mine = p === who, on = s.players[p].name, n = nn[mine ? 0 : 1];
-        if (!mine && a.ask) { // 상대 손패는 상대가 눌러서 처리 (11/18 링크 님). 누르지 않으면 상대 차례가 시작될 때 뽑기 전에 먼저 처리
+        if (!mine && a.ask) { // ask: 상대가 눌러서 처리하던 방식 (11/19 00:35~01:30쯤 잠깐 씀, 그때 기록을 그대로 다시 보이려고 남김). 지금 단추는 ask 없이 바로 처리 (링크 님: 내 차례 일은 내가 다)
           for (const q0 of s.prompts.filter(x => x.type === 'handReset' && x.p === p)) { s.prompts = s.prompts.filter(x => x !== q0); applyReset(s, q0, ev, '다음 요청 전에 먼저 처리 — '); } // 앞선 요청이 남아 있으면 순서대로
           addPrompt(s, { type: 'handReset', p, to: p, how: a.how, n, src, by: who, text: `${me} 님의 「${src || '카드 효과'}」: ${RESET_KO[a.how]} ${n}장 뽑아 주세요.` });
           say(`${me}: ${src ? `「${src}」 — ` : ''}${on} 님에게 손패 정리를 요청했어요 (${RESET_KO[a.how]} ${n}장 뽑기, ${on} 님이 눌러서 처리).`);
           continue;
         }
         const { how, d } = resetHand(s, p, a.how, n);
-        ev.push({ pub: mine ? `${me}: ${how} ${d.length}장을 뽑았어요.` : `${me}: ${on} 님 ${how} ${on} 님이 ${d.length}장을 뽑았어요.`, own: d.map(i => nm(s, i)).join(', '), ownBy: p });
+        const pre = src ? `「${src}」 — ` : ''; // 어떤 카드로 했는지 (옛 기록엔 why가 없어 그대로)
+        ev.push({ pub: mine ? `${me}: ${pre}${how} ${d.length}장을 뽑았어요.` : `${me}: ${pre}${on} 님 ${how} ${on} 님이 ${d.length}장을 뽑았어요.`, own: d.map(i => nm(s, i)).join(', '), ownBy: p });
         if (d.length < n) say(`${on}: 덱이 모자라 ${d.length}장만 뽑았어요.`);
       }
       break;
