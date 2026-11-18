@@ -1,0 +1,6 @@
+# 인터넷에 올릴 때 빼는 파일 (Cloudflare Workers static assets)
+*.bak
+*.tmp
+*.orig
+.DS_Store
+Thumbs.db
