@@ -163,7 +163,8 @@ const BAND = c => { // 합친 카드에서 영문판을 쓰는 세로 범위 (�
 function picHtml(c, want, big = false) { // 카드 그림 <img> (합친 카드는 두 장 겹침). 감싸는 칸은 position: relative
   const m = picMode(c, want); if (!m) return '';
   const nm = esc(cname(c)), lazy = big ? '' : 'loading="lazy"';
-  const en = big ? hires(c.img) : c.img, fb = big ? ` onerror="if(!this.dataset.s){this.dataset.s=1;this.src='${c.img}'}"` : '';
+  // 크게 볼 때 영문 큰 그림은 장당 약 1MB·1초라, 이미 받아 둔 작은 그림을 먼저 보이고 큰 그림이 다 받아지면 바꾼다 (못 받으면 작은 그림 그대로)
+  const en = c.img, fb = big && c.img ? ` data-hi="${hires(c.img)}" onload="const h=this.dataset.hi;if(h){this.dataset.hi='';const i=new Image();i.referrerPolicy='no-referrer';i.onload=()=>{this.src=h};i.src=h}"` : '';
   if (m === 'mix') { const [t, b, ace] = BAND(c), clip = ace ? `;clip-path:polygon(0 ${t}%,100% ${t}%,100% 55.5%,90.5% 55.5%,90.5% ${b}%,0 ${b}%)` : ''; return `<img src="${c.kimg}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"><img class="band" src="${en}" alt="" referrerpolicy="no-referrer" ${lazy} draggable="false" style="--bt:${t}%;--bb:${100 - b}%${clip}"${fb}>`; }
   return `<img src="${m === 'kr' ? c.kimg : en}" alt="${nm}" referrerpolicy="no-referrer" ${lazy} draggable="false"${m === 'en' ? fb : ''}>`;
 }
@@ -800,6 +801,16 @@ function cinfo(cid) { // 판에 저장된 카드 정보 + 지금 카드 자료�
   return cur && cur.kn ? { ...base, kn: cur.kn, kimg: cur.kimg, kab: cur.kab, kat: cur.kat, kr: cur.kr, kra: cur.kra, ksa: cur.ksa, kset: cur.kset, kno: cur.kno } : base; // 한글은 항상 지금 자료 우선
 }
 const nmOf = x => x ? cname(cinfo(x.c)) : '?';
+const PRE = new Set();
+function preloadPics(cards) { // 판을 열면 두 덱 카드 그림을 미리 받아 둔다 (영문 그림 서버는 장당 0.5~0.7초라 처음 놓을 때 늦게 뜸)
+  for (const cid of Object.keys(cards || {})) {
+    const c = cinfo(cid), m = picMode(c, D.dimg); if (!m) continue;
+    for (const u of m === 'mix' ? [c.kimg, c.img] : [m === 'kr' ? c.kimg : c.img]) {
+      if (!u || PRE.has(u)) continue; PRE.add(u);
+      const im = new Image(); im.referrerPolicy = 'no-referrer'; im.fetchPriority = 'low'; im.decoding = 'async'; im.src = u;
+    }
+  }
+}
 const topOf = sl => sl.cards[sl.cards.length - 1];
 
 const TYPE_CH = { Grass: '풀', Fire: '불', Water: '물', Lightning: '번', Psychic: '초', Fighting: '격', Darkness: '악', Metal: '강', Dragon: '드', Colorless: '무' };
@@ -815,7 +826,7 @@ function renderGame(id) {
     G.ws = ws;
     ws.onmessage = e => {
       const m = JSON.parse(e.data);
-      if (m.t === 'full') { const first = !G.view; G.view = m.view; G.lines = m.lines; G.cards = m.cards; if (m.specs) G.specs = m.specs; draw(first ? [] : null); }
+      if (m.t === 'full') { const first = !G.view; G.view = m.view; G.lines = m.lines; G.cards = m.cards; if (m.specs) G.specs = m.specs; draw(first ? [] : null); if (first) preloadPics(m.cards); }
       else if (m.t === 'upd') { G.view = m.view; G.lines.push(...m.lines); draw(m.lines); }
       else if (m.t === 'specs') { G.specs = m.specs; drawSpecs(); }
       else if (m.t === 'spec') { (G.specChat ||= []).push(m); drawSide(); }
