@@ -69,3 +69,7 @@ npx wrangler deploy
 - 실시간 판의 플레이어별 남은 시간, 카톡 알림
 - 다면기 방, 3판 2선승 시간 종료 처리, 대회 대진 연결, 랭킹
 - 영문 30th Celebration 카드 24장은 한글판과 다른 카드라 영문 이름으로 나옴 (한글 H·I·J 카드는 영문에 없는 한국판 카드까지 모두 들어 있음)
+
+## 사이트 자동 반영
+- main에 올라가면 GitHub Actions(`.github/workflows/deploy.yml`)가 Cloudflare에 자동으로 올린다. GitHub Secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`가 필요하다.
+- 카드 자료(`public/cards.json`)는 저장소에 없다. PC에서 `npx wrangler deploy`로 올리면 사이트가 그 카드 자료를 로비 저장소에 보관하고, 자동 반영 판(카드 자료 없이 올라감)은 보관해 둔 것을 쓴다. 카드 자료를 바꿨을 때만 PC에서 한 번 올리면 된다.
