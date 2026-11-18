@@ -53,6 +53,8 @@ body.nohdr { --hh: 0px; }
 body.nohdr header.top { display: none; }
 @media (max-width: 760px) { body.deckedit { --hh: 0px; } body.deckedit header.top { display: none; } } /* 덱 고치기: 폰에서만 머리줄을 숨기고 PC는 그대로 */
 header.top { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: rgba(255, 255, 255, .96); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 40; flex-wrap: wrap; box-shadow: 0 2px 14px rgba(40, 90, 140, .1); height: var(--hh); }
+/* 화면 높이가 낮을 때(폰 가로 등)는 머리줄이 같이 스크롤되어 올라감. 덱 위쪽 줄은 맨 위에 붙음 */
+@media (max-height: 540px) { header.top { position: relative; } body .dk-top { top: 0; } }
 .brand { font-family: var(--fh); font-size: 1.25rem; color: var(--head); text-decoration: none; display: flex; align-items: center; gap: 9px; }
 .ball { --c: var(--r2); width: 30px; height: 30px; border-radius: 50%; flex: none; position: relative; display: inline-block; background: linear-gradient(#fff 0 44%, var(--band) 44% 56%, #fff 56%); box-shadow: inset 0 0 0 3px var(--r2); }
 .ball::before { content: ''; position: absolute; inset: 30%; border-radius: 50%; background: #fff; border: 2px solid var(--band); }

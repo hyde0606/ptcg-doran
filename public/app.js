@@ -719,10 +719,24 @@ function renderSettings() {
 function openSettings(onArt) { openSheet(`<button class="x sm" data-close>닫기</button><h3>설정</h3><div class="setwrap">${settingsHtml(true)}</div>`, el => bindSettings(el.querySelector('.setwrap'), onArt, true)); }
 
 // ---------- 로비 ----------
-const fmtLeft = ms => { if (ms <= 0) return '기한 지남'; const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3); return h ? `${h}시간 ${m}분 남음` : `${m}분 남음`; };
+const fmtLeft = ms => { if (ms <= 0) return '기한 지남'; const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3); return h ? `${h}시간 ${m}분 남음` : m ? `${m}분 남음` : '1분 안 남음'; };
 const modeKo = c => (c.mode === 'async' ? `비동기 · 결정마다 ${c.deadlineH}시간` : '실시간') + ` · ${c.bestOf === 3 ? '3판 2선승' : '1판'}` + (c.spectate === 'no' ? ' · 관전 끔' : '');
 let lobbyTab = (() => { try { return localStorage.getItem('lobbyTab') || 'mine'; } catch { return 'mine'; } })();
 function renderLobby() { return viewData('lobby', () => Promise.all([api('/api/rooms'), api('/api/decks')]), drawLobby); }
+// 대전 화면은 가만히 있어도 맞게: 남은 시간 글자는 10초마다 다시 세고, 방 목록은 30초마다 조용히 받아 바뀐 것만 다시 그림.
+// 탭으로 돌아오면 바로. 10분 넘게 손대지 않으면 목록 받기는 쉼 (무료 요청 수 아끼기, 차례 알림은 푸시로 옴)
+function tickLeft() {
+  const now = Date.now();
+  document.querySelectorAll('[data-dl]').forEach(e => { const t = fmtLeft(+e.dataset.dl - now); if (e.textContent !== t) e.textContent = t; });
+  document.querySelectorAll('[data-dls]').forEach(e => { const ms = +e.dataset.dls - now, t = fmtShort(ms); if (e.textContent !== t) e.textContent = t; e.title = fmtLeft(ms); });
+}
+let lastTouch = Date.now();
+['pointerdown', 'keydown', 'wheel'].forEach(k => addEventListener(k, () => { lastTouch = Date.now(); }, { passive: true, capture: true }));
+const onLobby = () => ME && (location.hash || '#lobby') === '#lobby' && document.visibilityState === 'visible';
+const pollLobby = () => viewData('lobby', () => Promise.all([api('/api/rooms'), VIEW.lobby ? VIEW.lobby.v[1] : api('/api/decks')]), drawLobby, { drawn: true });
+setInterval(tickLeft, 10000);
+setInterval(() => { if (onLobby() && Date.now() - lastTouch < 600e3) pollLobby(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') return; tickLeft(); if (onLobby()) { lastTouch = Date.now(); pollLobby(); } });
 function drawLobby([data, decks]) {
   const rooms = data.rooms;
   const mine = rooms.filter(r => r.mine && r.status !== 'done'), open = rooms.filter(r => r.status === 'open' && !r.mine), watch = rooms.filter(r => !r.mine && r.status === 'playing'), done = rooms.filter(r => r.status === 'done' || r.status === 'between');
@@ -737,7 +751,7 @@ function drawLobby([data, decks]) {
     const nm = [0, 1].map(i => r.names[i] || '');
     const who = n => n ? `<span class="rp"><i class="av">${esc(n.slice(0, 1))}</i><b>${esc(n)}</b></span>` : '<span class="rp empty"><i class="av">?</i><b>기다리는 중</b></span>';
     const score = r.wins && (r.status === 'done' || r.status === 'between') ? `<span class="rsc">${r.wins.join(' : ')}</span>` : '<span class="rvs">vs</span>';
-    const left = r.deadline && r.status === 'playing' ? `<span class="rleft">${ICON.wait}${fmtLeft(r.deadline - Date.now())}</span>` : `<span class="rleft none">${r.cfg.invite ? `초대: ${esc(r.cfg.invite)}` : '—'}</span>`;
+    const left = r.deadline && r.status === 'playing' ? `<span class="rleft">${ICON.wait}<span data-dl="${r.deadline}">${fmtLeft(r.deadline - Date.now())}</span></span>` : `<span class="rleft none">${r.cfg.invite ? `초대: ${esc(r.cfg.invite)}` : '—'}</span>`;
     let main = '';
     if (r.status === 'open' && !r.mine) main = `<button class="primary sm" data-join="${r.id}">${ICON.door}들어가기</button>`;
     else if (r.status === 'open' && r.host === data.me) main = `<button class="sm" data-close-room="${r.id}">${ICON.x}방 닫기</button>`;
@@ -1240,7 +1254,7 @@ function rbarHtml(readOnly) { // 오른쪽 세로 막대: 위 사람 남은 사�
   const cur = v.phase === 'play' ? (v.current === bs ? 'me' : 'opp') : '';
   const U = v.phase === 'play' ? v.p[v.current].used : null; // 세로 화면: 이번 차례에 쓴 것(에너지·서포트·후퇴·기술)을 막대 가운데에 작게
   const cu = U ? `<span class="cuses" title="이번 차례에 한 것 (누르면 설명)">${USES.map(([k, ic, l]) => `<i class="${U[k] ? 'done' : ''}" title="${l} ${U[k] ? '(썼어요)' : '(아직)'}">${ICON[ic]}</i>`).join('')}</span>` : '';
-  const mid = v.phase === 'setup' ? '<b>준비</b>' : v.phase === 'over' ? '<b>끝</b>' : `<small>${v.turn}번째</small>${v.deadline ? `<b title="${fmtLeft(v.deadline - Date.now())}">${fmtShort(v.deadline - Date.now())}</b>` : '<b>차례</b>'}${cu}`;
+  const mid = v.phase === 'setup' ? '<b>준비</b>' : v.phase === 'over' ? '<b>끝</b>' : `<small>${v.turn}번째</small>${v.deadline ? `<b data-dls="${v.deadline}" title="${fmtLeft(v.deadline - Date.now())}">${fmtShort(v.deadline - Date.now())}</b>` : '<b>차례</b>'}${cu}`;
   return `<div class="rbar">
     <div class="pzc opp" title="${esc(v.p[os].name)} 님 남은 사이드"><b>${v.p[os].prizesN}</b></div>
     <div class="clock ${cur}" title="${v.deadline ? '이번 결정까지 남은 시간' : ''}"${U ? ' data-uses role="button" tabindex="0" aria-label="이번 차례에 한 것 보기"' : ''}>${mid}</div>
