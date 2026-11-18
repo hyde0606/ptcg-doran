@@ -1,6 +1,7 @@
 import KS from '/lib/ks.js';
 import { indexCards, parseDeckList, checkDeck, exportDeckList, koName, cardNo, sideEn } from '/lib/deck.js';
 import Sound from '/lib/sound.js';
+import { parseSearch, parseTop, parseCost, searchLabel, toLabel, REST_KO } from '/lib/fxhelp.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -204,7 +205,7 @@ window.addEventListener('resize', () => requestAnimationFrame(placeX));
 function closeSheet(fromPop) {
   const sh = $('#sheet'); if (sh.hidden) return;
   const sub = SUBVIEW ? 1 : 0; SUBVIEW = null;
-  sh.hidden = true; sh.innerHTML = ''; sheetStack.length = 0; ZV = null;
+  sh.hidden = true; sh.innerHTML = ''; sheetStack.length = 0; ZV = null; if (typeof ZMENU !== 'undefined' && ZMENU) zvMenuClose();
   if (!fromPop) { popSkip++; history.go(-1 - sub); }
 }
 // ---------- 뒤로 가기 ----------
@@ -218,6 +219,8 @@ function leavePage(fallback) { // 화면의 '닫기'로 나갈 때: 지킴 칸�
 }
 window.addEventListener('popstate', () => {
   if (popSkip) { popSkip--; return; }
+  if (REVEAL) { closeReveal(true); return; } // 상대가 보여준 카드 창부터
+  if (ZMENU) { const live = ZMENU.m.isConnected; zvMenuClose(); if (live) { history.pushState({ sheet: 1 }, ''); return; } } // 분류 목록만 닫고 창은 그대로
   if (SUBVIEW) { SUBVIEW(); return; }
   if (!$('#sheet').hidden) { closeSheet(true); return; }
   if (!GUARD || GUARD.leaving || location.hash !== GUARD.hash) return; // 다른 페이지로 가는 중 (hashchange가 그림)
@@ -1270,15 +1273,18 @@ function renderGame(id) {
   leaveGame = () => { closed = true; clearInterval(ping); document.removeEventListener('visibilitychange', sendVis); app.removeEventListener('click', dockOut, true); if (G.rw) { clearTimeout(G.rw.timer); G.rw = null; } try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
 }
 function send(a) {
+  const pre = a.force ? null : fxPrep(a); // 카드 효과 도우미: 쓰기 직전 카드 글 (경고 뒤 '그대로 진행'이면 그때 시작)
   return new Promise(res => {
     const id = G.seq++; G.pend[id] = res;
     G.ws.send(JSON.stringify({ t: 'act', id, a }));
   }).then(async r => {
-    if (r.ok) return true;
+    if (r.ok) { if (pre) setTimeout(() => fxAfter(pre), 0); return true; }
     if (r.warn) {
       const f = await ask('이렇게 할까요?', `<p>기본 룰과 다른 점이 있어요.</p><ul>${r.warn.map(w => `<li>${esc(w)}</li>`).join('')}</ul><p class="small muted">카드 효과 때문이라면 그대로 진행하세요. 기록에 <span class="chip judge">사람 판정</span>으로 남고 상대가 확인해요.</p><label class="h">설명 (선택)</label><input name="note" maxlength="100" style="width:100%" placeholder="예: 특성으로 에너지 한 장 더">`, '그대로 진행', 'judge');
       if (!f) return false;
-      return send({ ...a, force: true, note: f.note || a.note });
+      const ok = await send({ ...a, force: true, note: f.note || a.note });
+      if (ok && pre) setTimeout(() => fxAfter(pre), 0);
+      return ok;
     }
     toast(r.err || '할 수 없어요.'); return false;
   });
@@ -1315,6 +1321,10 @@ function energyTabs(sl) { // 붙은 에너지: 카드 왼쪽 아래에 타입 �
   const n = sl.en.length; if (!n) return '';
   return `<div class="enrow" style="--n:${n}">${sl.en.map(x => { const e = cinfo(x.c); const ty = (e.n.match(/Basic (\w+) Energy/) || [])[1]; return typeIcon(ty || 'Special', 'en', `data-k="${x.i}" title="${esc(cname(e))}"`); }).join('')}</div>`;
 }
+function abUsedOf(sid, k = null) { // 이번 차례에 이 포켓몬의 특성을 썼는지 (차례인 사람 것만: 차례가 바뀌면 사라짐)
+  const v = G.view; if (!v || v.phase !== 'play' || v.current == null) return false;
+  const u = v.p[v.current]?.used?.ab || []; return u.some(x => k == null ? x.startsWith(sid + ':') : x === `${sid}:${k}`);
+}
 function slotHtml(sl, opt = {}) {
   const size = opt.active ? 'act' : 'bn';
   if (!sl) return `<div class="spot ${size} empty">${opt.active ? '<span>배틀 필드</span>' : ''}</div>`;
@@ -1324,7 +1334,8 @@ function slotHtml(sl, opt = {}) {
   const rot = cd.asleep ? 'r-sleep' : cd.paralyzed ? 'r-para' : cd.confused ? 'r-conf' : '';
   const hpLeft = c.hp ? Math.max(0, c.hp - sl.dmg) : null;
   const pct = c.hp ? hpLeft / c.hp * 100 : 100;
-  const marks = [cd.poisoned ? '<b class="mk poison">독</b>' : '', cd.burned ? '<b class="mk burn">화상</b>' : '', cd.asleep ? '<b class="mk sleep">잠듦</b>' : '', cd.paralyzed ? '<b class="mk para">마비</b>' : '', cd.confused ? '<b class="mk conf">혼란</b>' : ''].join('');
+  const abUsed = abUsedOf(sl.sid);
+  const marks = [abUsed ? `<b class="mk abu" title="이번 차례에 특성을 썼어요">${ICON.check}특성 사용</b>` : '', cd.poisoned ? '<b class="mk poison">독</b>' : '', cd.burned ? '<b class="mk burn">화상</b>' : '', cd.asleep ? '<b class="mk sleep">잠듦</b>' : '', cd.paralyzed ? '<b class="mk para">마비</b>' : '', cd.confused ? '<b class="mk conf">혼란</b>' : ''].join('');
   const under = sl.cards.length > 1 ? sl.cards.slice(0, -1).map((x, i) => `<div class="pc under" data-k="${x.i}" style="--u:${sl.cards.length - 1 - i}"></div>`).join('') : '';
   // 이름 상자 없이: 오른쪽 위 남은 체력 판(이름 줄 높이, 시안 A) + 왼쪽 아래 안쪽 에너지 받침. 데미지는 남은 HP로 보여요 (HP를 모르는 카드만 데미지 배지)
   const hp = c.hp ? `<span class="hpb ${pct <= 25 ? 'low' : pct <= 50 ? 'mid' : ''}" title="남은 체력 ${hpLeft} / ${c.hp}"><small>HP</small><b>${hpLeft}</b>${(c.ty || [])[0] ? typeIcon(c.ty[0]) : ''}</span>` : '';
@@ -1583,11 +1594,11 @@ function draw(newLines) {
   app.innerHTML = `<div class="arena"><div class="table">${matHtml()}${dockHtml()}<div class="hl-layer"></div></div>${lobbyBtn()}${sndHint}</div>`;
   drawSpecs(); drawSide(); bindBoard();
   app.querySelectorAll('[data-dock]').forEach(b => b.onclick = () => { G.ui.dockMode = b.dataset.dock; draw([]); });
-  flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); liveMarks(prevView, newLines); chatAlert(newLines); }
+  flip(prev); if (newLines) { effects(prevView, newLines); gameSounds(prevView, newLines); liveMarks(prevView, newLines); chatAlert(newLines); if (prevView) revealShow(newLines); }
   else if (G.ui.marks) rwHighlight(G.ui.marks, true); // 창을 열고 닫아 다시 그려도 강조 틀은 그대로 (움직임 없이)
   const sh = app.querySelector('[data-sndon]'); if (sh) sh.onclick = () => { Sound.unlock(); Sound.sfx('notify'); sh.remove(); };
   G.prev = JSON.parse(JSON.stringify(v));
-  const lk = me != null && v.p[me].look, lkKey = lk ? `${lk.p}-${lk.z}-${lk.n}` : '';
+  const lk = me != null && v.p[me].look, lkKey = lk ? `${lk.p}-${lk.z}-${lk.n}-${lk.bottom ? 'b' : 't'}` : '';
   if (ZV && !ZV.v) { const el = $('#sheet .zvsheet'); if (el) zvFill(el); else ZV = null; }
   if (lkKey && (lkKey !== G.ui.lookKey || G.ui.lookWant) && !$('#sheet:not([hidden]) .in')) { G.ui.lookWant = false; openZoneView({ look: 1 }); } // 덱·손패·프라이즈를 보기 시작하면(또는 다시 보기를 누르면) 바로 크게
   G.ui.lookKey = lkKey;
@@ -1666,7 +1677,7 @@ function dockItems() {
   const lk = v.p[me].look;
   if (lk) {
     const P = v.p[lk.p], cards = (lk.z === 'deck' ? P.deck.cards : lk.z === 'hand' ? P.hand : P.prizes) || [];
-    const ttl = `${lk.p === me ? '내' : '상대'} ${({ deck: '덱', hand: '손패', prizes: '프라이즈' })[lk.z]} 보는 중 <span class="chip">${cards.length}장</span>`;
+    const ttl = `${lk.p === me ? '내' : '상대'} ${({ deck: '덱', hand: '손패', prizes: '프라이즈' })[lk.z]}${lkSide(lk)} 보는 중 <span class="chip">${cards.length}장</span>`;
     const body = `<div class="lkbar"><button class="primary sm" data-zvopen>${ICON.expand}크게 보기</button><button class="sm" data-t="lookEnd">닫기</button>${lk.z === 'deck' ? '<button class="sm" data-t="shuffleMine">섞고 닫기</button>' : ''}</div>`;
     out.push({ k: 'look', u: 1, hd: ttl, hb: `<div class="prompt look">${body}</div>`, h: `<div class="prompt look"><div class="q">${qIcon('search', 'judge')}${ttl}</div>${body}</div>` }); // 맨 위 항목이면 머리줄이 곧 제목 (같은 글을 두 번 쓰지 않음)
   }
@@ -1740,7 +1751,8 @@ function logHtml() {
     const st = g ? (g.status === 'ok' ? ['ok', 'check', '동의함'] : g.status === 'disputed' ? ['warn', 'warn', '이의 있음'] : ['judge', 'judge', '사람 판정 · 동의 전']) : ['judge', 'judge', '사람 판정'];
     const jc = l.gid && first ? `<i class="lj ${st[0]}" title="${st[2]}" aria-label="${st[2]}">${ICON[st[1]]}</i>` : '';
     if (l.chat) return `<div class="ln chat ${o.cls} ${l.rw ? 'rw' : ''}">${esc(l.txt)}</div>`;
-    return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}">${esc(o.txt)}${jc}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}</div>`;
+    const shw = l.show && l.show.length ? `<span class="lshow">${l.show.map(c => `<button type="button" class="lsc" data-ci="${esc(c)}" aria-label="${esc(cname(cinfo(c)))} 보기">${cardFace({ i: '', c }, 'lspc')}</button>`).join('')}</span>` : ''; // 보여준 카드: 작은 그림 (누르면 크게)
+    return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}">${esc(o.txt)}${jc}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}${shw}</div>`;
   });
 }
 // 관전자 채팅을 기록 사이에 시간 순서로 끼움. 관전자는 늘, 선수는 '대전 중에도 보기'를 켰거나 판이 끝났을 때만
@@ -1885,6 +1897,7 @@ function drawSide(target) {
 function bindLog(lg) { // 차례 머리를 누르면 그 차례부터 리플레이
   const sw = lg.querySelector('[data-specview]'); if (sw) sw.onclick = () => { const on = !specOn(); try { localStorage.setItem('specView', on ? '1' : '0'); } catch {} G.ws?.send(JSON.stringify({ t: 'specView', on })); drawSide(); };
   lg.querySelectorAll('[data-vk]').forEach(h => h.onclick = () => { const k = +h.dataset.vk; closeSheet(); setTimeout(() => startRewatch({ k }), 0); });
+  bindCardPeek(lg); // 보여준 카드 작은 그림
 }
 
 // ---------- 판 조작 ----------
@@ -1906,11 +1919,11 @@ async function moveMenu(iids, label) {
   const to = await pick(`${label} 옮기기`, moveOpts(meSeat()).map(o => ({ ...o, cls: '' })));
   if (to) doMove(iids, to);
 }
-async function doMove(iids, to) {
+async function doMove(iids, to, extra = {}) {
   const me = meSeat();
   if (to === 'reveal') return send({ type: 'reveal', iids });
   if (to === 'attach') { const sid = await pickSlot('어느 포켓몬에게?', [me, 1 - me]); if (!sid) return; const part = (await pick('무엇으로 붙일까요?', [{ label: '에너지로', value: 'en' }, { label: '도구로', value: 'tl' }, { label: '진화 카드로 (위에 겹치기)', value: 'cards' }])); if (!part) return; return send({ type: 'move', iids, to: { z: 'slot', sid, part } }); }
-  return send({ type: 'move', iids, to });
+  return send({ type: 'move', iids, to, ...extra });
 }
 // PC 마우스 휠로 가로 줄도 굴리기: 세로로 굴릴 곳이 먼저 없고, 가로로 넘치는 칸이면 휠을 가로로 바꿈. 끝에 닿으면 바깥이 굴러감
 addEventListener('wheel', e => {
@@ -2006,7 +2019,7 @@ async function onSlot(sid) {
   if (me != null && v.phase === 'play') {
     // 맨 윗줄: 기술과 특성 (내 포켓몬) / 둘째 줄: 체력 ▼▲ 적용 / 셋째 줄: 나머지
     if (mine && f.where === 'active') (c.at || []).forEach((a, k) => opts.push({ label: `${ICON.battle}${esc((c.kat || [])[k]?.n || a.n)} ${esc(a.d || '')}`, value: ['attack', k], cls: 'primary', row: 1 }));
-    if (mine) (c.ab || []).forEach((a, k) => opts.push({ label: `${ICON.spark}특성 ${esc((c.kab || [])[k]?.n || a.n)}`, value: ['ability', k], cls: 'blue', row: 1 }));
+    if (mine) (c.ab || []).forEach((a, k) => { const used = abUsedOf(sid, k); opts.push({ label: `${used ? ICON.check : ICON.spark}특성 ${esc((c.kab || [])[k]?.n || a.n)}${used ? '<small class="fx">사용함</small>' : ''}`, value: ['ability', k], cls: used ? 'blue used' : 'blue', row: 1 }); });
     if (mine && f.where === 'active' && v.p[me].bench.length) opts.push({ label: '후퇴', value: ['retreat'], cls: 'blue' });
     if (f.where === 'bench') opts.push({ label: '배틀 포켓몬과 바꾸기' + FX, value: ['switch'], cls: 'judge' });
     if (f.where === 'active') opts.push({ label: '특수상태', value: ['cond'], cls: 'judge' });
@@ -2077,6 +2090,7 @@ function suggest(k) {
   }
   return { dmg, parts };
 }
+const lkSide = lk => lk.z === 'deck' && lk.n != null ? (lk.bottom ? ' 맨 아래 카드' : ' 맨 위 카드') : ''; // 덱 위·아래에서 N장 보는 중
 async function onZone(z, p) {
   const v = G.view, me = G.rw ? null : meSeat(), P = v.p[p], mine = p === (G.rw ? G.rw.me : meSeat());
   if (z === 'discard' || z === 'lost') return openZoneView({ z, p });
@@ -2084,23 +2098,23 @@ async function onZone(z, p) {
   if (me == null || v.phase !== 'play') return;
   const lk = v.p[me].look; if (lk && lk.z === z && lk.p === p) return openZoneView({ look: 1 }); // 보는 중인 곳을 누르면 메뉴 없이 다시 크게
   if (z === 'deck') {
-    const opts = mine ? [{ label: '1장 뽑기', value: ['draw', 1] }, { label: '여러 장 뽑기', value: ['drawN'] }, { label: '덱 전체 보기 (검색)', value: ['look', null] }, { label: '위에서 몇 장 보기', value: ['lookN'] }, { label: '섞기', value: ['shuffle'] }]
-      : [{ label: '상대 덱 위에서 몇 장 보기', value: ['lookN'] }, { label: '상대 덱 섞기', value: ['shuffle'] }];
+    const opts = mine ? [{ label: '1장 뽑기', value: ['draw', 1] }, { label: '여러 장 뽑기', value: ['drawN'] }, { label: '덱 전체 보기 (검색)', value: ['look', null] }, { label: '위에서 몇 장 보기', value: ['lookN'] }, { label: '아래에서 몇 장 보기', value: ['lookB'] }, { label: '섞기', value: ['shuffle'] }]
+      : [{ label: '상대 덱 위에서 몇 장 보기', value: ['lookN'] }, { label: '상대 덱 아래에서 몇 장 보기', value: ['lookB'] }, { label: '상대 덱 섞기', value: ['shuffle'] }];
     const k = await pick(mine ? '내 덱' : '상대 덱', opts); if (!k) return;
     if (k[0] === 'draw') return send({ type: 'draw', n: 1 });
     if (k[0] === 'drawN') { const f = await ask('몇 장 뽑을까요?', stepHtml('n', 2, { min: 1, max: 60, unit: '장' }), '뽑기'); if (f) send({ type: 'draw', n: +f.n }); return; }
     if (k[0] === 'look') return askLook(p, 'deck');
-    if (k[0] === 'lookN') { const f = await ask('위에서 몇 장 볼까요?', stepHtml('n', 3, { min: 1, max: 60, unit: '장' }), '보기'); if (f) askLook(p, 'deck', +f.n); return; }
+    if (k[0] === 'lookN' || k[0] === 'lookB') { const b = k[0] === 'lookB', f = await ask(`${b ? '아래' : '위'}에서 몇 장 볼까요?`, stepHtml('n', 3, { min: 1, max: 60, unit: '장' }), '보기'); if (f) askLook(p, 'deck', +f.n, b); return; }
     if (k[0] === 'shuffle') return send({ type: 'shuffle', p });
   }
   if (z === 'prizes') { const ok = await pick(mine ? '내 프라이즈' : '상대 프라이즈', [{ label: '앞면 확인하기' + FX, value: 1, cls: 'judge' }]); if (ok) askLook(p, 'prizes'); return; }
   if (z === 'hand' && !mine) { const ok = await pick('상대 손패', [{ label: '상대 손패 보기' + FX, value: 1, cls: 'judge' }]); if (ok) askLook(p, 'hand'); }
 }
 // 덱·손패·프라이즈 보기: 이미 같은 것을 보고 있으면(큰 창만 닫았던 경우) 바로 큰 창, 아니면 보기 시작 후 큰 창 (2026-11-18 '덱이 안 보여요' 고침)
-function askLook(p, z, n = null) {
+function askLook(p, z, n = null, bottom = false) { // 이미 같은 것을 보는 중이면 서버에 다시 묻지 않고 바로 큰 창 (예전엔 창이 안 열려 '덱이 안 보임')
   const me = meSeat(), lk = me != null && G.view.p[me].look;
-  if (lk && lk.p === p && lk.z === z && (lk.n || null) === (n || null)) return openZoneView({ look: 1 });
-  G.ui.lookWant = true; send({ type: 'look', p, z, ...(n ? { n } : {}) });
+  if (lk && lk.p === p && lk.z === z && (lk.n || null) === (n || null) && !!lk.bottom === !!bottom) return openZoneView({ look: 1 });
+  G.ui.lookWant = true; send({ type: 'look', p, z, ...(n ? { n } : {}), ...(bottom ? { from: 'bottom' } : {}) });
 }
 // ---------- 카드 묶음 크게 보기: 화면(매트) 거의 전체 크기 창에 큰 카드 ----------
 // 덱 보기·트래시·로스트존·프라이즈·손패 모두 같은 기준. 대전·관전·리플레이 공통. 열어 둔 채 판이 바뀌면 다시 채움
@@ -2111,31 +2125,272 @@ function zvCards(spec, v = G.view) {
   const P = v.p[spec.p]; if (!P) return null;
   return (spec.z === 'deck' ? P.deck.cards : P[spec.z]) || null;
 }
-function openZoneView(spec, v = G.view) {
+function openZoneView(spec, v = G.view, keep = null) {
   if (!zvCards(spec, v)) return;
-  ZV = { ...spec, v: G.rw ? v : null };
-  openSheet(`<button class="x sm" data-close>닫기</button><div class="zvh"><h3 class="zvt"></h3><span class="zvb"></span></div><div class="zvgrid"></div>`, el => { el.classList.add('zvsheet'); zvFill(el); });
+  ZV = { ...spec, v: G.rw ? v : null, sel: keep?.sel || [], only: !!keep?.only, shuf: keep?.shuf ?? null, cat: keep?.cat || '' };
+  openSheet(`<button class="x sm" data-close>닫기</button><div class="zvh"><h3 class="zvt"></h3><span class="zvb"></span></div><div class="zvtools"></div><div class="zvgrid"></div><div class="zvbar" hidden></div>`, el => { el.classList.add('zvsheet'); zvFill(el); });
 }
-function zvFill(el) {
+// ---------- 여러 장 고르기 + 카드 효과 도우미 ----------
+// 카드 오른쪽 위 동그라미로 여러 장을 골라 단추 하나로 옮김(보여주고 손패로, 옮긴 뒤 덱 섞기). 카드를 누르면 지금처럼 크게 보기.
+// G.ui.fx: 카드 글을 읽어 차린 도우미 { kind:'search'|'cost', title, cid, sid, sp|co, test, gid } — 맞는 카드를 진하게, 장수·옮길 곳을 미리. 막지는 않음
+const ZCAT = [ // 덱 창 분류: 포켓몬(눌러서 기본·1진화·2진화·ex) / 트레이너스 / 에너지, 무리마다 색
+  ['pk', '포켓몬', c => c.st === 'P'], ['pk0', '기본 포켓몬', c => c.st === 'P' && (c.sub || []).includes('Basic')], ['pk1', '1진화', c => c.st === 'P' && (c.sub || []).includes('Stage 1')], ['pk2', '2진화', c => c.st === 'P' && (c.sub || []).includes('Stage 2')], ['ex', '포켓몬 ex', c => c.st === 'P' && (c.sub || []).includes('ex')],
+  ['tr', '트레이너스', c => c.st === 'T'], ['it', '아이템', c => (c.sub || []).includes('Item')], ['tl', '포켓몬의 도구', c => (c.sub || []).includes('Pokémon Tool')], ['sp', '서포트', c => (c.sub || []).includes('Supporter')], ['st', '스타디움', c => (c.sub || []).includes('Stadium')],
+  ['en', '에너지', c => c.st === 'E'], ['eb', '기본 에너지', c => c.st === 'E' && (c.sub || []).includes('Basic')], ['es', '특수 에너지', c => c.st === 'E' && !(c.sub || []).includes('Basic')],
+];
+const ZGRP = { pk: ['pk0', 'pk1', 'pk2', 'ex'], tr: ['it', 'tl', 'sp', 'st'], en: ['eb', 'es'] };
+const zcF = k => (ZCAT.find(c => c[0] === k) || [])[2] || (() => true), zcL = k => (ZCAT.find(c => c[0] === k) || [])[1] || '전체';
+const zgOf = k => Object.keys(ZGRP).find(g => g === k || ZGRP[g].includes(k)) || '';
+const ZSHORT = { pk0: '기본', ex: 'ex', tl: '도구', eb: '기본', es: '특수' }; // 좁을 때 무리 단추에 쓰는 짧은 이름
+function zvFitCats(tl, cnt) { // 분류 줄은 늘 한 줄: 넓으면 트레이너스·에너지를 펼쳐 두고, 좁으면 무리 단추(눌러서 고르기)로, 더 좁으면 장수를 뺌
+  const row = tl && tl.querySelector('.zvcats'); if (!row || !ZV) return;
+  const over = () => { const vis = [...row.children].filter(b => b.offsetParent), last = vis[vis.length - 1]; return !!last && last.getBoundingClientRect().right > row.getBoundingClientRect().right - 1; }, cg = zgOf(ZV.cat); // 마지막 단추 오른쪽 끝으로 잼 (button의 scrollWidth는 몇 px씩 틀림)
+  row.classList.add('fit'); // 재는 동안은 늘리지 않음 (늘어난 단추의 소수점 폭 때문에 넘친다고 잘못 재지 않게)
+  try {
+  cnt = cnt || (k => { const cs = zvCards(ZV, ZV.v || G.view) || []; return k ? cs.filter(x => zcF(k)(cinfo(x.c))).length : cs.length; });
+  const set = (b, k, l) => { b.querySelector('.zcl').textContent = l; b.querySelector('b').textContent = cnt(k); };
+  const gb = [...row.querySelectorAll('.zvcat[data-g]')];
+  gb.forEach(b => set(b, b.dataset.g, zcL(b.dataset.g))); // 단계는 기본 이름으로 정함 (골라도 단추 모양·장수 표시가 바뀌지 않게)
+  for (const m of ['full', 'compact', 'tiny']) { row.dataset.mode = m; if (!over()) break; }
+  const b = gb.find(x => x.dataset.g === cg && ZV.cat !== cg && x.offsetParent); if (!b) return; // 무리 단추로 고른 세부 이름 (예: 1진화 6)
+  set(b, ZV.cat, zcL(ZV.cat)); if (!over()) return;
+  if (ZSHORT[ZV.cat]) { set(b, ZV.cat, ZSHORT[ZV.cat]); if (!over()) return; }
+  set(b, ZV.cat, zcL(cg));
+  } finally { row.classList.remove('fit'); }
+}
+function zvSetCat(el, k) { ZV.cat = k; zvMenuClose(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); el.querySelector('.zvgrid').scrollTop = 0; zvFill(el); }
+let ZMENU = null; // 무리 단추를 누르면 뜨는 작은 목록 (바깥을 누르거나 뒤로 가기로 닫힘)
+function zvMenuClose() { if (!ZMENU) return; const f = ZMENU; ZMENU = null; f(); }
+function zvMenu(el, chip) {
+  const tl = el.querySelector('.zvtools'), g = chip.dataset.g, old = tl.querySelector('.zvmenu');
+  if (old) { const same = old.dataset.g === g; zvMenuClose(); if (same) return; }
+  const cards = zvCards(ZV, ZV.v || G.view) || [], cnt = k => cards.filter(x => zcF(k)(cinfo(x.c))).length;
+  const m = document.createElement('div'); m.className = `zvmenu k-${g}`; m.dataset.g = g; m.setAttribute('role', 'menu');
+  m.innerHTML = [g, ...ZGRP[g]].map(k => { const n = cnt(k); return `<button type="button" class="k-${g}" role="menuitemradio" data-cat="${k}" aria-checked="${(ZV.cat || '') === k}" ${n ? '' : 'disabled'}><span>${k === g ? `${zcL(g)} 전체` : zcL(k)}</span><b>${n}장</b></button>`; }).join('');
+  tl.appendChild(m);
+  const r = chip.getBoundingClientRect(), t = tl.getBoundingClientRect();
+  m.style.top = `${r.bottom - t.top + 6}px`; m.style.left = `${Math.max(0, Math.min(r.left - t.left, tl.clientWidth - m.offsetWidth))}px`;
+  chip.setAttribute('aria-expanded', 'true');
+  m.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => zvSetCat(el, b.dataset.cat));
+  const down = e => { if (!m.contains(e.target) && !(e.target.closest && e.target.closest('.zvcat.zg'))) zvMenuClose(); };
+  document.addEventListener('pointerdown', down, true);
+  ZMENU = () => { m.remove(); chip.setAttribute('aria-expanded', 'false'); document.removeEventListener('pointerdown', down, true); };
+  ZMENU.m = m;
+}
+function zvFx(v = G.view) {
+  const fx = G.ui && G.ui.fx, me = G.rw ? null : meSeat(); if (!fx || !ZV || ZV.v || me == null) return null;
+  if (fx.gid && v.openGroup?.[me] !== fx.gid) { G.ui.fx = null; return null; } // 그 효과가 끝났으면 도우미도 끝
+  if (fx.kind === 'cost') return !ZV.look && ZV.z === 'hand' && ZV.p === me ? fx : null;
+  const lk = v.p[me].look; return ZV.look && lk && lk.p === me && lk.z === 'deck' && (fx.sp.top ? lk.n != null && !!lk.bottom === !!fx.sp.bottom : lk.n == null) ? fx : null; // 위·아래에서 N장 도우미는 같은 쪽 N장 보기에만, 덱 찾기는 덱 전체 보기에만
+}
+function zvOpts(v = G.view) { // 고른 카드를 옮길 곳 (대전 중에만)
+  const me = G.rw ? null : meSeat(); if (me == null || v.phase !== 'play' || !ZV || ZV.v) return [];
+  const lk = v.p[me].look, z = ZV.look ? lk?.z : ZV.z, p = ZV.look ? lk?.p : ZV.p; if (z == null) return [];
+  if (p === me) {
+    const o = moveOpts(me).filter(x => !(x.value && x.value.z === z && z !== 'deck')).map(x => ({ ...x, cls: '' }));
+    if (z === 'deck' || z === 'prizes') o.unshift({ label: '보여주고 손패로', value: { z: 'hand', p: me }, show: 1 });
+    return o;
+  }
+  return [{ label: '상대 트래시로', value: { z: 'discard', p } }, { label: '상대 덱 위로', value: { z: 'deck', p, pos: 'top' } }, { label: '상대 덱 아래로', value: { z: 'deck', p, pos: 'bottom' } }, { label: '상대 손패로', value: { z: 'hand', p } }, { label: '상대 로스트존으로', value: { z: 'lost', p } }].filter(o => o.value.z !== z);
+}
+const zvActs = () => zvOpts(); // 카드 한 장 자세히 보기 아래 옮길 곳
+const fxPri = sp => `${sp.reveal ? '보여주고 ' : ''}${sp.to ? toLabel(sp) : '옮기기'}`;
+const fxRest = (sp, n) => sp.rest === 'shuffle' ? '나머지는 덱에 넣고 섞기' : sp.rest ? `나머지 ${n}장 ${sp.rest === 'discard' ? '트래시로' : '덱 아래로'}` : ''; // 섞어서 아래로는 기록에 '섞어서'로 남음
+function zvBarActs(opts, fx, n = 0, total = 0) { // 아래 줄 단추: 자주 쓰는 3개 + 나머지는 '다른 곳으로'
+  const me = meSeat();
+  if (fx && fx.kind === 'cost') return [{ label: `${ICON.check}트래시로`, value: { z: 'discard', p: me }, cls: 'primary', cost: 1 }, { label: '건너뛰기', skip: 1 }];
+  let pri;
+  if (fx && fx.sp.top && (fx.sp.to || fx.sp.rest)) { const r = fxRest(fx.sp, total - n); pri = [{ label: `${ICON.check}${n && fx.sp.to && r ? `<span class="b2"><span>${fxPri(fx.sp)}</span><small>+ ${r}</small></span>` : n && fx.sp.to ? fxPri(fx.sp) : r || fxPri(fx.sp)}`, fx: 1, cls: 'primary', zero: !!fx.sp.rest }]; } // 두 줄: 고른 카드 옮기기 / + 나머지 // 위에서 N장: 고른 카드 옮기고 나머지까지 한 번에 (못 찾았으면 나머지만)
+  else if (fx && fx.sp.to) pri = [{ label: `${ICON.check}${fxPri(fx.sp)}`, fx: 1, cls: 'primary' }];
+  else { const want = o => o.show || (o.value && (o.value.z === 'hand' || o.value.z === 'discard')); pri = opts.filter(want).slice(0, 3); if (pri.length < 3) pri = [...pri, ...opts.filter(o => !pri.includes(o)).slice(0, 3 - pri.length)]; if (pri[0]) pri[0] = { ...pri[0], cls: 'primary' }; }
+  const rest = opts.filter(o => !pri.some(p => p.label === o.label));
+  return rest.length ? [...pri, { label: '다른 곳으로…', more: rest }] : pri;
+}
+function zvFill(el, barOnly = false) {
   if (!ZV) return; const v = ZV.v || G.view, cards = zvCards(ZV, v); if (!cards) { ZV = null; closeSheet(); return; }
   const me = G.rw ? null : meSeat(), viewer = G.rw ? G.rw.me : me;
   let title, btns = '';
-  if (ZV.look) { const lk = v.p[me].look; title = `${lk.p === me ? '내' : '상대'} ${ZNAME[lk.z]} 보는 중`; btns = `<button class="sm" data-zlook="end">닫기</button>${lk.z === 'deck' ? '<button class="sm" data-zlook="shuffle">섞고 닫기</button>' : ''}`; }
+  if (ZV.look) { const lk = v.p[me].look; title = `${lk.p === me ? '내' : '상대'} ${ZNAME[lk.z]}${lkSide(lk)} 보는 중`; btns = `<button class="sm" data-zlook="end">닫기</button>${lk.z === 'deck' ? '<button class="sm" data-zlook="shuffle">섞고 닫기</button>' : ''}`; }
   else title = `${ZV.p === viewer ? '내' : esc(v.p[ZV.p].name) + ' 님'} ${ZNAME[ZV.z]}`;
   el.querySelector('.zvt').innerHTML = `${title} <span class="chip">${cards.length}장</span>`;
   const bb = el.querySelector('.zvb'); bb.innerHTML = btns;
   bb.querySelectorAll('[data-zlook]').forEach(b => b.onclick = () => send(b.dataset.zlook === 'end' ? { type: 'lookEnd' } : { type: 'shuffle', p: me }));
+  const fx = zvFx(v), opts = zvOpts(v), selable = opts.length > 0;
+  ZV.sel = ZV.sel.filter(i => cards.some(x => x.i === i));
+  const okOf = x => !fx || !fx.test || fx.test(cinfo(x.c)), nOk = fx && fx.test ? cards.filter(okOf).length : null;
+  if (!fx || !fx.test) ZV.only = false;
+  // 도우미·분류 줄 (모양이 바뀔 때만 다시 그림)
+  const showQ = cards.length >= 8, has = k => cards.some(x => zcF(k)(cinfo(x.c)));
+  const grps = showQ ? Object.keys(ZGRP).filter(has) : [], subsOf = g => ZGRP[g].filter(has);
+  if (ZV.cat && (!showQ || !has(ZV.cat))) ZV.cat = '';
+  const tl = el.querySelector('.zvtools'), sig = `${fx ? fx.kind + fx.title + (fx.test ? 1 : 0) : ''}|${grps.map(g => g + ':' + subsOf(g).join('.')).join()}`;
+  if (tl.dataset.sig !== sig) {
+    tl.dataset.sig = sig; zvMenuClose();
+    const lab = fx ? (fx.kind === 'cost' ? `먼저 손패 ${fx.co.n}장${fx.co.cond ? `(${esc(fx.co.cond)})` : ''}을 트래시 · 그다음 덱에서 찾기` : esc(searchLabel(fx.sp))) : '';
+    const chip = (cls, attrs, l, dn) => `<button type="button" class="zvcat ${cls}" ${attrs}><span class="zcl">${l}</span><b></b>${dn ? `<i class="zdn">${ICON.down}</i>` : ''}</button>`;
+    const row = grps.length ? `<div class="zvcats" role="group" aria-label="분류">${chip('k-all', 'data-cat=""', '전체')}${grps.map(g => g === 'pk' ? chip('k-pk zg', 'data-g="pk" aria-haspopup="menu" aria-expanded="false"', '포켓몬', 1)
+      : chip(`k-${g} zg zcmp`, `data-g="${g}" aria-haspopup="menu" aria-expanded="false"`, zcL(g), 1) + subsOf(g).map(k => chip(`k-${g} zful`, `data-cat="${k}"`, zcL(k))).join('')).join('')}</div>` : '';
+    tl.innerHTML = `${fx ? `<div class="zvfx"><i class="qi judge">${ICON.spark}</i><div class="zvfxt"><button type="button" class="zvfxn" data-ci="${fx.cid}">${esc(fx.title)}</button><span>${lab}</span></div><div class="zvfxb">${fx.test ? `<button type="button" class="xs zvonly" aria-pressed="${ZV.only}">${ZV.only ? ICON.check : ''}맞는 카드만 <b class="zvok"></b></button>` : ''}<button type="button" class="xs" data-fxoff>도우미 끄기</button></div></div>` : ''}${row}`;
+    bindCardPeek(tl);
+    const on = tl.querySelector('.zvonly'); if (on) on.onclick = () => { ZV.only = !ZV.only; tl.dataset.sig = ''; zvFill(el); };
+    const off = tl.querySelector('[data-fxoff]'); if (off) off.onclick = () => { G.ui.fx = null; tl.dataset.sig = ''; zvFill(el); };
+    tl.querySelectorAll('.zvcat[data-cat]').forEach(b => b.onclick = () => zvSetCat(el, b.dataset.cat));
+    tl.querySelectorAll('.zvcat[data-g]').forEach(b => b.onclick = () => zvMenu(el, b));
+  }
+  const okb = tl.querySelector('.zvok'); if (okb) okb.textContent = `${nOk}장`;
+  const cnt = k => k ? cards.filter(x => zcF(k)(cinfo(x.c))).length : cards.length, cg = zgOf(ZV.cat);
+  tl.querySelectorAll('.zvcat').forEach(b => {
+    const g = b.dataset.g; if (!g) b.querySelector('b').textContent = cnt(b.dataset.cat);
+    b.setAttribute('aria-pressed', String(g ? cg === g : (ZV.cat || '') === b.dataset.cat));
+  });
+  zvFitCats(tl, cnt); // 무리 단추 이름·장수는 여기서 (줄에 맞춰)
+  const catF = ZV.cat ? zcF(ZV.cat) : null;
+  // 카드 격자
+  const shown = cards.filter(x => (!ZV.only || okOf(x)) && (!catF || catF(cinfo(x.c))));
   const g = el.querySelector('.zvgrid'), st = g.scrollTop;
-  g.innerHTML = cards.length ? cards.map(x => `<div class="zc" role="button" tabindex="0" data-zc="${x.i}" aria-label="${esc(nmOf(x))} 자세히">${cardFace(x, 'zpc')}<small style="--ne:${emLen(nmOf(x)).toFixed(2)}">${esc(nmOf(x))}</small></div>`).join('') : '<p class="muted zve">비어 있어요.</p>';
+  if (!barOnly) {
+  g.dataset.n = cards.length;
+  g.innerHTML = shown.length ? shown.map(x => { const si = ZV.sel.indexOf(x.i), dim = fx && fx.test && !okOf(x);
+    return `<div class="zc${si >= 0 ? ' on' : ''}${dim ? ' dim' : ''}" role="button" tabindex="0" data-zc="${x.i}" aria-label="${esc(nmOf(x))} 자세히">${cardFace(x, 'zpc')}${selable ? `<button type="button" class="zsel" data-zsel="${x.i}" aria-pressed="${si >= 0}" aria-label="${esc(nmOf(x))} 고르기">${si >= 0 ? `<b>${si + 1}</b>` : ''}</button>` : ''}<small style="--ne:${emLen(nmOf(x)).toFixed(2)}">${esc(nmOf(x))}</small></div>`; }).join('')
+    : `<p class="muted zve">${cards.length ? '맞는 카드가 없어요.' : '비어 있어요.'}</p>`;
   zvSize(g); g.scrollTop = st;
-  g.querySelectorAll('[data-zc]').forEach(b => { const go = () => { const x = cards.find(y => String(y.i) === b.dataset.zc); if (x) zvCard(el, x); }; b.onclick = go; b.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; }); // 단추(button) 대신 div: 격자 줄 높이가 카드 높이를 제대로 따라감
+  g.querySelectorAll('[data-zc]').forEach(b => { const go = () => { const x = cards.find(y => String(y.i) === b.dataset.zc); if (x) zvCard(el, x); }; b.onclick = e => { if (!e.target.closest('[data-zsel]')) go(); }; b.onkeydown = e => { if (e.target === b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(); } }; }); // 단추(button) 대신 div: 격자 줄 높이가 카드 높이를 제대로 따라감
+  g.querySelectorAll('[data-zsel]').forEach(b => b.onclick = e => { e.stopPropagation(); zvToggle(el, b.dataset.zsel); });
+  }
+  // 아래 줄: 고른 장수 + 옮길 곳 (고르기 전에도 같은 자리에 흐리게 두어 모양이 바뀌지 않게)
+  const bar = el.querySelector('.zvbar'), n = ZV.sel.length;
+  const lk = me != null ? v.p[me].look : null, lkDeck = !!(ZV.look && lk && lk.z === 'deck' && lk.p === me), lkTop = lkDeck && lk.n != null;
+  bar.hidden = !selable || (!n && !fx && !lkTop);
+  if (!bar.hidden) {
+    if (ZV.shuf == null) ZV.shuf = fx && fx.kind === 'search' ? !!fx.sp.shuffle : lkDeck && lk.n == null;
+    const max = fx ? (fx.kind === 'cost' ? fx.co.n : fx.sp.max) : null;
+    const acts = zvBarActs(opts, fx, n, cards.length).map((o, i) => ({ ...o, i }));
+    const fxa = fx && fx.kind !== 'cost' && acts.length <= 2, rest = [['bottom', '덱 맨 아래로'], ['top', '덱 맨 위로'], ['discard', '트래시로'], ['shuffle', '덱 섞기']];
+    bar.innerHTML = `<div class="zvbh"><div class="zvn${max != null && n > max ? ' over' : ''}">${n ? `고른 카드 <b>${n}</b>${max != null ? ` / ${max}` : ''}장` : fx ? (fx.kind === 'cost' ? `트래시할 손패 ${max}장을 골라요` : `동그라미를 눌러 골라요${max != null ? ` (${max}장${fx.sp.upTo ? '까지' : ''})` : ''}${fx.sp.top && fx.sp.rest ? ' · 없으면 그냥 눌러요' : ''}`) : lkTop ? '옮길 카드를 동그라미로 골라요' : ''}</div>${lkDeck && !lkTop && fx?.kind !== 'cost' ? `<button type="button" class="sm zvshuf" aria-pressed="${!!ZV.shuf}">${ZV.shuf ? ICON.check : ''}옮긴 뒤 덱 섞기</button>` : ''}</div>
+      <div class="acts zvacts${fxa ? ' fxa' : ''}" style="--n:${acts.length};--np:${Math.min(2, acts.length)}">${acts.map(o => `<button class="${o.cls || ''}" data-za="${o.i}" ${!n && !o.skip && !o.zero ? 'disabled' : ''}>${o.label}</button>`).join('')}</div>
+      ${lkTop && !fx ? `<div class="zvrest"><span class="zvrn">${n ? '고르지 않은' : '본'} 카드 <b>${cards.length - n}</b>장은</span><div class="acts" style="--n:4;--np:2">${rest.map(([k, l]) => `<button data-zr="${k}" ${cards.length - n ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>` : ''}`;
+    bar.querySelectorAll('[data-za]').forEach(b => b.onclick = () => zvDo(acts[+b.dataset.za]));
+    bar.querySelectorAll('[data-zr]').forEach(b => b.onclick = () => zvRest(b.dataset.zr, cards.map(x => x.i).filter(i => !ZV.sel.includes(i))));
+    const sh = bar.querySelector('.zvshuf'); if (sh) sh.onclick = () => { ZV.shuf = !ZV.shuf; zvFill(el); };
+  }
 }
+async function zvRest(k, ids) { // 위에서 N장 보기: 남은 카드를 한 번에 (덱 맨 아래 / 맨 위 / 트래시 / 덱 섞기)
+  const me = meSeat(); if (!ids.length) return;
+  const ok = k === 'shuffle' ? await send({ type: 'shuffle', p: me }) : await send({ type: 'move', iids: ids, to: k === 'discard' ? { z: 'discard', p: me } : { z: 'deck', p: me, pos: k } });
+  if (ok) Sound.sfx('place');
+}
+function zvToggle(el, iid) { // 카드 그림은 다시 그리지 않고 동그라미·테두리·아래 줄만 (깜빡임 없게)
+  const k = ZV.sel.indexOf(iid);
+  if (k >= 0) ZV.sel.splice(k, 1); else ZV.sel.push(iid);
+  Sound.sfx('tap');
+  el.querySelectorAll('.zvgrid .zc').forEach(c => { const si = ZV.sel.indexOf(c.dataset.zc), b = c.querySelector('.zsel'); c.classList.toggle('on', si >= 0); if (b) { b.setAttribute('aria-pressed', String(si >= 0)); b.innerHTML = si >= 0 ? `<b>${si + 1}</b>` : ''; } });
+  zvFill(el, true);
+}
+async function zvDo(o) { // 고른 카드 옮기기. 창을 바꾸는 물음(어디로?·이대로?)이 있으면 끝난 뒤 창을 다시 열어 줌
+  const v = G.view, me = meSeat(); if (!ZV || me == null) return;
+  const fx = zvFx(v), cards = zvCards(ZV, v) || [], cmap = Object.fromEntries(cards.map(x => [x.i, x.c]));
+  const keep = { spec: ZV.look ? { look: 1 } : { z: ZV.z, p: ZV.p }, sel: [...ZV.sel], only: ZV.only, shuf: ZV.shuf, cat: ZV.cat };
+  const reopen = (sel = keep.sel) => { if (!$('#sheet').hidden || !zvCards(keep.spec)) return; openZoneView(keep.spec, G.view, { ...keep, sel }); };
+  if (o.skip) { const nx = fx && fx.next; G.ui.fx = null; closeSheet(); if (nx) setTimeout(() => fxSearch(nx), 60); return; }
+  const iids = keep.sel; if (!iids.length && !(o.fx && o.zero)) return toast('먼저 카드를 골라 주세요.');
+  const restIds = o.fx && fx.sp.top ? cards.map(x => x.i).filter(i => !iids.includes(i)) : null; // 위에서 N장: 고르지 않은 나머지
+  const lk = v.p[me].look;
+  let to = o.value, show = !!o.show, shuffle = !!(ZV.shuf && ZV.look && lk && lk.z === 'deck' && lk.p === me);
+  const nmI = i => esc(cname(cinfo(cmap[i])));
+  if (o.more) {
+    const r = await pick('어디로 옮길까요?', o.more.map((x, k) => ({ label: x.label, value: String(k) })));
+    if (r == null) return reopen(); const x = o.more[+r]; to = x.value; show = !!x.show;
+  }
+  if (o.fx) { const sp = fx.sp; show = sp.reveal; to = { hand: { z: 'hand', p: me }, bench: { z: 'bench', p: me }, discard: { z: 'discard', p: me }, top: { z: 'deck', p: me, pos: 'top' } }[sp.to] || sp.to; }
+  if (fx && (o.fx || o.cost)) { // 카드 글과 다르면 물어봄 (막지는 않음)
+    const max = o.cost ? fx.co.n : fx.sp.max, exact = !!o.cost; // 덱에서 찾기는 못 찾을 수도 있어 적게 고르는 건 괜찮음
+    const bad = fx.test ? iids.filter(i => !fx.test(cinfo(cmap[i]))) : [];
+    const cnt = max != null && (exact ? iids.length !== max : iids.length > max);
+    if (bad.length || cnt) {
+      const cond = o.cost ? fx.co.cond : fx.sp.cond;
+      const f = await ask('이대로 할까요?', `<p>카드 글과 다른 점이 있어요.</p><ul>${cnt ? `<li>${esc(fx.title)}: ${max}장${exact ? '' : '까지'}인데 ${iids.length}장을 골랐어요.</li>` : ''}${bad.length ? `<li>조건 ${esc(cond)}에 안 맞아 보이는 카드: ${bad.map(nmI).join(', ')}</li>` : ''}</ul><p class="small muted">카드 효과로 괜찮다면 그대로 진행하세요. 기록에 <span class="chip judge">사람 판정</span>으로 남고 상대가 확인해요.</p>`, '그대로 진행', 'judge');
+      if (!f) return reopen();
+    }
+  }
+  if (iids.length && (to === 'attach' || to === 'evolve')) { // 어느 포켓몬에게
+    let sid = o.fx && fx.sp.target === 'self' && fx.sid && findSlot(fx.sid) ? fx.sid : null;
+    if (!sid) sid = await pickSlot(to === 'evolve' ? '어느 포켓몬을 진화시킬까요?' : '어느 포켓몬에게 붙일까요?', o.fx ? [me] : [me, 1 - me]);
+    if (!sid) return reopen();
+    let part = to === 'evolve' ? 'cards' : null;
+    if (!part) { const c0 = cinfo(cmap[iids[0]]); part = c0.st === 'E' ? 'en' : (c0.sub || []).includes('Pokémon Tool') ? 'tl' : null; }
+    if (!part) { part = await pick('무엇으로 붙일까요?', [{ label: '에너지로', value: 'en' }, { label: '도구로', value: 'tl' }, { label: '진화 카드로 (위에 겹치기)', value: 'cards' }]); if (!part) return reopen(); }
+    to = { z: 'slot', sid, part };
+  }
+  let ok = !iids.length || (to === 'reveal' ? await send({ type: 'reveal', iids }) : await send({ type: 'move', iids, to, ...(show ? { show: true } : {}), ...(shuffle ? { shuffle: true } : {}) }));
+  if (ok && restIds) { // 남은 카드: 덱에 넣고 섞기 / (섞어서) 덱 아래로 / 트래시로
+    const r = fx.sp.rest;
+    if (r === 'shuffle') ok = await send({ type: 'shuffle', p: me });
+    else if (r && restIds.length) ok = await send({ type: 'move', iids: restIds, to: r === 'discard' ? { z: 'discard', p: me } : { z: 'deck', p: me, pos: 'bottom' }, ...(r === 'bottomMix' ? { mix: true } : {}) });
+  }
+  if (ok) Sound.sfx('place');
+  if (ok && fx) {
+    if (o.cost) { const nx = fx.next; G.ui.fx = null; closeSheet(); if (nx) setTimeout(() => fxSearch(nx), 60); return; }
+    if (o.fx) G.ui.fx = null;
+  }
+  if (ZV) { ZV.sel = ok ? [] : ZV.sel; const el = $('#sheet .zvsheet'); if (el) zvFill(el); }
+  else reopen(ok ? [] : keep.sel);
+}
+function zvCard(el, x) { // 카드 자세히 (창 안에서 겹쳐 보기) + 고르기 + 옮기기
+  const acts = zvActs(x).map((o, i) => ({ ...o, i })), on = ZV.sel.includes(x.i);
+  subView(el, `${cardInfoHtml(cinfo(x.c))}${acts.length ? `<div class="acts1 zsel1"><button class="${on ? '' : 'primary'}" data-zpick>${on ? '고르기 취소' : `${ICON.check}이 카드 고르기`}</button></div><div class="small muted mvh">바로 옮기기</div>${actsHtml(acts)}` : ''}`, box => {
+    const pk = box.querySelector('[data-zpick]'); if (pk) pk.onclick = () => { history.back(); setTimeout(() => { const e2 = $('#sheet .zvsheet'); if (e2 && ZV) zvToggle(e2, x.i); }, 40); };
+    box.querySelectorAll('.acts [data-i]').forEach(b => b.onclick = async () => {
+      const o = acts[+b.dataset.i], to = o.value;
+      if (to && typeof to === 'object') { history.back(); send({ type: 'move', iids: [x.i], to, ...(o.show ? { show: true } : {}) }); return; } // 바로 옮기고 큰 창 목록으로
+      closeSheet(); await new Promise(r => setTimeout(r, 30)); doMove([x.i], to);
+    });
+  });
+}
+// ---------- 카드 효과 도우미 시작: 트레이너스(아이템·서포트)·특성·기술을 쓰면 카드 글을 읽어 차림 ----------
+function fxPrep(a) { // 쓰기 직전에 어떤 카드의 어떤 글인지 잡아 둠 (쓴 뒤에는 손패에서 사라지므로)
+  const v = G.view, me = meSeat(); if (!v || me == null || v.phase !== 'play') return null;
+  if (a.type === 'play') { const x = (v.p[me].hand || []).find(h => h.i === a.iid); if (!x) return null; const c = cinfo(x.c); if (!(c.sub || []).some(s => s === 'Item' || s === 'Supporter')) return null; return { cid: x.c, title: cname(c), lines: c.kr || c.r || [] }; }
+  if (a.type === 'ability') { const f = findSlot(a.sid); if (!f || f.p !== me) return null; const t = topOf(f.sl), c = cinfo(t.c), ab = (c.kab || [])[a.k] || (c.ab || [])[a.k]; return ab ? { cid: t.c, sid: a.sid, title: `${cname(c)} · 특성 ${ab.n}`, lines: [ab.t] } : null; }
+  if (a.type === 'attack') { const sl = v.p[me].active; if (!sl) return null; const t = topOf(sl), c = cinfo(t.c), at = (c.kat || [])[a.k] || (c.at || [])[a.k]; return at ? { cid: t.c, sid: sl.sid, title: `${cname(c)} · 기술 ${at.n}`, lines: [at.t] } : null; }
+  return null;
+}
+function fxCtx() { const v = G.view, me = meSeat(); return { name: c => cnameKo(c), oppNames: me == null ? [] : allSlots(1 - me).map(sl => cnameKo(cinfo(topOf(sl).c))) }; }
+function fxAfter(pre) {
+  if (!pre) return; const ctx = fxCtx(); let sp = null, co = null;
+  for (const t of pre.lines) { if (!co) co = parseCost(t, ctx); if (!sp) sp = parseTop(t, ctx) || parseSearch(t, ctx); }
+  if (!sp) return;
+  const me = meSeat(), gid = G.view.openGroup?.[me] || null;
+  const fx = { kind: 'search', title: pre.title, cid: pre.cid, sid: pre.sid, sp, test: sp.test, gid };
+  if (sp.coin) { G.ui.fx = fx; toast('동전을 던진 뒤 덱을 열면 맞는 카드를 진하게 보여 줘요.', 3200); return; }
+  if (co) { G.ui.fx = { kind: 'cost', title: pre.title, cid: pre.cid, co, test: co.test, gid, next: fx }; setTimeout(() => { if ($('#sheet').hidden) openZoneView({ z: 'hand', p: me }); }, 80); return; }
+  fxSearch(fx);
+}
+function fxSearch(fx) { // 덱을 열고 도우미를 붙임 (이미 덱 전체를 보는 중이면 창만 다시)
+  G.ui.fx = fx; const me = meSeat(), lk = G.view.p[me].look;
+  if (fx.sp.top) { closeSheet(); return void send({ type: 'look', p: me, z: 'deck', n: fx.sp.top, ...(fx.sp.bottom ? { from: 'bottom' } : {}) }); } // 위·아래에서 N장 보기
+  if (lk && lk.p === me && lk.z === 'deck' && lk.n == null) { const el = $('#sheet .zvsheet'); if (el && ZV) { el.querySelector('.zvtools').dataset.sig = ''; zvFill(el); } else if ($('#sheet').hidden) openZoneView({ look: 1 }); return; }
+  send({ type: 'look', p: me, z: 'deck' });
+}
+// ---------- 상대가 보여준 카드: 화면 가운데 크게 (누르면 닫힘) ----------
+let REVEAL = null;
+function revealShow(lines) {
+  if (G.rw || reduceMotionSkip()) return;
+  const me = meSeat(), ls = (lines || []).filter(l => l.show && l.show.length && l.who !== me && l.who != null); if (!ls.length) return;
+  const had = !!REVEAL; if (REVEAL) { REVEAL.remove(); REVEAL = null; } // 보고 있던 것 위에 새로 (뒤로 가기 칸은 하나만)
+  const v = G.view, nm = esc(v.p[ls[0].who]?.name || '상대'), ids = ls.flatMap(l => l.show).slice(0, 12);
+  const o = document.createElement('div'); o.className = 'revlayer'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', '상대가 보여준 카드');
+  o.innerHTML = `<div class="revbox"><h3>${nm} 님이 보여준 카드</h3><p class="revt">${esc(ls.map(l => l.showT || '').filter(Boolean)[0] || '')}</p><div class="revcards" style="--rn:${ids.length}">${ids.map(c => `<button type="button" class="revc" data-rc="${esc(c)}">${cardFace({ i: '', c }, 'revpc')}<small>${esc(cname(cinfo(c)))}</small></button>`).join('')}</div><button class="primary revok">${ICON.check}확인</button></div>`;
+  o.onclick = e => { const b = e.target.closest('[data-rc]'); closeReveal(); if (b) setTimeout(() => openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(b.dataset.rc))}`), 40); };
+  document.body.appendChild(o); REVEAL = o; if (!had) history.pushState({ reveal: 1 }, ''); Sound.sfx('open');
+}
+function closeReveal(fromPop) { if (!REVEAL) return; REVEAL.remove(); REVEAL = null; if (!fromPop) { popSkip++; history.back(); } }
+const reduceMotionSkip = () => false; // 보여준 카드는 움직임 줄이기 설정과 상관없이 보여 줌 (정보이므로)
 const emLen = t => [...String(t)].reduce((n, ch) => n + (/[\u3131-\uD7A3]/.test(ch) ? 1 : ch === ' ' ? .3 : .58), 0) + .4; /* 이름 폭(글자 크기 배수): 한 줄에 다 들어가게 글자 크기를 줄임 */
 function zvSize(g) { // 한 줄 카드 수와 카드 폭(px)을 정함. 6장 이하(프라이즈 등)는 한 줄에 다 넣고 창도 카드만큼만 (빈 곳 없게)
   const el = g.closest('.zvsheet'), sh = el.parentElement, cs = getComputedStyle(g), es = getComputedStyle(el), ss = getComputedStyle(sh), px = v => parseFloat(v) || 0;
   const padX = px(cs.paddingLeft) + px(cs.paddingRight) + px(es.paddingLeft) + px(es.paddingRight);
   const outer = Math.min(1240, sh.clientWidth - px(ss.paddingLeft) - px(ss.paddingRight)), W = outer - padX;
-  const zw = px(cs.getPropertyValue('--zw')) || 150, gap = px(cs.columnGap) || 12, c = g.querySelectorAll('.zc').length, one = (W - (c - 1) * gap) / c;
+  const zw = px(cs.getPropertyValue('--zw')) || 150, gap = px(cs.columnGap) || 12, c = +g.dataset.n || g.querySelectorAll('.zc').length, one = (W - (c - 1) * gap) / c;
   let n, cw, fit = false;
   if (c && c <= 6 && one >= zw * .75) {
     const maxH = px(es.maxHeight) || innerHeight, hd = el.querySelector('.zvh').offsetHeight;
@@ -2149,21 +2404,7 @@ function zvSize(g) { // 한 줄 카드 수와 카드 폭(px)을 정함. 6장 이
   g.classList.toggle('fit', fit); g.style.setProperty('--zn', n); g.style.setProperty('--zcw', cw + 'px');
   el.style.width = fit ? Math.round(Math.max(n * cw + (n - 1) * gap + padX, Math.min(outer, 560))) + 'px' : '';
 }
-window.addEventListener('resize', () => { const g = document.querySelector('#sheet .zvgrid'); if (g) zvSize(g); });
-function zvActs(x) { // 대전 중일 때만 옮기기 단추
-  const v = G.view, me = G.rw ? null : meSeat(); if (me == null || v.phase !== 'play' || ZV.v) return [];
-  const p = ZV.look ? v.p[me].look.p : ZV.p;
-  if (p === me) return moveOpts(me).filter(o => !(o.value && o.value.z === ZV.z && ZV.z !== 'deck'));
-  return [{ label: '상대 트래시로', value: { z: 'discard', p } }, { label: '상대 덱 위로', value: { z: 'deck', p, pos: 'top' } }, { label: '상대 덱 아래로', value: { z: 'deck', p, pos: 'bottom' } }, { label: '상대 손패로', value: { z: 'hand', p } }, { label: '상대 로스트존으로', value: { z: 'lost', p } }].filter(o => o.value.z !== (ZV.look ? v.p[me].look.z : ZV.z));
-}
-function zvCard(el, x) { // 카드 자세히 (창 안에서 겹쳐 보기) + 옮기기
-  const acts = zvActs(x).map((o, i) => ({ ...o, i }));
-  subView(el, `${cardInfoHtml(cinfo(x.c))}${acts.length ? `<div class="small muted mvh">어디로 옮길까요?</div>${actsHtml(acts)}` : ''}`, box => box.querySelectorAll('.acts [data-i]').forEach(b => b.onclick = async () => {
-    const to = acts[+b.dataset.i].value;
-    if (to && typeof to === 'object') { history.back(); send({ type: 'move', iids: [x.i], to }); return; } // 바로 옮기고 큰 창 목록으로
-    closeSheet(); await new Promise(r => setTimeout(r, 30)); doMove([x.i], to);
-  }));
-}
+window.addEventListener('resize', () => { const g = document.querySelector('#sheet .zvgrid'); if (g) zvSize(g); zvMenuClose(); zvFitCats(document.querySelector('#sheet .zvtools')); });
 async function onPile(iid) { // 보고 있는 덱·손패·프라이즈의 카드: 카드 설명(그림 크게) + 옮길 곳 단추
   const v = G.view, me = meSeat(), lk = v.p[me].look; if (!lk) return; const P = v.p[lk.p];
   const arr = lk.z === 'deck' ? P.deck.cards : lk.z === 'hand' ? P.hand : P.prizes; const x = arr.find(y => y.i === iid); if (!x) return;

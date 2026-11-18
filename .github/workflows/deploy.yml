@@ -1,9 +1,13 @@
 # main에 올라가면 Cloudflare 사이트에 자동으로 반영
-# 필요한 GitHub Secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID (없으면 반영 단계는 건너뜀)
+# 필요한 GitHub Secrets: CLOUDFLARE_ACCOUNT_ID 와 열쇠 하나
+#   - API 토큰: CLOUDFLARE_API_TOKEN
+#   - 또는 Global API Key: CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL (이게 있으면 토큰 대신 이걸 씀)
+# 열쇠가 없으면 반영 단계는 건너뜀
 # 카드 자료(cards.json)는 저장소에 없으므로 함께 올리지 않음. 사이트는 PC에서 마지막으로 올린 카드 자료를 보관해 두고 씀
 name: 사이트 자동 반영
-# 링크 님이 PC에서 직접 올리기로 함(2026-11-18). 자동 실행은 끄고, 필요할 때 손으로만 실행
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 concurrency:
   group: deploy
@@ -13,9 +17,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      - name: 어떤 열쇠를 쓸지 정하기
+        env:
+          T: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          K: ${{ secrets.CLOUDFLARE_API_KEY }}
+          E: ${{ secrets.CLOUDFLARE_EMAIL }}
+        run: |
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "계정 ID 없음"; exit 0; }
+          T=$(printf %s "$T" | tr -d '[:space:]'); K=$(printf %s "$K" | tr -d '[:space:]'); E=$(printf %s "$E" | tr -d '[:space:]')
+          for v in "$T" "$K"; do [ -n "$v" ] && echo "::add-mask::$v"; done
+          if [ -n "$K" ] && [ -n "$E" ]; then { echo "CLOUDFLARE_API_KEY=$K"; echo "CLOUDFLARE_EMAIL=$E"; echo "HAVE_KEY=1"; } >> "$GITHUB_ENV"; echo "Global API Key 사용"
+          elif [ -n "$T" ]; then { echo "CLOUDFLARE_API_TOKEN=$T"; echo "HAVE_KEY=1"; } >> "$GITHUB_ENV"; echo "API 토큰 사용"; fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -26,21 +40,24 @@ jobs:
         run: for f in src/*.js public/*.js public/lib/*.js; do node --check "$f" || exit 1; done
       - name: 묶어 보기 (올리지 않음)
         run: npx wrangler deploy --dry-run --outdir /tmp/build
+      - name: 열쇠 확인 (권한이 모자라면 여기서 알려 줌)
+        if: env.HAVE_KEY == '1'
+        run: npx wrangler whoami || true
       - name: 사이트에 카드 자료가 보관돼 있는지 확인
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        if: env.HAVE_KEY == '1'
         run: |
           r=$(curl -s https://ptcg-doran.hyde0606.workers.dev/api/health || true); echo "$r"
           echo "$r" | grep -q '"cards":true' || { echo "::error::사이트에 보관된 카드 자료가 없어요. PC에서 git pull 뒤 npx.cmd wrangler deploy 를 한 번 하고, 로그인해서 사이트를 한 번 열어 주세요."; exit 1; }
       - name: 사이트에 반영
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        if: env.HAVE_KEY == '1'
         run: npx wrangler deploy
       - name: 반영 확인
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        if: env.HAVE_KEY == '1'
         run: |
           sleep 5
           curl -fsS -o /dev/null -w '첫 화면 %{http_code}\n' https://ptcg-doran.hyde0606.workers.dev/
           code=$(curl -s -o /dev/null -w '%{http_code}' https://ptcg-doran.hyde0606.workers.dev/api/me); echo "로그인 확인 $code"; [ "$code" = 401 ]
           curl -s https://ptcg-doran.hyde0606.workers.dev/api/health | grep -q '"cards":true'
       - name: 토큰이 아직 없음
-        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
-        run: echo "::notice::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID 가 없어 사이트 반영은 건너뛰었어요."
+        if: env.HAVE_KEY != '1'
+        run: echo "::notice::Cloudflare 열쇠나 CLOUDFLARE_ACCOUNT_ID 가 없어 사이트 반영은 건너뛰었어요."

@@ -582,7 +582,7 @@ export class Game extends DurableObject {
     const out = [];
     const push = (e, k, step) => {
       if (e.quiet && seat !== e.ownBy && !over) return;
-      out.push({ k, txt: e.chat ? e.pub : fixJosa(e.pub), own: (over || seat === e.ownBy) ? fixJosa(e.own) || null : null, chat: !!e.chat, gid: step?.gid || null, rw: !!step?.rewound, who: k >= 0 ? G.log[k]?.who : null, t: k >= 0 ? G.log[k]?.t : null, turn: !!e.turn });
+      out.push({ k, txt: e.chat ? e.pub : fixJosa(e.pub), own: (over || seat === e.ownBy) ? fixJosa(e.own) || null : null, chat: !!e.chat, gid: step?.gid || null, rw: !!step?.rewound, who: k >= 0 ? G.log[k]?.who : null, t: k >= 0 ? G.log[k]?.t : null, turn: !!e.turn, ...(e.show ? { show: e.show, showT: e.showT || '' } : {}) });
     };
     if (from === 0) for (const e of G.ev0) push(e, -1);
     G.steps.forEach((st, k) => { if (k >= from) for (const e of st.ev) push(e, k, st); });
