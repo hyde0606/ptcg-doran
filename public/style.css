@@ -148,6 +148,9 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 .rst { font-family: var(--fh); font-size: .92rem; color: color-mix(in srgb, var(--sc) 80%, #123); flex: 1 1 auto; min-width: 0; }
 .rtop .radm { flex: none; min-height: 32px; height: 32px; padding: 0 12px 0 9px; gap: 4px; font-size: .85rem; border-radius: 999px; background: rgba(255, 255, 255, .9); color: #6a4cc8; box-shadow: inset 0 0 0 1.5px #cdbcff; }
 .rtop .radm .ic { width: 15px; height: 15px; }
+.rtop .rfol { flex: none; min-height: 32px; height: 32px; padding: 0 12px 0 9px; gap: 4px; font-size: .85rem; border-radius: 999px; background: rgba(255, 255, 255, .9); color: #2a6f97; box-shadow: inset 0 0 0 1.5px #a9d6ee; }
+.rtop .rfol .ic { width: 15px; height: 15px; }
+.rtop .rfol.on { background: #2a8fc8; color: #fff; box-shadow: inset 0 0 0 1.5px #1d6f9e, 0 0 0 3px rgba(42, 143, 200, .18); }
 .rcard .rt { margin: 0; font-family: var(--fh); font-weight: 400; font-size: 1.1rem; line-height: 1.3; color: var(--head); overflow-wrap: anywhere; min-height: 1.3em; }
 .rvsrow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; }
 .rp { display: flex; align-items: center; gap: 6px; min-width: 0; } .rvsrow .rp:last-child { flex-direction: row-reverse; justify-content: flex-start; text-align: right; }
@@ -1189,3 +1192,4 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 .pc.inhand.peekable, .handbar.peek .pc.inhand.peekable { cursor: pointer; }
 .prompt.look .lkbar { justify-content: center; }
 .k-admin { --c: #7b5cd6; }
+.pushmsg.warnmsg { color: #b26a00; } .sw:disabled { opacity: .45; cursor: default; }

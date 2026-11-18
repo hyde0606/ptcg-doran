@@ -17,6 +17,7 @@ const ICON = {
   battle: svg('<path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/>'),
   deck: svg('<rect x="8" y="3" width="12" height="16" rx="2"/><path d="M5 6.5V19a2 2 0 0 0 2 2h9"/>'),
   gear: svg('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/>'),
+  bell: svg('<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.6 2.2H4.4z"/><path d="M10 20.6a2.2 2.2 0 0 0 4 0"/>'),
   sound: svg('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>'),
   mute: svg('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9.5l5 5M22 9.5l-5 5"/>'),
   bolt: svg('<path d="M13 2 5 13h6l-1 9 8-11h-6z"/>'),
@@ -124,6 +125,7 @@ applySkin();
 let meAt = 0;
 async function loadMe() {
   const r = await api('/api/me'); ME = r.user; meAt = Date.now(); setSkin(r);
+  if (!loadMe.push) { loadMe.push = 1; PUSH.sync(); } // 알림을 켜 둔 기기면 서버에 다시 등록
   if (!r.prefs) { // 예전에 이 기기에서 고른 것이 있으면 내 설정으로 옮김 (처음 한 번)
     const old = { back: pref('back', ''), mat: pref('mat', ''), art: pref('art', '') }, o = {};
     if (BACKS.some(x => x[0] === old.back) && old.back !== 'ball') o.back = old.back;
@@ -340,6 +342,69 @@ async function openA2hs() {
     <p class="small muted" style="margin:0">홈 화면에서 처음 열 때 입장 코드를 한 번 더 넣어야 할 수도 있어요.</p>
     ${isApp() ? '' : `<div class="row" style="justify-content:center;margin-top:12px">${$('#inst') && !$('#inst').hidden ? '<button class="sm" data-a2hs-x>위쪽 \'앱 설치\' 단추 숨기기</button>' : pref('a2hs', '') === 'hide' ? '<button class="sm" data-a2hs-on>위쪽 \'앱 설치\' 단추 다시 보이기</button>' : ''}</div>`}`, el => bindA2hs(el));
 }
+// ---------- 푸시 알림 (비동기 판: 상대가 차례를 끝내거나 확인을 기다리면, 판이 끝나면) ----------
+const PUSH = {
+  why() { // 이 기기에서 못 쓰는 까닭 ('' = 쓸 수 있음)
+    if (!window.isSecureContext) return 'http';
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return ios && !isApp() ? 'ios' : 'none';
+    return '';
+  },
+  ok() { return !this.why(); },
+  reg() { return navigator.serviceWorker.register('/sw.js'); },
+  async sub() { if (!this.ok()) return null; const r = await navigator.serviceWorker.getRegistration('/'); return r ? r.pushManager.getSubscription() : null; },
+  async state() { if (!this.ok()) return this.why(); if (Notification.permission === 'denied') return 'denied'; return (await this.sub()) && Notification.permission === 'granted' ? 'on' : 'off'; },
+  async on() {
+    const perm = await Notification.requestPermission(); if (perm !== 'granted') throw new Error(perm === 'denied' ? '브라우저에서 알림을 막았어요. 주소창 왼쪽 자물쇠 → 알림 → 허용으로 바꿔 주세요.' : '알림을 허용해야 켤 수 있어요.');
+    const r = await this.reg(); await navigator.serviceWorker.ready;
+    const { key } = await api('/api/push/key'), app = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((key.length + 3) % 4)), c => c.charCodeAt(0));
+    let s = await r.pushManager.getSubscription();
+    const same = s && s.options && s.options.applicationServerKey && new Uint8Array(s.options.applicationServerKey).join() === app.join();
+    if (s && !same) { await s.unsubscribe().catch(() => {}); s = null; } // 서버 열쇠가 바뀌었으면 다시 구독
+    if (!s) s = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: app });
+    await api('/api/push/sub', s.toJSON()); setPref('push', 'on'); return true;
+  },
+  async off() { const s = await this.sub(); if (s) { await api('/api/push/unsub', { endpoint: s.endpoint }).catch(() => {}); await s.unsubscribe().catch(() => {}); } setPref('push', 'off'); },
+  async sync() { // 켜 둔 기기는 들어올 때마다 서버에 다시 알려 줌 (서버 자료가 새로 시작돼도 이어지게)
+    if (!this.ok()) return; navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if (Notification.permission === 'granted' && pref('push') === 'on') this.on().catch(() => {});
+  },
+};
+const PUSH_WHY = { http: '알림은 https 주소에서만 켤 수 있어요. 지금처럼 집 와이파이 주소(http://192…)로 들어오면 브라우저가 알림을 막아요. PC에서 localhost 주소로 들어오거나, 사이트를 인터넷 주소로 올리면 폰에서도 켤 수 있어요.',
+  ios: '아이폰·아이패드는 사파리 공유 단추 → ‘홈 화면에 추가’로 설치한 앱에서 켤 수 있어요 (iOS 16.4 이상).', none: '이 브라우저는 알림을 지원하지 않아요.',
+  denied: '브라우저에서 이 사이트 알림을 막아 두었어요. 주소창 왼쪽 자물쇠 → 알림 → 허용으로 바꾼 뒤 다시 켜 주세요.' };
+function notifHtml() {
+  return `<section class="set" id="notifset"><h3>알림</h3><div class="snd">
+    <div class="r"><span class="nm">내 차례 알림</span><button class="sw" data-push aria-label="내 차례 알림 켜고 끄기"></button><button class="sm" data-pushtest>${ICON.bell}알림 시험</button></div>
+    <p class="small muted pushmsg" style="margin:0">비동기 판에서 상대가 차례를 끝내거나 확인을 기다릴 때, 판이 끝났을 때 알려 드려요. 관전하는 판은 관전 카드나 관전 화면의 ‘알림 받기’를 켜면 두 사람이 차례를 끝낼 때마다 와요. 판을 보고 있을 때는 오지 않아요. 이 설정은 이 기기에만 적용돼요.</p></div></section>`;
+}
+async function bindNotif(root) {
+  const sec = root.querySelector('#notifset'); if (!sec) return;
+  const sw = sec.querySelector('[data-push]'), tb = sec.querySelector('[data-pushtest]'), msg = sec.querySelector('.pushmsg'), base = msg.textContent;
+  const show = async () => { const st = await PUSH.state().catch(() => 'none'), on = st === 'on', bad = PUSH_WHY[st];
+    sw.classList.toggle('on', on); sw.setAttribute('aria-pressed', on); sw.disabled = !!bad && st !== 'denied'; tb.disabled = !on; msg.textContent = bad || base; msg.classList.toggle('warnmsg', !!bad); };
+  sw.onclick = async () => { sw.disabled = true; try { if (sw.classList.contains('on')) { await PUSH.off(); toast('알림을 껐어요.'); } else { await PUSH.on(); toast('알림을 켰어요.'); } } catch (e) { toast(e.message); } sw.disabled = false; show(); };
+  tb.onclick = async () => { try { const r = await api('/api/push/test', {}); toast(r.ok ? '시험 알림을 보냈어요. 곧 떠요.' : r.sent ? '보내지 못했어요. 알림을 껐다가 다시 켜 주세요.' : '이 기기가 아직 등록되지 않았어요. 알림을 다시 켜 주세요.'); } catch (e) { toast(e.message); } };
+  show();
+}
+async function setFollow(roomId, on) { // 관전판 알림 받기: 켜려면 이 기기 알림이 먼저 켜져 있어야 함
+  if (on) {
+    const st = await PUSH.state().catch(() => 'none');
+    if (st !== 'on') {
+      if (PUSH_WHY[st] && st !== 'denied') { await ask('이 기기에서는 알림을 켤 수 없어요', `<p>${PUSH_WHY[st]}</p>`, '알겠어요'); return null; }
+      try { await PUSH.on(); } catch (e) { toast(e.message, 3600); return null; }
+    }
+  }
+  try { const r = await api(`/api/rooms/${roomId}/follow`, { on: !!on }); toast(r.follow ? '이 판 알림을 켰어요. 두 사람이 차례를 끝낼 때마다 알려 드려요.' : '이 판 알림을 껐어요.', 3000); return r.follow; }
+  catch (e) { toast(e.message); return null; }
+}
+async function pushOffer() { // 비동기 판을 만들거나 들어갈 때 한 번만 물어봄
+  if (!PUSH.ok() || Notification.permission !== 'default' || pref('pushAsked')) return;
+  setPref('pushAsked', '1');
+  const ok = await ask('내 차례가 오면 알려 드릴까요?', '<p>상대가 차례를 끝내거나 확인을 기다리면 폰·PC 알림으로 알려 드려요. 설정 → 알림에서 언제든 끌 수 있어요.</p>', '알림 켜기');
+  if (ok) PUSH.on().then(() => toast('알림을 켰어요.'), e => toast(e.message));
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.t === 'go' && e.data.url) location.href = e.data.url; });
 function screenHtml() { // 설정 → 폰 화면
   const rows = [];
   if (fsOk()) rows.push(`<div class="r"><span class="nm">전체 화면</span><button class="sw" data-fsauto aria-label="대전판에 들어가면 전체 화면으로"></button><button class="sm" data-fsnow>${inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}지금 전체 화면`}</button></div>`);
@@ -390,6 +455,7 @@ function settingsHtml(inSheet) {
       <div class="r"><span class="nm">효과음</span><button class="sw" data-sw="sfx" aria-label="효과음 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('sfxVol')}" style="--v:${vol('sfxVol')}%" data-vol="sfxVol" aria-label="효과음 크기"><button class="sm" data-try>${ICON.play}들어 보기</button></div>
       <div class="r"><span class="nm">배경음악</span><button class="sw" data-sw="bgm" aria-label="배경음악 켜고 끄기"></button><input type="range" min="0" max="100" value="${vol('bgmVol')}" style="--v:${vol('bgmVol')}%" data-vol="bgmVol" aria-label="배경음악 크기"></div>
       <p class="small muted" style="margin:0">효과음과 배경음악은 모두 이 사이트에서 직접 만든 소리예요. 소리 설정은 이 기기에만 저장돼요.</p></div></section>
+    ${notifHtml()}
     ${screenHtml()}
     ${!inSheet && SK.admin ? `<section class="set admin"><h3>모임 기본값 <span class="chip k-admin">관리자</span></h3>
       <p class="small muted">처음 들어온 사람과 '모임 기본'을 고른 사람에게 보이는 모양이에요. 각자 다른 것을 고른 사람은 그대로예요.</p>
@@ -492,7 +558,7 @@ function bindSettings(root, onArt, inSheet) {
   root.querySelectorAll('[data-sw]').forEach(b => b.onclick = () => { const k = b.dataset.sw; Sound.set(k, !Sound.get(k)); mark(); if (k === 'sfx') Sound.sfx('notify'); });
   root.querySelectorAll('[data-fsauto]').forEach(b => b.onclick = () => { setPref('fsAuto', fsAuto() ? 'off' : 'on'); mark(); Sound.sfx('tap'); });
   root.querySelectorAll('[data-fsnow]').forEach(b => b.onclick = toggleFs);
-  bindA2hs(root);
+  bindA2hs(root); bindNotif(root);
   root.querySelectorAll('[data-vol]').forEach(r => { r.oninput = () => { Sound.set(r.dataset.vol, r.value / 100); r.style.setProperty('--v', r.value + '%'); }; r.onchange = () => { if (r.dataset.vol === 'sfxVol') Sound.sfx('coin'); }; });
   const tr = root.querySelector('[data-try]');
   if (tr) tr.onclick = () => ['draw', 'place', 'attack', 'coin', 'turnMine'].forEach((n, i) => setTimeout(() => Sound.sfx(n), i * 450));
@@ -534,7 +600,8 @@ async function renderLobby() {
     else if (last && r.status === 'playing') main = `<a class="btn ${r.mine ? 'primary' : ''} sm" href="#game/${last}">${r.mine ? `${ICON.battle}판으로` : `${ICON.eye}관전`}</a>`;
     const rec = last && r.status !== 'open' ? `<a class="btn sm" href="#replay/${last}">${ICON.rewind}리플레이</a>` : '';
     const adm = SK.admin ? `<button class="radm" data-admin="${r.id}" aria-label="관리자: 판 끝내기·지우기">${ICON.gear}관리</button>` : '';
-    return `<article class="rcard s-${st[0]}"><div class="rtop">${ringIcon(st[1], 'k-' + st[0], r.myTurn)}<span class="rst">${st[2]}</span>${adm}</div>
+    const fol = !r.mine && r.status === 'playing' && r.cfg.spectate !== 'no' ? `<button class="rfol ${r.follow ? 'on' : ''}" data-follow="${r.id}" aria-pressed="${!!r.follow}" aria-label="이 판 알림 ${r.follow ? '끄기' : '받기'}">${ICON.bell}${r.follow ? '알림 켬' : '알림 받기'}</button>` : '';
+    return `<article class="rcard s-${st[0]}"><div class="rtop">${ringIcon(st[1], 'k-' + st[0], r.myTurn)}<span class="rst">${st[2]}</span>${fol}${adm}</div>
       <h4 class="rt">${esc(r.cfg.title || nm.filter(Boolean).join(' vs '))}</h4>
       <div class="rvsrow">${who(nm[0])}${score}${who(nm[1])}</div>
       <div class="rmode">${esc(modeKo(r.cfg))}</div>${left}
@@ -552,10 +619,11 @@ async function renderLobby() {
   };
   app.querySelectorAll('[data-join]').forEach(b => b.onclick = async () => {
     const deckId = await chooseDeck(); if (!deckId) return;
-    try { const r = await api(`/api/rooms/${b.dataset.join}/join`, { deckId }); location.hash = '#game/' + r.room.games[r.room.games.length - 1]; } catch (e) { toast(e.message); }
+    try { const r = await api(`/api/rooms/${b.dataset.join}/join`, { deckId }); location.hash = '#game/' + r.room.games[r.room.games.length - 1]; if (r.room.cfg.mode === 'async') setTimeout(pushOffer, 1500); } catch (e) { toast(e.message); }
   });
   app.querySelectorAll('[data-next]').forEach(b => b.onclick = async () => { try { const r = await api(`/api/rooms/${b.dataset.next}/next`, {}); location.hash = '#game/' + r.room.games[r.room.games.length - 1]; } catch (e) { toast(e.message); } });
   app.querySelectorAll('[data-close-room]').forEach(b => b.onclick = async () => { await api(`/api/rooms/${b.dataset.closeRoom}/close`, {}); renderLobby(); });
+  app.querySelectorAll('[data-follow]').forEach(b => b.onclick = async () => { b.disabled = true; const f = await setFollow(b.dataset.follow, !b.classList.contains('on')); b.disabled = false; if (f != null) renderLobby(); });
   app.querySelectorAll('[data-admin]').forEach(b => b.onclick = async () => { // 관리자: 진행 중이면 끝내기, 언제든 지우기 (한 번 더 묻기)
     const r = rooms.find(x => x.id === b.dataset.admin); if (!r) return;
     const name = esc(r.cfg.title || r.names.filter(Boolean).join(' vs '));
@@ -572,7 +640,7 @@ async function renderLobby() {
     f.querySelectorAll('input[name=mode]').forEach(x => x.onchange = syncDl); syncDl();
     f.onsubmit = async e => {
       e.preventDefault(); const fd = Object.fromEntries(new FormData(f));
-      try { await api('/api/rooms', fd); closeSheet(); lobbyTab = 'mine'; try { localStorage.setItem('lobbyTab', 'mine'); } catch {} toast('방을 만들었어요. 상대가 들어오면 시작해요.'); setTimeout(renderLobby, 40); } catch (er) { toast(er.message); }
+      try { await api('/api/rooms', fd); closeSheet(); lobbyTab = 'mine'; try { localStorage.setItem('lobbyTab', 'mine'); } catch {} toast('방을 만들었어요. 상대가 들어오면 시작해요.'); setTimeout(renderLobby, 40); if (fd.mode === 'async') setTimeout(pushOffer, 700); } catch (er) { toast(er.message); }
     };
   });
 }
@@ -835,20 +903,23 @@ function renderGame(id) {
     G.ws = ws;
     ws.onmessage = e => {
       const m = JSON.parse(e.data);
-      if (m.t === 'full') { const first = !G.view; G.view = m.view; G.lines = m.lines; G.cards = m.cards; if (m.specs) G.specs = m.specs; draw(first ? [] : null); if (first) preloadPics(m.cards); }
+      if (m.t === 'full') { const first = !G.view; G.view = m.view; G.lines = m.lines; G.cards = m.cards; if (m.specs) G.specs = m.specs; if (m.room) G.room = m.room; draw(first ? [] : null); if (first) preloadPics(m.cards);
+        if (first && m.room && m.view.me == null && m.view.phase !== 'over') api(`/api/rooms/${m.room}/follow`).then(r => { G.follow = !!r.follow; if (G.view) draw([]); }).catch(() => {}); }
       else if (m.t === 'upd') { G.view = m.view; G.lines.push(...m.lines); draw(m.lines); }
       else if (m.t === 'specs') { G.specs = m.specs; drawSpecs(); }
       else if (m.t === 'spec') { (G.specChat ||= []).push(m); drawSide(); }
       else if (m.t === 'res') { const p = G.pend[m.id]; if (p) { delete G.pend[m.id]; p(m); } }
       else if (m.t === 'gone') { closed = true; toast('관리자가 이 판을 지웠어요.'); location.hash = '#lobby'; }
     };
-    ws.onopen = () => { retry = 0; };
+    ws.onopen = () => { retry = 0; sendVis(); };
     ws.onclose = () => { if (!closed) setTimeout(connect, Math.min(8000, 500 * 2 ** retry++)); };
   };
+  const sendVis = () => { try { G.ws.readyState === 1 && G.ws.send(JSON.stringify({ t: 'vis', v: document.hidden ? 0 : 1 })); } catch {} };
   connect();
+  document.addEventListener('visibilitychange', sendVis);
   guardPage('한 번 더 누르면 대전에서 나가요. 대전은 그대로 이어져요');
   const ping = setInterval(() => { try { G.ws.readyState === 1 && G.ws.send('{"t":"ping"}'); } catch {} }, 25000);
-  leaveGame = () => { closed = true; clearInterval(ping); if (G.rw) { clearTimeout(G.rw.timer); G.rw = null; } try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
+  leaveGame = () => { closed = true; clearInterval(ping); document.removeEventListener('visibilitychange', sendVis); if (G.rw) { clearTimeout(G.rw.timer); G.rw = null; } try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
 }
 function send(a) {
   return new Promise(res => {
@@ -1009,7 +1080,8 @@ function fabHtml() { // 왼쪽: 상대 턴·코인·효과 / 오른쪽: 더 보�
   const log = fabBtn('log', 'log', '기록', 'k-log', pend ? `<i class="badge">${pend}</i>` : '');
   const rwt = me == null ? null : lastOppTurn(), rwNew = rwt && !rwSeen(rwt); // 리플레이: 수가 하나라도 있으면 늘 보임, 안 본 상대 차례가 있으면 '새'
   const rw = (v.n || 0) > 0 ? `<div class="rwbtn">${fabBtn('rewatch', 'rewatch', '리플레이', 'k-rw' + (rwNew ? ' on nudge' : ''), rwNew ? '<i class="badge">새</i>' : '')}</div>` : '';
-  if (me == null || v.phase === 'over') return { left: rw ? `<div class="lbtns">${rw}</div>` : '', log: `<div class="rbtns">${log}</div>` };
+  const fol = me == null && v.phase !== 'over' && G.room && G.follow != null ? fabBtn('follow', 'bell', G.follow ? '알림 켬' : '알림 받기', 'k-fx' + (G.follow ? ' on' : '')) : ''; // 관전자: 두 사람이 차례를 끝낼 때마다 알림
+  if (me == null || v.phase === 'over') return { left: rw || fol ? `<div class="lbtns">${rw}${fol}</div>` : '', log: `<div class="rbtns">${log}</div>` };
   const myTurn = v.phase === 'play' && v.current === me;
   const open = v.openGroup[me];
   const stop = fabBtn('stop', 'stop', v.stop ? '멈춤 중' : '잠깐!', 'k-stop' + (v.stop ? ' on' : '')); // 잠깐 멈추고 지적하기 (상대 차례에도)
@@ -1688,6 +1760,7 @@ function bindBoard() {
     const t = el.dataset.t;
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
     if (t === 'rewatch') return startRewatch();
+    if (t === 'follow') { const f = await setFollow(G.room, !G.follow); if (f != null) { G.follow = f; draw([]); } return; }
     if (t === 'shuffleMine') return send({ type: 'shuffle', p: me });
     if (t === 'log') return openLog();
     if (t === 'stop') { if (G.view.stop) { G.ui.dockMode = 'open'; draw([]); return; } return openStop(); }

@@ -2,6 +2,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { newGame, apply, viewFor, replay, waitingOn, fixJosa } from '../public/lib/engine.js';
 import { indexCards, checkDeck, expand } from '../public/lib/deck.js';
+import { makeVapid, sendPush } from './webpush.js';
 
 const json = (o, status = 200, headers = {}) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
 const err = (m, status = 400) => json({ error: m }, status);
@@ -96,6 +97,18 @@ export default {
       return json(await meInfo(env, lobby, me));
     }
     if (path === '/api/logout') return json({ ok: 1 }, 200, { 'set-cookie': 'tok=; Path=/; Max-Age=0' });
+    // 푸시 알림: 서버 공개 열쇠, 이 기기 구독 저장·지우기, 시험 알림
+    if (path === '/api/push/key') return json({ key: await lobby.pushKey() });
+    if (path === '/api/push/sub' && req.method === 'POST') {
+      const b = await req.json().catch(() => ({})), ep = String(b.endpoint || ''), k = b.keys || {};
+      const local = ['127.0.0.1', 'localhost'].includes(url.hostname) && /^http:\/\/127\.0\.0\.1:\d+\//.test(ep); // 시험용 가짜 푸시 서버 (내 PC에서만)
+      let host = ''; try { host = new URL(ep).hostname; } catch {}
+      const known = /^https:\/\//.test(ep) && /(^|\.)(googleapis\.com|mozilla\.com|mozaws\.net|windows\.com|push\.apple\.com)$/.test(host); // 크롬·삼성·엣지·파이어폭스·사파리 푸시 서버
+      if ((!known && !local) || ep.length > 1000 || !k.p256dh || !k.auth) return err('알림 구독 정보가 맞지 않아요.');
+      return json({ ok: await lobby.pushSub(uid, { endpoint: ep, p256dh: String(k.p256dh).slice(0, 200), auth: String(k.auth).slice(0, 100) }, url.origin) });
+    }
+    if (path === '/api/push/unsub' && req.method === 'POST') { const b = await req.json().catch(() => ({})); return json({ ok: await lobby.pushUnsub(uid, String(b.endpoint || '')) }); }
+    if (path === '/api/push/test' && req.method === 'POST') return json(await lobby.notify(uid, { title: '알림 시험', body: '상대가 차례를 끝내면 이렇게 알려 드려요.', url: '/#lobby', tag: 'test' }));
     if (path === '/api/decks' && req.method === 'GET') return json({ decks: await lobby.decks(uid) });
     if (path === '/api/decks' && req.method === 'POST') {
       const b = await req.json(); const idx = await cardIndex(env, req);
@@ -118,14 +131,19 @@ export default {
     if ((m = path.match(/^\/api\/rooms\/(\w+)\/join$/)) && req.method === 'POST') {
       const b = await req.json(); const deck = await lobby.deck(uid, b.deckId); if (!deck) return err('덱을 골라 주세요.');
       const r = await lobby.joinRoom(uid, m[1], deck.id); if (r.error) return err(r.error);
-      return json({ room: await startGame(env, req, lobby, r.room) });
+      return json({ room: await startGame(env, req, lobby, r.room, uid) });
     }
     if ((m = path.match(/^\/api\/rooms\/(\w+)\/next$/)) && req.method === 'POST') {
       const room = await lobby.room(m[1]); if (!room || !room.players.includes(uid)) return err('방을 찾을 수 없어요.');
       if (room.status !== 'between') return err('지금은 다음 판을 시작할 수 없어요.');
-      return json({ room: await startGame(env, req, lobby, room) });
+      return json({ room: await startGame(env, req, lobby, room, uid) });
     }
     if ((m = path.match(/^\/api\/rooms\/(\w+)\/close$/)) && req.method === 'POST') return json({ ok: await lobby.closeRoom(uid, m[1]) });
+    if ((m = path.match(/^\/api\/rooms\/(\w+)\/follow$/)) && req.method === 'POST') {
+      const room = await lobby.room(m[1]); if (!room) return err('방을 찾을 수 없어요.', 404);
+      const b = await req.json().catch(() => ({})); return json({ follow: await lobby.follow(uid, room.id, !!b.on) });
+    }
+    if ((m = path.match(/^\/api\/rooms\/(\w+)\/follow$/))) return json({ follow: await lobby.following(uid, m[1]) });
     if ((m = path.match(/^\/api\/admin\/rooms\/(\w+)\/(end|delete)$/)) && req.method === 'POST') { // 관리자: 진행 중·끝난 판 끝내기 / 지우기
       if (!await isAdmin(env, lobby, me)) return err('관리자만 할 수 있어요.', 403);
       const room = await lobby.room(m[1]); if (!room) return err('방을 찾을 수 없어요.', 404);
@@ -152,7 +170,7 @@ export default {
   },
 };
 
-async function startGame(env, req, lobby, room) {
+async function startGame(env, req, lobby, room, actorUid) {
   const idx = await cardIndex(env, req);
   const decks = await Promise.all(room.players.map((u, k) => lobby.deck(u, room.decks[k])));
   const users = await Promise.all(room.players.map(u => lobby.user(u)));
@@ -162,8 +180,9 @@ async function startGame(env, req, lobby, room) {
   const init = { seed: rid(16), cfg: { ...room.cfg, roomId: room.id, game: room.games.length + 1 }, cards,
     players: room.players.map((u, k) => ({ uid: u, name: users[k].name, deck: expand(decks[k].list) })) };
   const g = env.GAME.get(env.GAME.idFromName(gameId));
-  await g.start(gameId, init);
-  return lobby.gameStarted(room.id, gameId);
+  await lobby.gameStarted(room.id, gameId); // 방에 판을 먼저 붙여야 판 시작 알림·남은 시간이 바로 들어감
+  await g.start(gameId, init, actorUid);
+  return lobby.room(room.id);
 }
 
 // ---------------- 로비: 회원, 덱, 방 ----------------
@@ -175,7 +194,34 @@ export class Lobby extends DurableObject {
       CREATE TABLE IF NOT EXISTS rooms(id TEXT PRIMARY KEY, host TEXT, cfg TEXT, status TEXT, players TEXT, decks TEXT, games TEXT, wins TEXT, waiting TEXT, phase TEXT, turn INTEGER, deadline INTEGER, updated INTEGER);
       CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
       CREATE TABLE IF NOT EXISTS prefs(uid TEXT PRIMARY KEY, v TEXT);
-      CREATE TABLE IF NOT EXISTS imgs(id TEXT PRIMARY KEY, owner TEXT, kind TEXT, type TEXT, data BLOB, meta TEXT, created INTEGER);`);
+      CREATE TABLE IF NOT EXISTS imgs(id TEXT PRIMARY KEY, owner TEXT, kind TEXT, type TEXT, data BLOB, meta TEXT, created INTEGER);
+      CREATE TABLE IF NOT EXISTS push(endpoint TEXT PRIMARY KEY, uid TEXT, p256dh TEXT, auth TEXT, created INTEGER);
+      CREATE TABLE IF NOT EXISTS follows(uid TEXT, room TEXT, PRIMARY KEY(uid, room));`);
+  }
+  // ---- 푸시 알림 ----
+  async vapid() {
+    const r = this.one("SELECT v FROM kv WHERE k='vapid'"); if (r) return JSON.parse(r.v);
+    const v = await makeVapid(); this.sql.exec("INSERT OR REPLACE INTO kv VALUES('vapid',?)", JSON.stringify(v)); return v;
+  }
+  async pushKey() { return (await this.vapid()).pub; }
+  pushSub(uid, s, origin) {
+    this.sql.exec('INSERT OR REPLACE INTO push VALUES(?,?,?,?,?)', s.endpoint, uid, s.p256dh, s.auth, Date.now());
+    if (/^https:/.test(origin)) this.sql.exec("INSERT OR REPLACE INTO kv VALUES('origin',?)", JSON.stringify(origin));
+    return true;
+  }
+  pushUnsub(uid, endpoint) { this.sql.exec('DELETE FROM push WHERE endpoint=? AND uid=?', endpoint, uid); return true; }
+  follow(uid, roomId, on) { // 관전판 알림 받기
+    if (on) this.sql.exec('INSERT OR REPLACE INTO follows VALUES(?,?)', uid, roomId); else this.sql.exec('DELETE FROM follows WHERE uid=? AND room=?', uid, roomId);
+    return !!on;
+  }
+  following(uid, roomId) { return !!this.one('SELECT 1 AS x FROM follows WHERE uid=? AND room=?', uid, roomId); }
+  async notify(uid, data) { // 그 사람의 모든 기기로. 구독이 끝난 기기(404·410)는 지움
+    const subs = this.sql.exec('SELECT endpoint,p256dh,auth FROM push WHERE uid=?', uid).toArray(); if (!subs.length) return { sent: 0, ok: 0 };
+    const vapid = await this.vapid(), origin = JSON.parse(this.one("SELECT v FROM kv WHERE k='origin'")?.v || 'null');
+    const subject = origin || 'mailto:npcg@localhost';
+    const res = await Promise.all(subs.map(s => Promise.race([sendPush(s, data, vapid, subject, data.tag).catch(() => 0), new Promise(r => setTimeout(() => r(0), 5000))])));
+    res.forEach((st, i) => { if (st === 404 || st === 410) this.sql.exec('DELETE FROM push WHERE endpoint=?', subs[i].endpoint); });
+    return { sent: subs.length, ok: res.filter(st => st >= 200 && st < 300).length };
   }
   one(q, ...a) { return this.sql.exec(q, ...a).toArray()[0] || null; }
   login(name) {
@@ -242,10 +288,11 @@ export class Lobby extends DurableObject {
   gameStarted(id, gameId) { const r = this.room(id); r.games.push(gameId); r.status = 'playing'; return this.saveRoom(r); }
   closeRoom(uid, id) { const r = this.room(id); if (!r || r.host !== uid || r.status !== 'open') return false; this.sql.exec('DELETE FROM rooms WHERE id=?', id); return true; }
   adminEnd(id) { const r = this.room(id); if (!r) return false; if (r.status === 'open') { this.sql.exec('DELETE FROM rooms WHERE id=?', id); return true; } r.status = 'done'; r.waiting = []; r.deadline = 0; this.saveRoom(r); return true; }
-  adminDelete(id) { this.sql.exec('DELETE FROM rooms WHERE id=?', id); return true; }
+  adminDelete(id) { this.sql.exec('DELETE FROM rooms WHERE id=?', id); this.sql.exec('DELETE FROM follows WHERE room=?', id); return true; }
   // 대전 DO 가 판 상태를 알려 줌
-  gameUpdate(roomId, gameId, u) {
+  async gameUpdate(roomId, gameId, u) {
     const r = this.room(roomId); if (!r || r.games[r.games.length - 1] !== gameId) return;
+    const old = { waiting: r.waiting || [], turn: r.turn, phase: r.phase };
     r.waiting = u.waiting; r.phase = u.phase; r.turn = u.turn; r.deadline = u.deadline || 0;
     if (u.phase === 'over' && r.status === 'playing') {
       if (u.winner != null) r.wins[u.winner]++;
@@ -253,11 +300,33 @@ export class Lobby extends DurableObject {
       r.status = r.wins.some(w => w >= need) ? 'done' : 'between';
     }
     this.saveRoom(r);
+    const quiet = new Set([...(u.online || []), u.actor].filter(Boolean)); // 지금 판을 보고 있는 사람, 방금 둔 사람은 빼고
+    const names = r.players.map(p => this.user(p)?.name || '상대'), tail = r.cfg.title ? ` · ${r.cfg.title}` : '', vs = r.cfg.title || names.join(' vs ');
+    const jobs = [], done = new Set();
+    const send = (who, title, body) => { if (!who || quiet.has(who) || done.has(who)) return; done.add(who); jobs.push(this.notify(who, { title, body, url: '/#game/' + gameId, tag: r.id })); };
+    const ended = u.phase === 'over' && old.phase !== 'over';
+    if (r.cfg.mode === 'async') { // 두 사람: 비동기 판만 (실시간 판은 둘 다 보고 있음)
+      if (ended) for (const seat of [0, 1]) send(r.players[seat], '판이 끝났어요', (u.winner == null ? '승부 없이 끝났어요' : u.winner === seat ? `${names[1 - seat]} 님과의 판에서 이겼어요!` : `${names[1 - seat]} 님이 이겼어요`) + tail);
+      else for (const seat of u.waiting.filter(x => !old.waiting.includes(x))) {
+        const opp = names[1 - seat];
+        if (u.phase === 'setup') send(r.players[seat], '판이 시작됐어요', `${opp} 님과의 판이에요. 첫 포켓몬을 골라 주세요` + tail);
+        else if (u.turn > (old.turn || 0)) send(r.players[seat], '내 차례예요', `${opp} 님이 차례를 끝냈어요` + tail);
+        else send(r.players[seat], '대답을 기다려요', `${opp} 님이 확인을 기다려요` + tail);
+      }
+    }
+    // 관전 알림을 켠 사람: 차례가 끝날 때마다, 판이 끝나면 (실시간·비동기 모두, 직접 켠 판만)
+    const fans = this.sql.exec('SELECT uid FROM follows WHERE room=?', r.id).toArray().map(x => x.uid).filter(x => !r.players.includes(x));
+    if (fans.length && (ended || (u.phase === 'play' && old.phase === 'play' && u.turn > (old.turn || 0) && u.current != null))) {
+      const body = ended ? (u.winner == null ? '승부 없이 끝났어요' : `${names[u.winner]} 님이 이겼어요`) : `${names[1 - u.current]} 님이 차례를 끝냈어요 · 이제 ${names[u.current]} 님 차례`;
+      for (const f of fans) send(f, `관전 · ${vs}`, body);
+    }
+    await Promise.all(jobs);
   }
   rooms(uid) {
     const all = this.sql.exec("SELECT * FROM rooms WHERE status!='done' OR updated>? ORDER BY updated DESC LIMIT 200", Date.now() - 14 * 864e5).toArray().map(x => this.rowRoom(x));
     const names = Object.fromEntries(this.sql.exec('SELECT uid,name FROM users').toArray().map(u => [u.uid, u.name]));
-    for (const r of all) { r.names = r.players.map(p => names[p] || '?'); r.mine = r.players.includes(uid); r.myTurn = r.mine && r.waiting.includes(r.players.indexOf(uid)) && ['playing'].includes(r.status); }
+    const fl = new Set(this.sql.exec('SELECT room FROM follows WHERE uid=?', uid).toArray().map(x => x.room));
+    for (const r of all) { r.names = r.players.map(p => names[p] || '?'); r.mine = r.players.includes(uid); r.myTurn = r.mine && r.waiting.includes(r.players.indexOf(uid)) && ['playing'].includes(r.status); r.follow = fl.has(r.id); }
     all.sort((a, b) => (b.myTurn - a.myTurn) || ((a.myTurn && b.myTurn) ? (a.deadline || 9e15) - (b.deadline || 9e15) : 0));
     return { rooms: all, me: uid };
   }
@@ -294,10 +363,10 @@ export class Game extends DurableObject {
     this.cache = { init, log, s: R.s, steps: R.steps, ev0: R.ev0, id: this.meta('id') };
     return this.cache;
   }
-  async start(id, init) {
+  async start(id, init, actorUid) {
     if (this.meta('init')) return;
     this.setMeta('id', id); this.setMeta('init', init); this.setMeta('created', Date.now());
-    this.cache = null; const G = this.load(); await this.report(G);
+    this.cache = null; const G = this.load(); await this.report(G, this.seatOf(G, actorUid));
   }
   seatOf(G, uid) { const k = G.init.players.findIndex(p => p.uid === uid); return k < 0 ? null : k; }
   specAll(G, seat) { return seat == null && G.init.cfg.spectate !== 'no'; } // 관전자는 모두 봄 (11/18 링크 님)
@@ -341,7 +410,7 @@ export class Game extends DurableObject {
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1]);
     pair[1].serializeAttachment({ uid, seat, name });
-    pair[1].send(JSON.stringify({ t: 'full', view: this.view(G, seat), lines: this.lines(G, seat), cards: G.init.cards, specs: this.spectators() }));
+    pair[1].send(JSON.stringify({ t: 'full', view: this.view(G, seat), lines: this.lines(G, seat), cards: G.init.cards, specs: this.spectators(), room: G.init.cfg.roomId }));
     this.broadcastSpecs();
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
@@ -352,6 +421,7 @@ export class Game extends DurableObject {
     await this.fresh();
     const G = this.load();
     if (m.t === 'ping') return ws.send('{"t":"pong"}');
+    if (m.t === 'vis') { at.vis = m.v ? 1 : 0; ws.serializeAttachment(at); return; } // 화면을 보고 있는지 (안 보고 있으면 알림을 보냄)
     if (m.t === 'specChat' && at.seat == null) { // 관전자 채팅 (판에는 영향 없음)
       const txt = String(m.text || '').slice(0, 200); if (!txt) return;
       for (const w of this.ctx.getWebSockets()) { const a = w.deserializeAttachment(); if (a.seat == null || !G.init.cfg.muteSpec) try { w.send(JSON.stringify({ t: 'spec', name: at.name, text: txt })); } catch {} }
@@ -372,7 +442,7 @@ export class Game extends DurableObject {
       a.salt = rid(12);
       this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length, seat, JSON.stringify(a), t);
       this.cache = null; const G2 = this.load();
-      this.push(G2, true); await this.report(G2); return { ok: true };
+      this.push(G2, true); await this.report(G2, seat); return { ok: true };
     }
     if (a.type === 'stopUndo') { // 잠깐 멈춤에서 지적받은 사람이 '그 행동 전으로 되돌리기'
       const st = G.s.stop;
@@ -380,7 +450,7 @@ export class Game extends DurableObject {
       a.salt = rid(12);
       this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length, seat, JSON.stringify(a), t);
       this.cache = null; const G2 = this.load();
-      this.push(G2, true); await this.report(G2); return { ok: true };
+      this.push(G2, true); await this.report(G2, seat); return { ok: true };
     }
     if (a.type === 'timeout' || a.type === 'adminEnd') return { ok: false, err: '서버만 할 수 있어요.' };
     const r = apply(G.s, seat, a, G.log.length);
@@ -388,7 +458,7 @@ export class Game extends DurableObject {
     // apply 가 실패하면 상태가 반쯤 바뀌었을 수 있어 캐시를 버린다 (위). 성공하면 기록.
     G.log.push({ who: seat, a, t }); G.steps.push({ ok: true, ev: r.ev, gid: r.gid });
     this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length - 1, seat, JSON.stringify(a), t);
-    this.push(G, false, G.log.length - 1); await this.report(G);
+    this.push(G, false, G.log.length - 1); await this.report(G, seat);
     return { ok: true };
   }
   push(G, full, from) {
@@ -397,11 +467,12 @@ export class Game extends DurableObject {
       try { w.send(JSON.stringify(full ? { t: 'full', view: this.view(G, at.seat), lines: this.lines(G, at.seat), cards: G.init.cards } : { t: 'upd', view: this.view(G, at.seat), lines: this.lines(G, at.seat, from) })); } catch {}
     }
   }
-  async report(G) {
+  async report(G, actor = null) {
     const dl = this.deadline(G);
     if (dl) await this.ctx.storage.setAlarm(dl); else await this.ctx.storage.deleteAlarm();
     const lobby = this.env.LOBBY.get(this.env.LOBBY.idFromName('main'));
-    await lobby.gameUpdate(G.init.cfg.roomId, G.id, { waiting: waitingOn(G.s), phase: G.s.phase, turn: G.s.turn, winner: G.s.winner, deadline: dl });
+    const online = [...new Set(this.ctx.getWebSockets().map(w => w.deserializeAttachment()).filter(a => a && a.uid && a.vis !== 0).map(a => a.uid))]; // 화면을 보고 있는 사람 (관전자 포함)
+    await lobby.gameUpdate(G.init.cfg.roomId, G.id, { waiting: waitingOn(G.s), phase: G.s.phase, turn: G.s.turn, current: G.s.current, winner: G.s.winner, deadline: dl, actor: actor == null ? null : G.init.players[actor]?.uid || null, online });
   }
   async alarm() {
     const G = this.load(); if (!G) return;
