@@ -73,10 +73,34 @@ async function adminSet(env, lobby) { // 관리자 uid 목록 (회원 관리 화
   const f = await lobby.firstUser(); return f ? [f] : [];
 }
 
-let CARDS = null;
+// 카드 자료: PC에서 올리면(public/cards.json이 함께 올라감) 그 판을 로비 저장소에 보관해 두고,
+// GitHub 자동 반영처럼 cards.json 없이 올라간 판에서는 보관해 둔 것을 씀 (카드 자료는 저장소에 넣지 않으므로)
+let CARDS = null, CARDTXT = null, CARDP = null;
+const gzip = async t => new Uint8Array(await new Response(new Blob([t]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+const gunzip = async b => new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+async function sha16(t) { const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t))); return [...d.slice(0, 8)].map(x => x.toString(16).padStart(2, '0')).join(''); }
+async function loadCardText(env, base) {
+  const lobby = env.LOBBY.get(env.LOBBY.idFromName('main'));
+  let txt = null;
+  try { const r = await env.ASSETS.fetch(new URL('/cards.json', base)); if (r.ok && (r.headers.get('content-type') || '').includes('json')) txt = await r.text(); } catch {}
+  if (txt) { const h = await sha16(txt); if ((await lobby.cardsHash()) !== h) await lobby.saveCards(h, await gzip(txt)); return { txt, h }; }
+  const s = await lobby.loadCards(); if (!s) throw new Error('카드 자료가 아직 없어요');
+  return { txt: await gunzip(s.data), h: s.h };
+}
+async function cardText(env, base) {
+  if (CARDTXT) return CARDTXT;
+  if (!CARDP) CARDP = loadCardText(env, base).then(x => (CARDTXT = x), e => { CARDP = null; throw e; });
+  return CARDP;
+}
 async function cardIndex(env, req) {
-  if (!CARDS) { const r = await env.ASSETS.fetch(new URL('/cards.json', req.url)); CARDS = indexCards(await r.json()); }
+  if (!CARDS) CARDS = indexCards(JSON.parse((await cardText(env, req.url)).txt));
   return CARDS;
+}
+async function serveCards(env, req) {
+  const c = await cardText(env, req.url).catch(() => null); if (!c) return err('카드 자료가 아직 없어요. 관리자에게 알려 주세요.', 503);
+  const et = `"${c.h}"`, hd = { etag: et, 'cache-control': 'private, no-cache' };
+  if ((req.headers.get('if-none-match') || '') === et) return new Response(null, { status: 304, headers: hd });
+  return new Response(c.txt, { headers: { ...hd, 'content-type': 'application/json; charset=utf-8' } });
 }
 
 export default {
@@ -84,6 +108,7 @@ export default {
     const url = new URL(req.url); const path = url.pathname;
     if (!path.startsWith('/api/') && !path.startsWith('/ws/') && path !== '/cards.json') return env.ASSETS.fetch(req);
     const lobby = env.LOBBY.get(env.LOBBY.idFromName('main')), key = await keyOf(env, lobby);
+    if (path === '/api/health') return json({ ok: true, cards: !!(await lobby.cardsHash()) }); // 자동 반영 전 확인: 카드 자료를 보관해 두었는지
     // 로그인: 닉네임 + 비밀번호. 가입은 모임 입장 코드가 있어야 (한 번만)
     if ((path === '/api/login' || path === '/api/signup') && req.method === 'POST') {
       const b = await req.json().catch(() => ({})), ip = req.headers.get('cf-connecting-ip') || 'local', dev = devOf(req.headers.get('user-agent') || '');
@@ -97,7 +122,7 @@ export default {
     const t = await readToken(key, cookieTok(req) || url.searchParams.get('tok'));
     const me = t && await lobby.auth(t.uid, t.tv); if (!me) return err('로그인이 필요해요.', 401);
     const uid = me.uid;
-    if (path === '/cards.json') return env.ASSETS.fetch(req); // 카드 문장 자료는 로그인한 사람만 (인터넷에 올렸을 때 아무나 내려받지 못하게)
+    if (path === '/cards.json') return serveCards(env, req); // 카드 문장 자료는 로그인한 사람만 (인터넷에 올렸을 때 아무나 내려받지 못하게)
 
     let m;
     if (path === '/api/me') return json(await meInfo(env, lobby, me));
@@ -233,6 +258,7 @@ export class Lobby extends DurableObject {
       CREATE TABLE IF NOT EXISTS decks(id TEXT PRIMARY KEY, uid TEXT, name TEXT, list TEXT, ok INTEGER, updated INTEGER);
       CREATE TABLE IF NOT EXISTS rooms(id TEXT PRIMARY KEY, host TEXT, cfg TEXT, status TEXT, players TEXT, decks TEXT, games TEXT, wins TEXT, waiting TEXT, phase TEXT, turn INTEGER, deadline INTEGER, updated INTEGER);
       CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
+      CREATE TABLE IF NOT EXISTS cardsblob(i INTEGER PRIMARY KEY, data BLOB);
       CREATE TABLE IF NOT EXISTS prefs(uid TEXT PRIMARY KEY, v TEXT);
       CREATE TABLE IF NOT EXISTS imgs(id TEXT PRIMARY KEY, owner TEXT, kind TEXT, type TEXT, data BLOB, meta TEXT, created INTEGER);
       CREATE TABLE IF NOT EXISTS push(endpoint TEXT PRIMARY KEY, uid TEXT, p256dh TEXT, auth TEXT, created INTEGER);
@@ -245,6 +271,18 @@ export class Lobby extends DurableObject {
     this.lim = new Map(); // 비밀번호·코드 틀린 횟수 (메모리에만)
   }
   // ---- 회원: 비밀번호, 접속 기록 ----
+  cardsHash() { const r = this.sql.exec("SELECT v FROM kv WHERE k='cardsh'").toArray()[0]; return r ? JSON.parse(r.v) : null; }
+  saveCards(h, data) { // 압축한 카드 자료를 1MB씩 나눠 보관 (한 칸 크기 제한 때문)
+    this.sql.exec('DELETE FROM cardsblob');
+    for (let i = 0, n = 0; i < data.length; i += 1 << 20, n++) this.sql.exec('INSERT INTO cardsblob VALUES(?,?)', n, data.subarray(i, i + (1 << 20)));
+    this.sql.exec("INSERT OR REPLACE INTO kv VALUES('cardsh',?)", JSON.stringify(h));
+  }
+  loadCards() {
+    const h = this.cardsHash(); if (!h) return null;
+    const parts = this.sql.exec('SELECT data FROM cardsblob ORDER BY i').toArray().map(r => new Uint8Array(r.data));
+    const out = new Uint8Array(parts.reduce((a, p) => a + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+    return { h, data: out };
+  }
   secret() {
     let r = this.one("SELECT v FROM kv WHERE k='secret'"); if (r) return JSON.parse(r.v);
     const v = b64(crypto.getRandomValues(new Uint8Array(32))); this.sql.exec("INSERT OR REPLACE INTO kv VALUES('secret',?)", JSON.stringify(v)); return v;
