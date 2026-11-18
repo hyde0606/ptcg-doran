@@ -51,6 +51,10 @@ async function cardIndex(env, req) {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url); const path = url.pathname;
+    if (path === '/cards.json') { // 카드 문장 자료는 로그인한 사람만 (인터넷에 올렸을 때 아무나 내려받지 못하게)
+      const uid = await readToken(env, cookieTok(req) || url.searchParams.get('tok'));
+      return uid ? env.ASSETS.fetch(req) : err('로그인이 필요해요.', 401);
+    }
     if (!path.startsWith('/api/') && !path.startsWith('/ws/')) return env.ASSETS.fetch(req);
     const lobby = env.LOBBY.get(env.LOBBY.idFromName('main'));
     if (path === '/api/login' && req.method === 'POST') {

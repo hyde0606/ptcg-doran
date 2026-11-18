@@ -139,7 +139,7 @@ async function api(path, body, method) {
   return j;
 }
 function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidden = false; Sound.sfx('notify'); clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
-async function loadCards() { if (!ALL) { ALL = await (await fetch('/cards.json')).json(); IDX = indexCards(ALL); } return ALL; }
+async function loadCards() { if (!ALL) { const r = await fetch('/cards.json'); if (!r.ok) throw new Error('카드 자료를 못 불러왔어요. 다시 로그인해 주세요.'); const a = await r.json(); IDX = indexCards(a); ALL = a; } return ALL; }
 // 카드 그림: kr = 한글판, en = 영문판(워터마크 없음), mix = 합친 카드(한글판 위에 그림 칸만 같은 그림의 영문판)
 const hires = u => u ? u.replace(/\.png$/, '_hires.png') : null;
 const canMix = c => !!(c && c.kimg && c.img && c.ksa && !(c.st === 'E' && (c.sub || []).includes('Basic'))); // 영문판과 한글판 그림이 같은 카드만 (기본 에너지는 글 칸이 없어 뺌)
