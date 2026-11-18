@@ -497,9 +497,10 @@ export function apply(s, who, a, idx = 0) {
       if (pp !== who && z === 'hand' && !a.force) warn('상대 손패를 보는 효과인지 확인해 주세요.');
       const w = finishWarns('카드 보기'); if (w) return w;
       judged('카드 보기');
-      P.look = { p: pp, z, n: a.n ? a.n | 0 : null };
-      if (z === 'deck' && a.n) P.look.ids = s.p[pp].deck.slice(0, a.n | 0); // 위에서 N장: 본 카드만 (옮기면 빠지고 새 카드가 채워지지 않음)
-      say(`${me}: ${pp === who ? '자기' : '상대'} ${({ deck: '덱', hand: '손패', prizes: '프라이즈' })[z]}${a.n ? ` 위에서 ${a.n}장` : ''}을(를) 봤어요.`);
+      const bot = z === 'deck' && a.n && a.from === 'bottom', nn = a.n ? Math.max(1, a.n | 0) : null; // from:'bottom' = 덱 아래에서 N장
+      P.look = { p: pp, z, n: nn, ...(bot ? { bottom: true } : {}) };
+      if (z === 'deck' && nn) P.look.ids = bot ? s.p[pp].deck.slice(-nn) : s.p[pp].deck.slice(0, nn); // 위·아래에서 N장: 본 카드만 (옮기면 빠지고 새 카드가 채워지지 않음)
+      say(`${me}: ${pp === who ? '자기' : '상대'} ${({ deck: '덱', hand: '손패', prizes: '프라이즈' })[z]}${nn ? ` ${bot ? '아래' : '위'}에서 ${nn}장` : ''}을(를) 봤어요.`);
       break;
     }
     case 'lookEnd': { P.look = null; ev.push({ pub: `${me}: 보던 카드를 닫았어요.`, quiet: true }); break; }

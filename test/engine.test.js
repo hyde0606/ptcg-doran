@@ -133,6 +133,17 @@ assert.deepEqual(R2.s.p[0].deck, st2.s.p[0].deck);
   assert.equal(S.p[me].look, null, '다 옮기면 보기 끝');
   assert.deepEqual([...S.p[me].deck.slice(-3)].sort(), [...top4.slice(1)].sort());
   assert.ok(/섞어서 덱 아래/.test(r.ev[0].pub), r.ev[0].pub);
+  // 아래에서 3장 보기: 덱 맨 아래 3장만 보이고, 한 장 옮겨도 새 카드가 안 채워짐, 남은 카드 덱 위로
+  ap({ type: 'look', p: me, z: 'deck', n: 3, from: 'bottom' });
+  const bot3 = S.p[me].deck.slice(-3), above = S.p[me].deck[S.p[me].deck.length - 4];
+  assert.ok(S.p[me].look.bottom); assert.deepEqual(viewFor(S, me).p[me].deck.cards.map(x => x.i), bot3);
+  assert.ok(!viewFor(S, me).p[me].deck.cards.some(x => x.i === S.p[me].deck[0]), '맨 위 카드는 안 보임');
+  ap({ type: 'move', iids: [bot3[2]], to: { z: 'hand', p: me } });
+  assert.deepEqual(viewFor(S, me).p[me].deck.cards.map(x => x.i), bot3.slice(0, 2)); assert.ok(!viewFor(S, me).p[me].deck.cards.some(x => x.i === above));
+  const rb = ap({ type: 'move', iids: bot3.slice(0, 2), to: { z: 'deck', p: me } });
+  assert.equal(S.p[me].look, null); assert.deepEqual(S.p[me].deck.slice(0, 2), bot3.slice(0, 2));
+  assert.ok(L3.some(x => x.a.from === 'bottom'));
+  { const R = replay(init, L3).s; assert.deepEqual(R.p[me].deck, S.p[me].deck, '되감기·리플레이도 같음'); }
   // 덱 전체 보기 → 두 장을 보여주고 손패로 + 덱 섞기: 이름이 모두에게, 보여준 카드 번호가 기록에, 보기 끝
   ap({ type: 'look', p: me, z: 'deck' });
   const two = S.p[me].deck.slice(5, 7);

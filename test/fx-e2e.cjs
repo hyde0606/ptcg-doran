@@ -3,7 +3,7 @@
 const { chromium } = require('playwright');
 const BASE = process.env.BASE || 'http://127.0.0.1:8787';
 const OUT = __dirname + '/out/fx-'; require('fs').mkdirSync(__dirname + '/out', { recursive: true });
-const LIST = [['sv8-170', 4], ['me1-131', 4], ['me6-84', 4], ['sv8-57', 4], ['zsv10pt5-84', 4], ['sv5-144', 4], ['sv5-153', 1], ['sve-4', 18], ['sve-2', 17]].map(([id, n]) => ({ id, n }));
+const LIST = [['sv8-170', 4], ['me1-131', 4], ['me6-84', 4], ['sv8-57', 4], ['zsv10pt5-84', 4], ['sv5-144', 4], ['sv5-153', 1], ['sve-4', 18], ['sve-2', 16], ['sv8-175', 1]].map(([id, n]) => ({ id, n }));
 const errs = [], log = (...a) => console.log(...a);
 const svgFor = u => { let h = 0; for (const ch of u) h = (h * 31 + ch.charCodeAt(0)) % 360; return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 63 88"><rect width="63" height="88" rx="3" fill="#f5d142"/><rect x="3" y="3" width="57" height="82" rx="2" fill="hsl(${h},55%,62%)"/><circle cx="31" cy="29" r="11" fill="hsl(${(h + 180) % 360},50%,45%)"/></svg>`; };
 (async () => {
@@ -51,23 +51,31 @@ const svgFor = u => { let h = 0; for (const ch of u) h = (h * 31 + ch.charCodeAt
   const selByName = async (p, re, n = 1) => { let k = 0; const ids = await p.$$eval(`${zv} .zc:not(.on)`, e => e.map(x => [x.dataset.zc, x.textContent])); for (const [id, t] of ids) { if (k >= n) break; if (re.test(t)) { await p.click(`${zv} .zc[data-zc="${id}"] .zsel`); k++; await p.waitForTimeout(120); } } return k; };
   const barBtn = async (p, re) => { for (const bt of await p.$$(`${zv} .zvbar button`)) if (re.test(await bt.textContent())) return bt; return null; };
   const logText = async p => { await closeAll(p); await p.click('[data-t=log]'); await p.waitForSelector('.sheet .lgs .log'); const t = await p.textContent('.sheet .lgs .log'); await closeAll(p); return t; };
-  // 1) 덱 전체 보기 + 이름 찾기(초성) + 고르기 + 손패로 (옮긴 뒤 덱 섞기 기본 켜짐)
-  await openDeck(cur, '덱 전체 보기'); await cur.waitForSelector(zv + ' .zvq input');
-  await cur.fill(zv + ' .zvq input', 'ㅅㅇㄴ'); await cur.waitForTimeout(200);
-  let names = await cur.$$eval(zv + ' .zc small', e => e.map(x => x.textContent));
-  if (!names.length || !names.every(n => /시아노/.test(n))) errs.push('덱 창 초성 찾기 실패: ' + names.join(','));
-  await cur.fill(zv + ' .zvq input', 'tldksh'); await cur.waitForTimeout(200);
-  names = await cur.$$eval(zv + ' .zc small', e => e.map(x => x.textContent)); if (!names.length || !names.every(n => /시아노/.test(n))) errs.push('덱 창 영문 자판 찾기 실패: ' + names.join(','));
-  await cur.fill(zv + ' .zvq input', ''); await cur.waitForTimeout(150);
-  const catTxt = await cur.$$eval(zv + ' .zvcat', e => e.map(x => x.textContent.trim())); log('분류:', catTxt.join(' / '));
-  await cur.click(zv + ' .zvcat[data-cat=sp]'); await cur.waitForTimeout(150);
-  names = await cur.$$eval(zv + ' .zc small', e => e.map(x => x.textContent)); if (!names.length || !names.every(n => /시아노/.test(n))) errs.push('분류 서포트: ' + names.join(','));
-  await cur.click(zv + ' .zvcat[data-cat=eb]'); await cur.waitForTimeout(150);
-  names = await cur.$$eval(zv + ' .zc small', e => e.map(x => x.textContent)); if (!names.length || !names.every(n => /에너지/.test(n))) errs.push('분류 기본 에너지: ' + names.slice(0, 3).join(','));
+  // 1) 덱 전체 보기 + 분류(한 줄, 포켓몬은 눌러서 고르기) + 고르기 + 손패로 (옮긴 뒤 덱 섞기 기본 켜짐)
+  const vp0 = cur.viewportSize(); await cur.setViewportSize({ width: 390, height: 844 }); // 분류 줄은 폰 폭에서 시험
+  await openDeck(cur, '덱 전체 보기'); await cur.waitForSelector(zv + ' .zvcats'); await cur.waitForTimeout(400);
+  if (await cur.$(zv + ' .zvq')) errs.push('검색창이 남아 있음');
+  const zcNames = p => p.$$eval(zv + ' .zc small', e => e.map(x => x.textContent));
+  const pickCat = async (p, g, k) => { const d = await p.$(`${zv} .zvcat[data-cat="${k}"]`); if (d && await d.isVisible()) await d.click(); else { await p.click(`${zv} .zvcat[data-g="${g}"]`); await p.waitForSelector(`${zv} .zvmenu`); await p.click(`${zv} .zvmenu [data-cat="${k}"]`); } await p.waitForTimeout(150); };
+  const catInfo = p => p.$eval(zv + ' .zvcats', r => ({ over: (() => { const v = [...r.children].filter(b => b.offsetParent); return Math.round(v[v.length - 1].getBoundingClientRect().right - r.getBoundingClientRect().right); })(), mode: r.dataset.mode, ws: [...r.querySelectorAll('.zvcat')].filter(b => b.offsetParent).map(b => b.offsetWidth + ':' + getComputedStyle(b).paddingLeft).join(','), sw: r.scrollWidth, cw: r.clientWidth, h: Math.round(r.getBoundingClientRect().height), txt: [...r.querySelectorAll('.zvcat')].filter(b => b.offsetParent).map(b => b.textContent.trim()).join(' / ') }));
+  let ci = await catInfo(cur); log('분류:', ci.mode, ci.txt, ci.h + 'px', ci.ws, ci.sw, ci.cw);
+  await cur.click(zv + ' .zvcat[data-g=pk]'); await cur.waitForSelector(zv + ' .zvmenu');
+  const menuTxt = await cur.$$eval(zv + ' .zvmenu button', e => e.map(x => x.textContent.trim() + (x.disabled ? '(없음)' : ''))); log('포켓몬 목록:', menuTxt.join(' / '));
+  if (!menuTxt.some(t => /2진화/.test(t))) errs.push('포켓몬 목록에 2진화 없음');
+  await cur.waitForTimeout(350); await cur.screenshot({ path: OUT + '0-menu.png' });
+  await cur.evaluate(() => history.back()); await cur.waitForTimeout(300);
+  if (await cur.$(zv + ' .zvmenu')) errs.push('뒤로 가기로 분류 목록이 안 닫힘'); if (!await cur.$(zv)) errs.push('분류 목록 닫다가 덱 창까지 닫힘');
+  await cur.click(zv + ' .zvcat[data-g=pk]'); await cur.waitForSelector(zv + ' .zvmenu'); await cur.click(zv + ' .zvmenu [data-cat=ex]'); await cur.waitForTimeout(150);
+  let names = await zcNames(cur); if (!names.length || !names.every(n => /ex/.test(n))) errs.push('분류 포켓몬 ex: ' + names.join(','));
+  if (!/ex/.test(await cur.textContent(zv + ' .zvcat[data-g=pk]'))) errs.push('포켓몬 단추에 고른 분류 이름이 안 보임');
+  await pickCat(cur, 'tr', 'sp');
+  names = await zcNames(cur); if (!names.length || !names.every(n => /시아노/.test(n))) errs.push('분류 서포트: ' + names.join(','));
+  await pickCat(cur, 'en', 'eb');
+  names = await zcNames(cur); if (!names.length || !names.every(n => /에너지/.test(n))) errs.push('분류 기본 에너지: ' + names.slice(0, 3).join(','));
+  { const c2 = await catInfo(cur); log('기본 에너지 고른 뒤:', c2.mode, c2.txt, c2.ws, c2.sw, c2.cw); if (c2.mode !== ci.mode) errs.push(`분류를 고르니 줄 모양이 바뀜 ${ci.mode} → ${c2.mode}`); if (c2.over > 0) errs.push('분류를 고르니 줄이 넘침'); }
   await cur.screenshot({ path: OUT + '0-filter.png' });
-  await cur.click(zv + ' .zvcat[data-cat=""]'); await cur.waitForTimeout(150);
-  await cur.fill(zv + ' .zvq input', 'ㅎㅇㅍ'); await cur.waitForTimeout(150); // 하이퍼볼
-  await selByName(cur, /하이퍼볼/); await cur.fill(zv + ' .zvq input', 'ㅅㅇㄴ'); await cur.waitForTimeout(150); await selByName(cur, /시아노/);
+  await cur.click(zv + ' .zvcat[data-cat=""]'); await cur.waitForTimeout(150); await cur.setViewportSize(vp0); await cur.waitForTimeout(300);
+  await selByName(cur, /하이퍼볼/); await selByName(cur, /시아노/);
   await cur.screenshot({ path: OUT + '1-select.png' });
   if ((await cur.textContent(zv + ' .zvn')).replace(/\s/g, '') !== '고른카드2장') errs.push('고른 장수 표시: ' + await cur.textContent(zv + ' .zvn'));
   await (await barBtn(cur, /^손패로$/)).click(); await cur.waitForTimeout(600);
@@ -86,7 +94,7 @@ const svgFor = u => { let h = 0; for (const ch of u) h = (h * 31 + ch.charCodeAt
   await cur.screenshot({ path: OUT + '2-cyrano.png' });
   await cur.click(zv + ' .zvonly'); await cur.waitForTimeout(150);
   if ((await cur.$$(zv + ' .zc.dim')).length) errs.push('맞는 카드만 보기에 흐린 카드가 남음');
-  const exN = await selByName(cur, /ex/, 2);
+  const exN = await (await selByName(cur, /피카츄 ex/, 2) || await selByName(cur, /ex/, 2));
   await (await barBtn(cur, /보여주고 손패로/)).click(); await cur.waitForTimeout(700);
   await oth.waitForSelector('.revlayer', { timeout: 4000 }).catch(() => errs.push('상대 화면에 보여준 카드가 안 뜸'));
   const revN = (await oth.$$('.revlayer .revc')).length; if (revN !== exN) errs.push(`보여준 카드 수 ${revN} != ${exN}`);
@@ -102,7 +110,7 @@ const svgFor = u => { let h = 0; for (const ch of u) h = (h * 31 + ch.charCodeAt
   await cur.screenshot({ path: OUT + '5-cost.png' });
   await (await barBtn(cur, /트래시로/)).click(); await cur.waitForTimeout(900);
   const fx2 = await cur.textContent(zv + ' .zvfx').catch(() => ''); if (!/포켓몬 1장/.test(fx2)) errs.push('하이퍼볼 다음 단계(덱 찾기) 안 열림: ' + fx2);
-  await selByName(cur, /피카츄 ex|메가레쿠쟈/, 1); await (await barBtn(cur, /보여주고 손패로/)).click(); await cur.waitForTimeout(600);
+  await (await selByName(cur, /피카츄 ex/, 1) || await selByName(cur, /ex/, 1)); await (await barBtn(cur, /보여주고 손패로/)).click(); await cur.waitForTimeout(600);
   // 4) 위에서 N장 보기: 한 장 옮겨도 새 카드가 안 채워짐 + 남은 카드 덱 맨 아래로
   await openDeck(cur, '위에서 몇 장'); await cur.waitForSelector('.sheet [name=n]', { state: 'attached' });
   await cur.evaluate(() => { const i = document.querySelector('.sheet [name=n]'); i.value = 4; }); await cur.click('.sheet [data-ok]');
@@ -114,8 +122,35 @@ const svgFor = u => { let h = 0; for (const ch of u) h = (h * 31 + ch.charCodeAt
   await cur.screenshot({ path: OUT + '6-top-rest.png' });
   await (await cur.$(`${zv} [data-zr=bottom]`)).click(); await cur.waitForTimeout(600);
   if (await cur.$(zv)) errs.push('남은 카드 덱 아래로 뒤에 창이 남음');
+  // 4b) 아래에서 N장 보기: 제목·장수, 한 장 옮겨도 그대로, 남은 카드 덱 맨 위로
+  await openDeck(cur, '아래에서 몇 장'); await cur.waitForSelector('.sheet [name=n]', { state: 'attached' });
+  await cur.evaluate(() => { const i = document.querySelector('.sheet [name=n]'); i.value = 3; }); await cur.click('.sheet [data-ok]');
+  await cur.waitForSelector(zv + ' .zc'); await cur.waitForTimeout(300);
+  const bt0 = await cur.$$eval(zv + ' .zc', e => e.map(x => x.dataset.zc)), bTitle = await cur.textContent(zv + ' .zvt');
+  if (bt0.length !== 3 || !/맨 아래 카드/.test(bTitle)) errs.push(`아래에서 3장: ${bt0.length}장, 제목 ${bTitle}`);
+  await (await cur.$(zv + ' .zc .zsel')).click(); await (await barBtn(cur, /^손패로$/)).click(); await cur.waitForTimeout(600);
+  const bt1 = await cur.$$eval(zv + ' .zc', e => e.map(x => x.dataset.zc));
+  if (bt1.length !== 2 || bt1.some(i => !bt0.includes(i))) errs.push(`아래에서 3장: 한 장 옮긴 뒤 ${bt1.length}장`);
+  await cur.screenshot({ path: OUT + '6b-bottom.png' });
+  await (await cur.$(`${zv} [data-zr=top]`)).click(); await cur.waitForTimeout(600);
+  if (await cur.$(zv)) errs.push('아래에서 본 카드 덱 위로 뒤에 창이 남음');
+  lt = await logText(cur); if (!/아래에서 3장/.test(lt)) errs.push('아래에서 3장 기록 없음');
+  // 4c) 다크볼: 덱 아래에서 7장 도우미 (포켓몬 1장 보여주고 손패로, 나머지 덱에 넣고 섞기)
+  let inHand = !!(await handCard(cur, /다크볼|sv8-175/)), got = inHand;
+  if (!inHand) { await openDeck(cur, '덱 전체 보기'); await cur.waitForSelector(zv + ' .zc'); if (await selByName(cur, /다크볼/, 1)) { await (await barBtn(cur, /^손패로$/)).click(); await cur.waitForTimeout(600); got = true; } await closeAll(cur); }
+  if (got) {
+    await (await handCard(cur, /다크볼|sv8-175/)).click({ position: { x: 8, y: 12 } }); await cur.waitForSelector('.sheet .acts button.primary'); await cur.click('.sheet .acts button.primary');
+    await cur.waitForSelector(zv + ' .zvfx', { timeout: 5000 }).catch(() => errs.push('다크볼 도우미 안 열림'));
+    const dfx = (await cur.textContent(zv + ' .zvfx').catch(() => '')).trim(), dn = (await cur.$$(zv + ' .zc')).length;
+    log('다크볼 도우미:', dfx, '/ 카드', dn); if (!/아래에서 7장/.test(dfx) || dn !== 7) errs.push(`다크볼: ${dfx} / ${dn}장`);
+    await selByName(cur, /피카츄|파이리|리자몽/, 1);
+    await cur.screenshot({ path: OUT + '6c-darkball.png' });
+    const db = await barBtn(cur, /섞기|손패로/); await db.click(); await cur.waitForTimeout(900);
+    if (await cur.$(zv)) errs.push('다크볼: 누른 뒤 창이 남음');
+    lt = await logText(cur); if (!/섞었어요/.test(lt.slice(-300))) errs.push('다크볼: 덱 섞기 기록 없음');
+  } else log('다크볼이 프라이즈에 있어 건너뜀');
   // 5) 메가레쿠쟈 ex: 덱에서 벤치로 → 특성 → 위에서 4장 + 기본 에너지 붙이기 + 나머지 섞어서 아래로, 특성 사용 표시
-  await openDeck(cur, '덱 전체 보기'); await cur.waitForSelector(zv + ' .zvq input'); await cur.fill(zv + ' .zvq input', 'ㅁㄱㄹ'); await cur.waitForTimeout(150);
+  await openDeck(cur, '덱 전체 보기'); await cur.waitForSelector(zv + ' .zc');
   if (await selByName(cur, /메가레쿠쟈/, 1)) {
     await (await barBtn(cur, /다른 곳으로/)).click(); await cur.waitForSelector('.sheet .acts button');
     for (const bt of await cur.$$('.sheet .acts button')) if (/벤치에 내기/.test(await bt.textContent())) { await bt.click(); break; }
@@ -140,6 +175,8 @@ const svgFor = u => { let h = 0; for (const ch of u) h = (h * 31 + ch.charCodeAt
     const o = await cur.evaluate(() => { const s = document.querySelector('.sheet .zvsheet'); const over = [...s.querySelectorAll('.zvbar *, .zvtools *, .zvh *')].filter(e => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== 'auto' && e.tagName !== 'INPUT').map(e => e.className || e.tagName).slice(0, 4); return { sw: document.documentElement.scrollWidth, ssw: s.scrollWidth, scw: s.clientWidth, over }; });
     if (o.sw > w + 1 || o.ssw > o.scw + 1) errs.push(`덱 창 폭 ${w}: 넘침 ${JSON.stringify(o)}`);
     if (o.over.length) log(`폭 ${w} 안쪽 넘침 후보`, o.over);
+    { const c = await catInfo(cur); log(`폭 ${w} 분류 줄: ${c.mode} ${c.h}px · ${c.txt}`); if (c.over > 0 || c.h > 46) errs.push(`폭 ${w}: 분류 줄이 한 줄이 아님 ${JSON.stringify(c)}`); }
+    if (w === 260 || w === 390) { const m0 = await cur.$eval(zv + ' .zvcats', r => r.dataset.mode); await pickCat(cur, 'en', 'eb'); const c3 = await catInfo(cur); log(`  기본 에너지 고르면: ${c3.mode} · ${c3.txt} · ${c3.sw}/${c3.cw}`); if (c3.over > 0) errs.push(`폭 ${w}: 고른 뒤 넘침 ${JSON.stringify(c3)}`); if (c3.mode !== m0) errs.push(`폭 ${w}: 고르니 줄 모양 바뀜 ${m0} → ${c3.mode}`); if (w === 390) await cur.screenshot({ path: OUT + '9-cat-390.png' }); await cur.click(zv + ' .zvcat[data-cat=""]'); await cur.waitForTimeout(150); }
     if (w === 360 || w === 1280) await cur.screenshot({ path: OUT + `9-zv-${w}.png` }); }
   console.log(errs.length ? '문제:\n' + errs.join('\n') : '문제 없음');
   await b.close();

@@ -102,18 +102,18 @@ export function parseSearch(text, ctx = {}) {
 }
 function countKinds(t) { return Math.max(1, (t.match(/「[^」]+」/g) || []).length || t.split(/(?:과|와) /).length); }
 
-// "덱을 위에서부터 N장 보고 그 중에서 ○○를 M장 선택해서 …. 남은 카드는 …" (메가레쿠쟈 ex 등)
+// "덱을 위(아래)에서부터 N장 보고 그 중에서 ○○를 M장 선택해서 …. 남은 카드는 …" (메가레쿠쟈 ex 등)
 // { top: N, rest: 'shuffle'(덱에 넣고 섞기) | 'bottom' | 'bottomMix'(섞어서 아래로) | 'discard' | null, …parseSearch 결과 }
 export function parseTop(text, ctx = {}) {
   const T = String(text || '');
-  const m = T.match(/자신의 덱을 위에서부터 (\d+)장 보고 그 중(?:에서)? (.+?선택해서 [^.]*\.)\s*(?:남은 카드는 ([^.]*)\.)?/);
+  const m = T.match(/자신의 덱을 (위|아래)에서부터 (\d+)장 보고 그 중(?:에서)? (.+?선택해서 [^.]*\.)\s*(?:남은 카드는 ([^.]*)\.)?/);
   if (!m) return null;
-  const body = m[2].replace(/^(\d+장)을 선택해서/, '카드를 $1 선택해서');
+  const body = m[3].replace(/^(\d+장)을 선택해서/, '카드를 $1 선택해서');
   const sp = parseSearch(`자신의 덱에서 ${body}`, ctx); if (!sp) return null;
-  const r = m[3] || '';
+  const r = m[4] || '';
   const rest = /덱으로 되돌리고 섞는다/.test(r) ? 'shuffle' : /섞고 덱의 아래로/.test(r) ? 'bottomMix' : /덱의 아래로/.test(r) ? 'bottom' : /트래쉬한다/.test(r) ? 'discard' : null;
   const before = T.slice(0, T.indexOf(m[0]));
-  return { ...sp, top: +m[1], rest, shuffle: false, coin: /동전/.test(before), optional: sp.optional || /원한다면/.test(before) };
+  return { ...sp, top: +m[2], bottom: m[1] === '아래', rest, shuffle: false, coin: /동전/.test(before), optional: sp.optional || /원한다면/.test(before) };
 }
 export const REST_KO = { shuffle: '나머지는 덱에 넣고 섞기', bottom: '나머지 덱 아래로', bottomMix: '나머지 섞어서 덱 아래로', discard: '나머지 트래시로' };
 
@@ -128,7 +128,7 @@ export function parseCost(text, ctx = {}) {
 export const TO_KO = { hand: '손패로', bench: '벤치에 내기', discard: '트래시로', attach: '포켓몬에게 붙이기', evolve: '올려서 진화', top: '덱 위로' };
 export const toLabel = sp => sp.to === 'attach' ? (sp.target === 'self' ? '이 포켓몬에게 붙이기' : sp.target === 'bench' ? '벤치 포켓몬에게 붙이기' : '포켓몬에게 붙이기') : sp.to === 'evolve' && sp.target === 'self' ? '이 포켓몬에게 올려 진화' : TO_KO[sp.to];
 export function searchLabel(sp) {
-  if (sp.top) { const n = sp.max == null ? '원하는 만큼' : `${sp.max}장${sp.upTo ? '까지' : ''}`; return `위에서 ${sp.top}장 중 ${sp.cond ? sp.cond + ' ' : ''}${n}${sp.to ? ' · ' + (sp.reveal ? '보여주고 ' : '') + toLabel(sp) : ''}${sp.rest ? ' · ' + REST_KO[sp.rest] : ''}`; }
+  if (sp.top) { const n = sp.max == null ? '원하는 만큼' : `${sp.max}장${sp.upTo ? '까지' : ''}`; return `${sp.bottom ? '아래' : '위'}에서 ${sp.top}장 중 ${sp.cond ? sp.cond + ' ' : ''}${n}${sp.to ? ' · ' + (sp.reveal ? '보여주고 ' : '') + toLabel(sp) : ''}${sp.rest ? ' · ' + REST_KO[sp.rest] : ''}`; }
   const n = sp.max == null ? '원하는 만큼' : `${sp.max}장${sp.upTo ? '까지' : ''}`;
   const to = sp.to ? `${sp.reveal ? '보여주고 ' : ''}${toLabel(sp)}` : '';
   return `${sp.cond ? sp.cond + ' ' : ''}${n}${to ? ' · ' + to : ''}${sp.shuffle ? ' · 덱 섞기' : ''}`;
