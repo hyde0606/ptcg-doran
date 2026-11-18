@@ -5,3 +5,4 @@ public/cards.json
 test/out/
 card-src/
 public/kimg/
+*.log
