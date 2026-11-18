@@ -38,6 +38,7 @@ const ICON = {
   minus: svg('<path d="M5 12h14"/>'),
   star: svg('<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>'),
   paste: svg('<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h4"/>'),
+  photo: svg('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.6"/>'),
   judge: svg('<path d="M8.5 12.5V5.2a1.5 1.5 0 0 1 3 0V11M11.5 10.5V3.8a1.5 1.5 0 0 1 3 0v6.7M14.5 10.5V5.6a1.5 1.5 0 0 1 3 0V14c0 4.2-2.6 7-6.4 7-2.5 0-4.1-1.3-5.4-3.4l-2.4-3.9a1.5 1.5 0 0 1 2.5-1.6l1.7 2.4"/>'),
   coin: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.8l1.3 2.7 2.9.4-2.1 2 .5 2.9-2.6-1.4-2.6 1.4.5-2.9-2.1-2 2.9-.4z"/>'),
   search: svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>'),
@@ -867,6 +868,41 @@ function printsOf(c) { // 같은 카드의 다른 그림들 (보이는 그림이
   return xs.filter(x => { const u = picKey(x); if (seen.has(u)) return false; seen.add(u); return true; });
 }
 const picKey = x => D.dimg === 'en' || !x.kimg ? x.img || x.id : x.kimg;
+// ---------- 덱 사진 → 카드 (기기 안에서만 읽음: lib/deckscan.js 를 따로 돌림) ----------
+const DeckScan = {
+  w: null, names: null, energy: null, labels: null,
+  call(msg, onProg) {
+    if (!this.w) this.w = new Worker('/lib/deckscan-worker.js', { type: 'module' });
+    return new Promise((ok, no) => {
+      this.w.onmessage = e => { const m = e.data; if (m.t === 'p') onProg && onProg(m.p, m.s); else if (m.t === 'err') no(new Error(m.msg)); else ok(m); };
+      this.w.onerror = () => { this.w = null; no(new Error('사진 읽기를 시작하지 못했어요. 새로고침 뒤 다시 해 주세요.')); };
+      this.w.postMessage(msg, msg.img ? [msg.img.data.buffer] : []);
+    });
+  },
+  async prep(onProg) {
+    if (this.names) return;
+    onProg && onProg(0.01, '카드 그림 목록 받는 중');
+    const { labels } = await this.call({ t: 'labels' }), nz = x => (x || '').replace(/\s/g, '');
+    this.labels = labels;
+    this.names = labels.map(l => l[0] === '!' ? nz(l.slice(1)) : nz(IDX.byId[l] ? cnameKo(IDX.byId[l]) : l));
+    this.energy = Uint8Array.from(labels.map(l => l[0] === '!' ? /^기본.+에너지$/.test(nz(l.slice(1))) : (IDX.byId[l]?.st === 'E' && (IDX.byId[l].sub || []).includes('Basic'))));
+  },
+  async load(file) { // 사진 → 캔버스 (가로 1600px 넘으면 줄임)
+    let src; try { src = await createImageBitmap(file); } catch { src = await new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('사진을 읽지 못했어요.')); im.src = URL.createObjectURL(file); }); }
+    const s = Math.min(1, 1600 / src.width), cv = document.createElement('canvas'); cv.width = Math.round(src.width * s); cv.height = Math.round(src.height * s);
+    const g = cv.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; g.drawImage(src, 0, 0, cv.width, cv.height); return cv;
+  },
+  async scan(file, onProg) {
+    const cv = await this.load(file); await this.prep(onProg);
+    const img = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+    const { res } = await this.call({ t: 'scan', img, names: this.names, energy: this.energy }, onProg);
+    return { res, cv };
+  },
+  crop(cv, c) { // 결과 줄에 보일 사진 속 카드 (작게)
+    const k = document.createElement('canvas'); k.width = 90; k.height = 126; const g = k.getContext('2d'); g.imageSmoothingQuality = 'high';
+    g.fillStyle = '#ddd'; g.fillRect(0, 0, 90, 126); g.drawImage(cv, c.x, c.y, c.w, c.h, 0, 0, 90, 126); return k.toDataURL('image/jpeg', 0.82);
+  },
+};
 function deckEditor(deck) {
   let list = deck.list.map(x => ({ ...x }));
   document.body.classList.add('deckedit');
@@ -890,7 +926,7 @@ function deckEditor(deck) {
     const per = st => sorted.filter(x => IDX.byId[x.id].st === st), sum = xs => xs.reduce((a, b) => a + b.n, 0);
     const vsw = `<span class="vsw" role="group" aria-label="보기 방식">${[['kind', '종류별'], ['all', '한꺼번에']].map(([k, l]) => `<button type="button" data-v="${k}" class="${view === k ? 'on' : ''}" aria-pressed="${view === k}">${l}</button>`).join('')}</span>`;
     const grid = xs => `<div class="dkgrid sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}">${xs.map(x => tile(IDX.byId[x.id], x.n, x.c ? `<span class="cvstar" title="덱 목록에 보이는 대표 카드">${ICON.star}</span>` : '')).join('')}</div>`;
-    $('#lst').innerHTML = (!list.length ? `<div class="empty-note">${ringIcon('deck', 'k-ok')}<p>아직 카드가 없어요.<small class="enote2">오른쪽 위 <b>카드 추가</b>에서 카드를 고르거나, 덱 리스트를 붙여 넣어요.</small></p></div>`
+    $('#lst').innerHTML = (!list.length ? `<div class="empty-note">${ringIcon('deck', 'k-ok')}<p>아직 카드가 없어요.<small class="enote2">오른쪽 위 <b>카드 추가</b>에서 카드를 고르거나, 덱 리스트·덱 사진을 넣어요.</small></p></div>`
       : view === 'all' ? `<div class="dgrp"><span class="dkst">${[...'PTE'].map(st => `<span>${kindName(st)} <b>${sum(per(st))}</b></span>`).join('')}</span>${vsw}</div>${grid(sorted)}` // 보기 단추는 첫 머리 줄 오른쪽 (줄을 따로 쓰지 않음)
       : [...'PTE'].filter(st => per(st).length).map((st, i) => { const xs = per(st); return `<div class="dgrp"><span>${kindName(st)} <small>${sum(xs)}장</small></span>${i === 0 ? vsw : ''}</div>${grid(xs)}`; }).join(''))
       + (deck.id ? `<div class="dkfoot"><button type="button" class="sm bad" id="deldeck">${ICON.x}덱 지우기</button></div>` : '');
@@ -915,21 +951,80 @@ function deckEditor(deck) {
     if (start === 'L') filt = 'L';
     const TABS = [['all', 'deck', '전체'], ['P', 'battle', '포켓몬'], ['T', 'user', '트레이너스'], ['E', 'bolt', '에너지']];
     openSheet(`<div class="adds"><div class="addh"><h3>카드 추가</h3><span class="chip" id="acnt"></span><label class="addq">${ICON.search}<input id="q" placeholder="${innerWidth < 480 ? '카드 이름 검색' : '이름 검색 (피카츄, ㅍㅋㅊ, vzc)'}" autocomplete="off" value="${esc(q)}"></label><button class="sm ib" data-close aria-label="닫기">${ICON.x}</button></div>
-      <nav class="addt" aria-label="카드 종류">${TABS.map(([k, ic, l]) => `<button type="button" class="lgt ${k === filt ? 'on' : ''}" data-f="${k}">${ICON[ic]}<span>${l}</span></button>`).join('')}<i class="addsep2" aria-hidden="true"></i><button type="button" class="lgt lgp ${filt === 'L' ? 'on' : ''}" data-f="L">${ICON.paste}<span>리스트 <span class="nb">붙여 넣기</span></span></button></nav>
+      <nav class="addt" aria-label="카드 종류">${TABS.map(([k, ic, l]) => `<button type="button" class="lgt ${k === filt ? 'on' : ''}" data-f="${k}">${ICON[ic]}<span>${l}</span></button>`).join('')}<i class="addsep2" aria-hidden="true"></i><button type="button" class="lgt lgp ${filt === 'L' ? 'on' : ''}" data-f="L">${ICON.paste}<span>리스트·<span class="nb">사진</span></span></button></nav>
       <div class="addr"><div id="res" class="dkgrid add sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}"></div><div class="pastep" hidden></div></div><div class="addi" hidden></div></div>`, el => {
       el.classList.add('wide', 'addsheet');
       const repOf = c => { const ps = printsOf(c), inDeck = ps.find(p => list.some(x => x.id === p.id)); return IDX.byId[artPick[fkey(c)]] || inDeck || ps[0]; };
       const nIn = c => { const ids = new Set(printsOf(c).map(p => p.id)); return list.filter(x => ids.has(x.id) || fkey(IDX.byId[x.id]) === fkey(c)).reduce((a, b) => a + b.n, 0); };
       const minusId = c => { const r = repOf(c); if (list.some(x => x.id === r.id)) return r.id; const k = fkey(c); return list.find(x => fkey(IDX.byId[x.id]) === k)?.id; };
       const pp = el.querySelector('.pastep'), res = el.querySelector('#res');
+      // 덱 사진: 고르기·붙여 넣기·끌어 놓기 → 카드 칸·장수·카드 찾기 → 확실한 것만 미리 체크, 애매한 것은 후보에서 고름
+      let scan = null;
+      const photoIn = document.createElement('input'); photoIn.type = 'file'; photoIn.accept = 'image/*'; photoIn.hidden = true; el.append(photoIn);
+      photoIn.onchange = () => { const f = photoIn.files[0]; photoIn.value = ''; if (f) readPhoto(f); };
+      const drawProg = () => { const b = pp.querySelector('.sprog'); if (!b || !scan || !scan.busy) return; const pc = Math.round(scan.p * 100); b.querySelector('i').style.width = pc + '%'; b.querySelector('span').textContent = `${scan.s} · ${pc}%`; };
+      const readPhoto = async f => {
+        if (scan && scan.busy) return;
+        if (filt !== 'L') setF('L');
+        scan = { busy: true, p: 0, s: '사진 여는 중' }; pasteDraw();
+        try {
+          const { res, cv } = await DeckScan.scan(f, (p, st) => { if (scan && scan.busy) { scan.p = Math.max(scan.p, p); scan.s = st; drawProg(); } });
+          if (!res.cards.length) { scan = null; pasteDraw(); toast('사진에서 카드를 찾지 못했어요. 덱 리스트 부분만 잘라서 다시 넣어 주세요.', 3600); return; }
+          scan = { rows: res.cards.map(c => { const l = c.cands[0].label, id = l[0] === '!' ? null : l;
+            return { id, name: id ? null : l.slice(1), n: c.n, nSure: c.nSure, sure: c.sure && !!id, on: c.sure && !!id, cands: c.cands.slice(0, 4).map(x => x.label), crop: DeckScan.crop(cv, c) }; }) };
+          Sound.sfx('place');
+        } catch (e) { scan = null; toast(e.message, 3600); }
+        pasteDraw();
+      };
+      el.addEventListener('paste', e => { const f = [...(e.clipboardData?.files || [])].find(x => x.type.startsWith('image/')); if (f) { e.preventDefault(); readPhoto(f); } });
+      el.addEventListener('dragover', e => { if ([...(e.dataTransfer?.items || [])].some(x => x.kind === 'file')) e.preventDefault(); });
+      el.addEventListener('drop', e => { const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith('image/')); if (f) { e.preventDefault(); readPhoto(f); } });
+      const drawScan = () => {
+        const sv = pp.querySelector('.scanv'), acts = pp.querySelector('.pacts');
+        if (scan.busy) { if (!sv.querySelector('.sprog')) sv.innerHTML = `<div class="sprog"><div class="bar"><i></i></div><span></span></div>`; acts.innerHTML = ''; drawProg(); return; }
+        const rows = scan.rows, onR = rows.filter(r => r.on && r.id), tot = onR.reduce((a, r) => a + r.n, 0), all = rows.reduce((a, r) => a + r.n, 0);
+        const amb = rows.filter(r => r.id && !r.sure && !r.on).length, nos = rows.filter(r => !r.id).length, nq = rows.filter(r => !r.nSure).length;
+        sv.innerHTML = `<div class="shead"><span class="chip ${all === 60 ? 'ok' : 'warn'}">사진 속 ${rows.length}종 · ${all}장</span>${amb ? `<span class="chip warn">애매 ${amb}종</span>` : ''}${nos ? `<span class="chip">사이트에 없는 카드 ${nos}종</span>` : ''}${nq ? `<span class="chip warn">장수 확인 ${nq}종</span>` : ''}<span class="sbtns"><button type="button" class="sm" data-photo2>${ICON.photo}다른 사진</button><button type="button" class="sm" data-back2>${ICON.paste}리스트로</button></span></div>
+          <p class="small muted snote">체크한 카드만 덱에 넣어요. 애매한 카드는 아래 후보에서 맞는 것을 누르면 체크돼요. 장수가 다르면 −·+로 고쳐 주세요.</p>
+          <div class="slist">${rows.map((r, i) => { const c = r.id && IDX.byId[r.id], st = r.id ? (r.sure ? '확실' : r.on ? '고름' : '애매') : '사이트에 없음';
+            return `<div class="srow ${r.id ? (r.sure || r.on ? 'sure' : 'amb') : 'nos'}" data-i="${i}">
+              <button type="button" class="sck ${r.on ? 'on' : ''}" data-on aria-pressed="${r.on}" ${r.id ? '' : 'disabled'} aria-label="덱에 넣기">${ICON.check}</button>
+              <img class="scrop" src="${r.crop}" alt="사진 속 카드">
+              ${c ? `<span class="cpic spic">${picHtml(c, D.dimg)}</span>` : '<span class="spic none">—</span>'}
+              <div class="sinf"><b>${esc(c ? cnameKo(c) : r.name || '?')}</b><small><em class="st">${st}</em>${c ? ' · ' + esc(setNo(c)) : r.id ? '' : ' · H·I·J 카드가 아니에요'}</small>
+                ${(!r.sure || !r.id) && r.cands.some(l => l[0] !== '!' && l !== r.id) ? `<div class="salt">${r.cands.map(l => { const cc = l[0] === '!' ? null : IDX.byId[l], cur = l === (r.id || '!' + r.name); return `<button type="button" class="sm ${cur ? 'on' : ''}" data-alt="${esc(l)}" ${cc ? '' : 'disabled'}>${esc(cc ? cnameKo(cc) : l.slice(1))}</button>`; }).join('')}</div>` : ''}</div>
+              <div class="sstep"><button type="button" class="sm ib" data-n="-1" aria-label="1장 빼기">${ICON.minus}</button><b class="${r.nSure ? '' : 'q'}" title="${r.nSure ? '' : '장수를 확실히 읽지 못했어요'}">${r.n}</b><button type="button" class="sm ib" data-n="1" aria-label="1장 더">${ICON.plus}</button></div></div>`; }).join('')}</div>`;
+        sv.querySelector('[data-photo2]').onclick = () => photoIn.click();
+        sv.querySelector('[data-back2]').onclick = () => { scan = null; pasteDraw(); };
+        sv.querySelectorAll('.srow').forEach(rw => { const r = rows[+rw.dataset.i];
+          rw.querySelector('[data-on]').onclick = () => { if (!r.id) return; r.on = !r.on; drawScan(); };
+          rw.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { r.n = Math.max(1, Math.min(60, r.n + +b.dataset.n)); r.nSure = true; drawScan(); });
+          rw.querySelectorAll('[data-alt]').forEach(b => b.onclick = () => { const l = b.dataset.alt; if (l[0] === '!') return; r.id = l; r.name = null; r.on = true; drawScan(); });
+        });
+        const has = list.length > 0, btns = has ? [['add', 'plus', `${tot}장 더하기`, 'primary'], ['rep', 'paste', '바꾸기', '']] : [['rep', 'plus', `${tot}장 덱에 넣기`, 'primary']];
+        acts.style.setProperty('--cols', btns.length);
+        acts.innerHTML = btns.map(([k, ic, l, cls]) => `<button type="button" class="${cls}" data-sgo="${k}" ${tot ? '' : 'disabled'}>${ICON[ic]}${l}</button>`).join('');
+        acts.querySelectorAll('[data-sgo]').forEach(b => b.onclick = () => {
+          const items = []; for (const r of onR) { const y = items.find(z => z.id === r.id); if (y) y.n += r.n; else items.push({ id: r.id, n: r.n }); }
+          if (b.dataset.sgo === 'rep') list = items; else for (const x of items) { const y = list.find(z => z.id === x.id); if (y) y.n += x.n; else list.push({ ...x }); }
+          const left = rows.length - onR.length; scan = null;
+          drawList(); el.querySelector('#acnt').textContent = count() + ' / 60'; Sound.sfx('place'); closeSheet();
+          toast(left ? `${tot}장 넣었어요. 체크하지 않은 ${left}종은 넣지 않았어요.` : `${tot}장 넣었어요.`, 3200);
+        });
+      };
       const pasteDraw = () => { // 리스트 붙여 넣기: 붙여 넣는 대로 찾은 장수·못 찾은 줄을 바로 보여 주고, 덱에 더하거나 통째로 바꿈
         const has = list.length > 0;
         if (!pp.firstChild) {
-          pp.innerHTML = `<p class="small muted pnote">PTCGL이나 이 사이트에서 내보낸 덱 리스트(영어·한국어)를 붙여 넣으세요. 한 줄에 ‘장수 이름 세트 번호’예요.<span class="pn2"> <b>더하기</b>는 지금 덱에 보태고, <b>바꾸기</b>는 지금 덱을 이 리스트로 바꿔요.</span></p>
+          pp.innerHTML = `<div class="phrow"><button type="button" class="primary sm" data-photo>${ICON.photo}덱 사진 읽기</button><small class="muted">덱 사진을 고르거나, 붙여 넣거나, 끌어 놓아요. 사진은 이 기기 안에서만 읽어요.</small></div>
+            <p class="small muted pnote">PTCGL이나 이 사이트에서 내보낸 덱 리스트(영어·한국어)를 붙여 넣으세요. 한 줄에 ‘장수 이름 세트 번호’예요.<span class="pn2"> <b>더하기</b>는 지금 덱에 보태고, <b>바꾸기</b>는 지금 덱을 이 리스트로 바꿔요.</span></p>
+            <div class="scanv" hidden></div>
             <textarea id="paste" spellcheck="false" autocomplete="off" placeholder="4 Pikachu ex SVP 106&#10;4 피카츄 ex SV8 033&#10;…"></textarea>
             <div class="pres" aria-live="polite"></div><div class="acts bal pacts"></div>`;
           const ta = pp.querySelector('#paste'); ta.oninput = () => pasteDraw();
+          pp.querySelector('[data-photo]').onclick = () => photoIn.click();
         }
+        const scanOn = !!scan; pp.querySelector('.scanv').hidden = !scanOn; ['#paste', '.pres', '.pnote', '.phrow'].forEach(k => { pp.querySelector(k).hidden = scanOn; });
+        if (scanOn) return drawScan();
         const ta = pp.querySelector('#paste'), r = parseDeckList(ta.value, IDX), tot = r.list.reduce((a, b) => a + b.n, 0);
         pp.querySelector('.pn2').hidden = !has;
         pp.querySelector('.pres').innerHTML = !ta.value.trim() ? '' : `<span class="chip ${r.bad.length ? 'warn' : 'ok'}">찾은 카드 ${tot}장 · ${r.list.length}종</span>${r.bad.length ? `<div class="pbad"><b>못 찾은 줄 ${r.bad.length}개</b><ul>${r.bad.slice(0, 12).map(x => `<li>${esc(x)}</li>`).join('')}${r.bad.length > 12 ? `<li>… ${r.bad.length - 12}줄 더</li>` : ''}</ul></div>` : ''}`;

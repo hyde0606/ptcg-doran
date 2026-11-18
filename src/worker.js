@@ -106,7 +106,7 @@ async function serveCards(env, req) {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url); const path = url.pathname;
-    if (!path.startsWith('/api/') && !path.startsWith('/ws/') && path !== '/cards.json') return env.ASSETS.fetch(req);
+    if (!path.startsWith('/api/') && !path.startsWith('/ws/') && path !== '/cards.json' && path !== '/cardart.bin') return env.ASSETS.fetch(req);
     const lobby = env.LOBBY.get(env.LOBBY.idFromName('main')), key = await keyOf(env, lobby);
     if (path === '/api/health') return json({ ok: true, cards: !!(await lobby.cardsHash()) }); // 자동 반영 전 확인: 카드 자료를 보관해 두었는지
     // 로그인: 닉네임 + 비밀번호. 가입은 모임 입장 코드가 있어야 (한 번만)
@@ -123,6 +123,10 @@ export default {
     const me = t && await lobby.auth(t.uid, t.tv); if (!me) return err('로그인이 필요해요.', 401);
     const uid = me.uid;
     if (path === '/cards.json') return serveCards(env, req); // 카드 문장 자료는 로그인한 사람만 (인터넷에 올렸을 때 아무나 내려받지 못하게)
+    if (path === '/cardart.bin') { // 덱 사진 인식용 카드 그림 특징(그림 자체는 아님)도 로그인한 사람만. PC에서 올릴 때 함께 올라감
+      const r = await env.ASSETS.fetch(req); if (!r.ok) return err('덱 사진 인식 자료가 아직 없어요. 관리자에게 알려 주세요.', 503);
+      const h = new Headers(r.headers); h.set('cache-control', 'private, max-age=86400'); return new Response(r.body, { status: r.status, headers: h });
+    }
 
     let m;
     if (path === '/api/me') return json(await meInfo(env, lobby, me));

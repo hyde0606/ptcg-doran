@@ -73,3 +73,8 @@ npx wrangler deploy
 ## 사이트 자동 반영
 - main에 올라가면 GitHub Actions(`.github/workflows/deploy.yml`)가 Cloudflare에 자동으로 올린다. GitHub Secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`가 필요하다.
 - 카드 자료(`public/cards.json`)는 저장소에 없다. PC에서 `npx wrangler deploy`로 올리면 사이트가 그 카드 자료를 로비 저장소에 보관하고, 자동 반영 판(카드 자료 없이 올라감)은 보관해 둔 것을 쓴다. 카드 자료를 바꿨을 때만 PC에서 한 번 올리면 된다.
+
+## 덱 사진으로 덱 추가
+- 카드 추가 창 '리스트·사진'에서 덱 사진을 고르거나 붙여 넣거나 끌어 놓으면, 기기 안에서 카드 칸·장수·카드를 찾아요(`public/lib/deckscan.js`, 따로 도는 `deckscan-worker.js`). 사진은 서버로 보내지 않아요.
+- 확실한 카드만 미리 체크하고, 애매한 카드는 후보에서 고르게 해요. H·I·J가 아닌 카드는 '사이트에 없는 카드'로 보여요.
+- 인식 자료 `public/cardart.bin`(약 1.4MB)은 저장소에 없어요. PC의 public/ 에 두고 올려야 해요. 만드는 법은 `tools/deckart/README.md`.
