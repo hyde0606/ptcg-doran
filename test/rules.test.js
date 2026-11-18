@@ -2,7 +2,7 @@
 // 실행: node test/rules.test.js   (public/cards.json, src/evo.json 필요)
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { newGame, apply, viewFor, replay, suggestDamage } from '../public/lib/engine.js';
+import { newGame, apply, viewFor, replay, suggestDamage, waitingOn } from '../public/lib/engine.js';
 import { indexCards } from '../public/lib/deck.js';
 import { withEvo, parseReset, resetCount, parseDraw, coinSpec, extraDmg, targetDmg, statusOf, lockOf, stadRules, abLost, ruinsHits, evoOk, abilityConds, trainerConds } from '../public/lib/fxrules.js';
 
@@ -105,6 +105,34 @@ const W = r => (r.warn || []).join(' / ');
   assert.ok(r4.ev.some(e => /덱이 모자라/.test(e.pub))); assert.ok(/트래시하고/.test(r4.ev[0].pub));
   act(f, { type: 'handReset', who: 'x', how: 'deck', n: [1, 0] }, false);
   console.log('handReset ok');
+}
+// ----- 상대 손패는 상대가 눌러서 처리 (ask): 요청 → 상대가 누름 / 안 누르면 상대 차례 시작 때 뽑기 전에 -----
+{
+  const g = game(2, 'r3'); const { S, f, o, act } = g;
+  const oh0 = [...S.p[o].hand];
+  const r = act(f, { type: 'handReset', who: 'both', how: 'deck', n: [4, 4], why: '저지맨', ask: true });
+  assert.equal(S.p[f].hand.length, 4, '내 손패는 바로'); assert.deepEqual(S.p[o].hand, oh0, '상대 손패는 그대로');
+  const q = S.prompts.find(x => x.type === 'handReset'); assert.ok(q && q.p === o && q.to === o && q.n === 4 && q.src === '저지맨', JSON.stringify(q));
+  assert.deepEqual(waitingOn(S).sort(), [0, 1], '둘 다 할 일 (차례인 사람은 계속)');
+  act(f, { type: 'confirm', pid: q.id }, false); // 차례인 사람이 대신 누를 수 없음
+  const rc = act(o, { type: 'confirm', pid: q.id });
+  assert.equal(S.p[o].hand.length, 4); assert.ok(!S.prompts.some(x => x.type === 'handReset'));
+  assert.equal(rc.ev[0].ownBy, o); assert.ok(/「저지맨」 손패 \d+장을 덱에 넣고 섞은 뒤 4장을 뽑았어요/.test(rc.ev[0].pub), rc.ev[0].pub);
+  assert.ok(!oh0.some(i => rc.ev[0].pub.includes(S.cards[S.inst[i]].kn)), '상대 손패 이름 비공개');
+  // 레드카드: 요청만 하고 상대가 안 누름 → 상대 차례 시작 때 먼저 처리하고 1장 뽑음
+  act(f, { type: 'handReset', who: 'opp', how: 'bottom', n: [0, 3], why: '스페셜 레드카드', ask: true });
+  assert.equal(S.p[o].hand.length, 4, '아직 그대로');
+  // 같은 차례에 또 요청(저지맨)하면 앞 요청부터 처리
+  const r2 = act(f, { type: 'handReset', who: 'opp', how: 'deck', n: [0, 2], why: '저지맨', ask: true });
+  assert.ok(r2.ev.some(e => /먼저 처리 — 「스페셜 레드카드」/.test(e.pub)), JSON.stringify(r2.ev)); assert.equal(S.p[o].hand.length, 3);
+  assert.equal(S.prompts.filter(x => x.type === 'handReset').length, 1);
+  const re = act(f, { type: 'endTurn' }, null); if (!re.ok) act(f, { type: 'endTurn', force: true });
+  const cq = S.prompts.find(x => x.type === 'checkup'); if (cq) act(cq.to, { type: 'confirm', pid: cq.id });
+  assert.equal(S.current, o); assert.equal(S.p[o].hand.length, 3, '2장 + 차례 시작 1장');
+  assert.ok(!S.prompts.some(x => x.type === 'handReset'));
+  // 옛 방식(ask 없음)은 그대로 바로 처리 (이미 남은 기록이 같게 돌아가도록)
+  { const R = replay(g.init, g.log).s; assert.deepEqual(R.p[o].hand, S.p[o].hand); assert.deepEqual(R.p[o].deck, S.p[o].deck); assert.deepEqual(R.p[f].hand, S.p[f].hand); assert.equal(R.prompts.length, S.prompts.length); }
+  console.log('handReset ask ok');
 }
 
 // ----- 기절 기록: 역이용·언페어 스탬프는 상대의 지난 차례에 기절했을 때만 -----

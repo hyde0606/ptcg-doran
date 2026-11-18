@@ -507,6 +507,9 @@ export function apply(s, who, a, idx = 0, opt = {}) {
         runCheckup(s, ev);
         checkKO(s, true);
         if (!s.prompts.some(x => x.type === 'ko')) nextTurn(s, ev); else addPrompt(s, { type: 'next', to: s.current, text: '기절 처리가 끝나면 다음 차례로 넘어가요.' });
+      } else if (q.type === 'handReset') { // 상대가 요청한 손패 정리: 손패 주인이 누름
+        if (who !== q.p) return fail('손패 주인이 눌러서 처리해요.');
+        s.prompts = s.prompts.filter(x => x !== q); applyReset(s, q, ev);
       } else if (q.type === 'next') {
         s.prompts = s.prompts.filter(x => x !== q); nextTurn(s, ev);
       } else if (q.type === 'win') {
@@ -521,7 +524,7 @@ export function apply(s, who, a, idx = 0, opt = {}) {
     case 'dismiss': { // 확인 요청을 "다르게 처리" (사람 판정)
       const q = s.prompts.find(x => x.id === a.pid); if (!q) return fail('이미 처리된 확인이에요.');
       s.prompts = s.prompts.filter(x => x !== q);
-      judged('자동 처리 대신 직접: ' + ({ ko: '기절', prize: '프라이즈', promote: '배틀 포켓몬', checkup: '포켓몬 체크', win: '승패', deckout: '덱 아웃', next: '다음 차례' }[q.type] || q.type));
+      judged('자동 처리 대신 직접: ' + ({ ko: '기절', prize: '프라이즈', promote: '배틀 포켓몬', checkup: '포켓몬 체크', win: '승패', deckout: '덱 아웃', next: '다음 차례', handReset: '손패 정리' }[q.type] || q.type));
       const g = groupOf(s, gid); if (a.note) g.note = a.note;
       say(`⚑ ${me}: 자동 제안 「${q.text}」 대신 직접 처리해요.${a.note ? ' — ' + a.note : ''}`);
       if (q.type === 'checkup' || q.type === 'next') nextTurn(s, ev);
@@ -688,14 +691,16 @@ export function apply(s, who, a, idx = 0, opt = {}) {
       if (!ps || !['deck', 'bottom', 'discard'].includes(a.how)) return fail('어떻게 할지 골라 주세요.');
       const nn = [0, 1].map(k => Math.max(0, Math.min(60, (Array.isArray(a.n) ? a.n[k] : 0) | 0)));
       judged('패 되돌리고 뽑기');
+      const src = a.why ? String(a.why).slice(0, 40) : '';
       for (const p of ps) {
-        const Q = s.p[p], H = Q.hand.splice(0), mine = p === who, on = s.players[p].name;
-        for (const q of [0, 1]) { const lk = s.p[q].look; if (lk && lk.p === p && (lk.z === 'hand' || (lk.z === 'deck' && a.how !== 'discard'))) s.p[q].look = null; } // 보던 손패·덱은 바뀌었으니 닫음
-        let how;
-        if (a.how === 'discard') { Q.discard.push(...H); how = `손패 ${H.length}장${H.length ? `(${H.map(i => nm(s, i)).join(', ')})` : ''}을(를) 트래시하고`; }
-        else if (a.how === 'bottom') { shuffle(s, H); Q.deck.push(...H); how = `손패 ${H.length}장을 섞어서 덱 아래로 되돌리고`; }
-        else { Q.deck.push(...H); shuffle(s, Q.deck); how = `손패 ${H.length}장을 덱에 넣고 섞은 뒤`; }
-        const n = nn[mine ? 0 : 1], d = drawN(s, p, n);
+        const mine = p === who, on = s.players[p].name, n = nn[mine ? 0 : 1];
+        if (!mine && a.ask) { // 상대 손패는 상대가 눌러서 처리 (11/18 링크 님). 누르지 않으면 상대 차례가 시작될 때 뽑기 전에 먼저 처리
+          for (const q0 of s.prompts.filter(x => x.type === 'handReset' && x.p === p)) { s.prompts = s.prompts.filter(x => x !== q0); applyReset(s, q0, ev, '다음 요청 전에 먼저 처리 — '); } // 앞선 요청이 남아 있으면 순서대로
+          addPrompt(s, { type: 'handReset', p, to: p, how: a.how, n, src, by: who, text: `${me} 님의 「${src || '카드 효과'}」: ${RESET_KO[a.how]} ${n}장 뽑아 주세요.` });
+          say(`${me}: ${src ? `「${src}」 — ` : ''}${on} 님에게 손패 정리를 요청했어요 (${RESET_KO[a.how]} ${n}장 뽑기, ${on} 님이 눌러서 처리).`);
+          continue;
+        }
+        const { how, d } = resetHand(s, p, a.how, n);
         ev.push({ pub: mine ? `${me}: ${how} ${d.length}장을 뽑았어요.` : `${me}: ${on} 님 ${how} ${on} 님이 ${d.length}장을 뽑았어요.`, own: d.map(i => nm(s, i)).join(', '), ownBy: p });
         if (d.length < n) say(`${on}: 덱이 모자라 ${d.length}장만 뽑았어요.`);
       }
@@ -813,8 +818,25 @@ function startPlay(s, ev) {
   ev.push({ pub: `프라이즈를 6장씩 놓고 포켓몬을 앞면으로 뒤집었어요. ${s.players[0].name}: ${allSlots(s.p[0]).map(x => slotName(s, x)).join(', ')} / ${s.players[1].name}: ${allSlots(s.p[1]).map(x => slotName(s, x)).join(', ')}` });
   beginTurn(s, ev);
 }
+// ----- 손패 되돌리고 뽑기 (릴리에의 결심·저지맨·레드카드 …) -----
+const RESET_KO = { deck: '손패를 모두 덱에 넣고 섞은 뒤', bottom: '손패를 모두 섞어서 덱 아래로 되돌린 뒤', discard: '손패를 모두 트래시하고' };
+function resetHand(s, p, how, n) {
+  const Q = s.p[p], H = Q.hand.splice(0);
+  for (const q of [0, 1]) { const lk = s.p[q].look; if (lk && lk.p === p && (lk.z === 'hand' || (lk.z === 'deck' && how !== 'discard'))) s.p[q].look = null; } // 보던 손패·덱은 바뀌었으니 닫음
+  let t;
+  if (how === 'discard') { Q.discard.push(...H); t = `손패 ${H.length}장${H.length ? `(${H.map(i => nm(s, i)).join(', ')})` : ''}을(를) 트래시하고`; }
+  else if (how === 'bottom') { shuffle(s, H); Q.deck.push(...H); t = `손패 ${H.length}장을 섞어서 덱 아래로 되돌리고`; }
+  else { Q.deck.push(...H); shuffle(s, Q.deck); t = `손패 ${H.length}장을 덱에 넣고 섞은 뒤`; }
+  return { how: t, d: drawN(s, p, n) };
+}
+// 상대에게 요청한 손패 정리를 처리 (본인이 눌렀을 때, 또는 본인 차례가 시작될 때 먼저)
+function applyReset(s, q, ev, lead = '') {
+  const on = s.players[q.p].name, { how, d } = resetHand(s, q.p, q.how, q.n);
+  ev.push({ pub: fixJosa(`${on}: ${lead}${q.src ? `「${q.src}」 ` : ''}${how} ${d.length}장을 뽑았어요.${d.length < q.n ? ` (덱이 모자라 ${d.length}장만)` : ''}`), own: d.map(i => nm(s, i)).join(', '), ownBy: q.p });
+}
 function beginTurn(s, ev) {
   const p = s.current, P = s.p[p];
+  for (const q of s.prompts.filter(x => x.type === 'handReset' && x.p === p)) { s.prompts = s.prompts.filter(x => x !== q); applyReset(s, q, ev, '차례가 시작돼 뽑기 전에 먼저 처리 — '); } // 누르지 않은 손패 정리 요청
   P.used = { energy: false, supporter: false, stadium: false, retreat: false, attack: false };
   if (!P.deck.length) { addPrompt(s, { type: 'deckout', p, to: other(p), text: `${s.players[p].name} 님의 덱이 없어 카드를 뽑지 못해요. ${s.players[other(p)].name} 님 승리로 확정할까요?` }); ev.push({ pub: `${s.turn}번째 차례: ${s.players[p].name} — 덱이 없어요!` }); return; }
   const d = drawN(s, p, 1);
@@ -901,6 +923,7 @@ export function waitingOn(s) {
   }
   if (s.stop) return [other(s.stop.by)]; // 잠깐 멈춤: 지적받은 사람이 대답할 차례
   const q = s.prompts.map(x => x.to).filter(x => x != null);
+  if (s.prompts.some(x => x.type === 'handReset')) q.push(s.current); // 상대가 손패를 정리하는 동안에도 차례인 사람은 계속 함
   return q.length ? [...new Set(q)] : [s.current];
 }
 

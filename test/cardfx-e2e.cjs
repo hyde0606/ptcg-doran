@@ -152,13 +152,31 @@ const check = (ok, msg) => { if (!ok) { errs.push(msg); log('  ✗ ' + msg); } e
   // 2) 저지맨 (서포트 두 번째 → 경고 넘기고) : 서로 4장
   log('2) 저지맨');
   await fromDeck(P, 'me3-76', { z: 'hand' }); await playHand(P, 'me3-76');
-  st = await stepTexts(P); check(st.some(t => /나 4장 · 상대 4장/.test(t)), '저지맨 단추 (' + st.join(' / ') + ')');
+  st = await stepTexts(P); check(st.some(t => /4장 뽑기 · 상대에게 4장 요청/.test(t)), '저지맨 단추 (' + st.join(' / ') + ')');
+  const ohn = (await V(P)).p[1 - (await V(P)).me].handN;
   await step(P, /4장/);
-  v = await V(P); check(v.p[v.me].hand.length === 4 && v.p[1 - v.me].handN === 4, `저지맨: 손패 ${v.p[v.me].hand.length} / 상대 ${v.p[1 - v.me].handN}`);
-  // 3) 스페셜 레드카드: 상대 패를 섞어서 덱 아래로 → 상대 3장
+  v = await V(P); check(v.p[v.me].hand.length === 4 && v.p[1 - v.me].handN === ohn, `저지맨: 내 손패 4 · 상대 손패는 그대로 (${v.p[v.me].hand.length} / ${v.p[1 - v.me].handN})`);
+  check(/손패를 정리하는 중/.test(await P.textContent('.arena').catch(() => '')), '저지맨: 내 쪽엔 상대가 정리하는 중 안내');
+  // 상대 화면: 판정 창에 '손패를 덱에 넣고 섞은 뒤 4장 뽑기' 단추 → 누르면 상대 손패 4장
+  const oppPress = async (re) => {
+    await O.waitForTimeout(400);
+    if (await O.$('.dockfab [data-dock=open]')) { await O.click('.dockfab [data-dock=open]'); await O.waitForTimeout(200); }
+    const find = async () => { if (await O.$('.dockfab [data-dock=open]')) { await O.click('.dockfab [data-dock=open]'); await O.waitForTimeout(200); } for (const bt of await O.$$('.dock [data-confirm]')) if (re.test(await bt.textContent())) return bt; return null; };
+    let bt = await find();
+    if (bt) {
+      await O.screenshot({ path: OUT + '02-opp-reset.png' });
+      if (/4장/.test(re.source)) { await sizes(O, '손패정리요청'); bt = await find(); } // 크기를 바꾸면 다시 그려지므로 다시 찾음
+      if (bt) { await bt.click(); await O.waitForTimeout(500); return true; }
+    }
+    errs.push('상대 화면에 손패 정리 단추 없음 ' + re + ' (' + (await O.$$eval('.dock button', e => e.map(x => x.textContent).join(' / ')).catch(() => '')) + ')'); return false;
+  };
+  await oppPress(/덱에 넣고 섞은 뒤 4장 뽑기/);
+  v = await V(P); check(v.p[1 - v.me].handN === 4 && !v.prompts.some(q => q.type === 'handReset'), '저지맨: 상대가 누르면 상대 손패 4장 (' + v.p[1 - v.me].handN + ')');
+  // 3) 스페셜 레드카드: 상대에게 요청 → 상대가 누르면 패를 섞어서 덱 아래로, 3장
   log('3) 레드카드');
   await fromDeck(P, 'me4-82', { z: 'hand' }); await playHand(P, 'me4-82');
-  await step(P, /상대 3장/);
+  await step(P, /상대에게 요청.*3장/);
+  await oppPress(/덱 아래로 넣은 뒤 3장 뽑기/);
   v = await V(P); check(v.p[1 - v.me].handN === 3, '레드카드: 상대 손패 3장 (' + v.p[1 - v.me].handN + ')');
   // 4) 보스의 지령: 상대 벤치가 빛나고 누르면 교체
   log('4) 보스의 지령');

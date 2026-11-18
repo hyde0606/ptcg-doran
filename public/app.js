@@ -1690,7 +1690,8 @@ function chatAlert(lines) {
 // ----- 확인할 것 -----
 // 내가 지금 답해야 하는 것(급함)만 판 위에 크게 열고, 상대 판정 동의·상대 확인 대기 같은 건 한 줄씩 작게. 기다리는 중 안내는 작은 알약으로.
 const qIcon = (ic, k = '') => `<i class="qi ${k}">${ICON[ic]}</i>`;
-const Q_ICON = { ko: 'warn', prize: 'star', promote: 'user', checkup: 'check', next: 'next', win: 'trophy', deckout: 'trophy' };
+const Q_ICON = { ko: 'warn', prize: 'star', promote: 'user', checkup: 'check', next: 'next', win: 'trophy', deckout: 'trophy', handReset: 'retreat' };
+const RESET_BTN = { deck: '손패를 덱에 넣고 섞은 뒤', bottom: '손패를 덱 아래로 넣은 뒤', discard: '손패를 트래시하고' };
 function dockItems() {
   const v = G.view, me = meSeat(); if (me == null) return [];
   const out = [], nm = p => esc(v.p[p].name);
@@ -1721,9 +1722,11 @@ function dockItems() {
       let btn;
       if (q.type === 'prize') btn = `<div class="pzpick">${Array.from({ length: v.p[me].prizesN }, (_, k) => cardBack('pick', `data-prize="${q.id}" data-k="${k}"`)).join('')}</div>`;
       else if (q.type === 'promote') btn = `<div class="bar">${v.p[me].bench.map(b => `<button class="primary sm" data-promote="${q.id}" data-sid="${b.sid}">${esc(nmOf(topOf(b)))}</button>`).join('')}</div>`;
+      else if (q.type === 'handReset') btn = `<div class="bar"><button class="primary sm" data-confirm="${q.id}">${ICON.check}${RESET_BTN[q.how] || ''} ${q.n}장 뽑기</button><button class="judge sm" data-dismiss="${q.id}">다르게 처리</button></div>`; // 상대가 쓴 저지맨·레드카드 등: 내 손패는 내가 눌러서
       else btn = `<div class="bar"><button class="primary sm" data-confirm="${q.id}">${ICON.check}이대로 확정</button><button class="judge sm" data-dismiss="${q.id}">다르게 처리</button></div>`;
       out.push({ k: 'q' + q.id, u: 1, h: `<div class="prompt"><div class="q">${ic}${esc(q.text)}</div>${btn}</div>` });
     } else if (q.type === 'prize' || q.type === 'promote') out.push({ k: 'q' + q.id, info: `${nm(q.to)} 님이 ${q.type === 'prize' ? '프라이즈를' : '새 배틀 포켓몬을'} 고르는 중` });
+    else if (q.type === 'handReset') out.push({ k: 'q' + q.id, info: `${nm(q.to)} 님이 손패를 정리하는 중${q.src ? ` (「${esc(q.src)}」)` : ''} · 그동안 계속해도 돼요` });
     else out.push({ k: 'q' + q.id, row: `<div class="drow">${ic}<div class="dtx">${esc(q.text)} <span class="chip">${nm(q.to)} 님 확인</span></div><div class="dbt"><button class="primary xs" data-confirm="${q.id}">확정</button><button class="judge xs" data-dismiss="${q.id}">다르게</button></div></div>` });
   }
   const lk = v.p[me].look;
@@ -2604,10 +2607,10 @@ function fxSpecial(pre, sp, gid, search) {
 function resetStep(base, r) {
   const v = G.view, me = meSeat(), my = v.p[me].prizesN, n = resetCount(r, my, v.p[1 - me].prizesN), on = esc(v.p[1 - me].name);
   const HOW = { deck: '덱에 넣고 섞은 뒤', bottom: '섞어서 덱 아래로 넣은 뒤', discard: '모두 트래시하고' };
-  const label = r.who === 'me' ? `내 패를 ${HOW[r.how]} ${n[0]}장 뽑기` : r.who === 'both' ? `서로 패를 덱에 넣고 섞기 · 나 ${n[0]}장 · 상대 ${n[1]}장 뽑기` : `상대 패를 ${r.how === 'bottom' ? '섞어서 덱 아래로' : '덱에 넣고 섞기'} · 상대 ${n[1]}장 뽑기`;
+  const label = r.who === 'me' ? `내 패를 ${HOW[r.how]} ${n[0]}장 뽑기` : r.who === 'both' ? `내 패를 덱에 넣고 섞은 뒤 ${n[0]}장 뽑기 · 상대에게 ${n[1]}장 요청` : `상대에게 요청: 패를 ${r.how === 'bottom' ? '섞어서 덱 아래로' : '덱에 넣고 섞기'} · ${n[1]}장 뽑기`;
   const more = r.more ? `${r.more.side === 'me' ? '내' : '상대'} 남은 프라이즈가 ${r.more.side === 'me' ? my : v.p[1 - me].prizesN}장이라 ${n[0]}장을 뽑아요. ` : '';
-  const opp = r.who !== 'me' ? `${on} 님 손패는 사이트가 바로 처리해요. 상대는 이의를 걸거나 되돌리자고 할 수 있어요.` : '';
-  fxStep({ ...base, desc: more + opp, items: [{ label, run: () => send({ type: 'handReset', who: r.who, how: r.how, n }) }] });
+  const opp = r.who !== 'me' ? `${on} 님 손패는 ${on} 님이 판정 창의 단추를 눌러 처리해요. 누르지 않으면 ${on} 님 차례가 시작될 때 뽑기 전에 먼저 처리돼요.` : ''; // 11/18 링크 님: 상대가 눌러서 처리
+  fxStep({ ...base, desc: more + opp, items: [{ label, run: () => send({ type: 'handReset', who: r.who, how: r.how, n, why: base.short, ask: true }) }] });
 }
 function hpLeftOf(sl) { const c = cinfo(topOf(sl).c); return c.hp ? Math.max(0, c.hp - sl.dmg) : null; }
 function openSpread(title, total, sids) { // 카운터 나누기: 포켓몬마다 ▼▲, 합이 정확히 total 이어야 올릴 수 있음
