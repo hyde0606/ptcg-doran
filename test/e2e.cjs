@@ -107,7 +107,7 @@ const OUT = __dirname + '/out/';
   await oth.click('[data-t=rewatch]'); await oth.waitForSelector('.arena.rwmode .vwcap'); // 대전 중 리플레이 보기: 판 크기 그대로
   await oth.click('[data-rw=tprev]'); await oth.waitForTimeout(400); await oth.click('[data-rw=next]'); await oth.waitForTimeout(400);
   if (!/수/.test(await oth.textContent('.vwk'))) errs.push('리플레이 보기 수 표시 없음');
-  await oth.click('.rwl [data-rw=close]'); await oth.waitForSelector('.arena:not(.rwmode) .area.bottom');
+  await oth.click('.rwpad [data-rw=close]'); await oth.waitForSelector('.arena:not(.rwmode) .area.bottom');
   await A.goto(gameUrl.replace('#game', '#replay')); await A.waitForSelector('.vwcap');
   await A.click('[data-rw=prev]'); await A.waitForTimeout(300); await A.click('[data-rw=tprev]'); await A.waitForTimeout(400);
   if (await A.$('input[type=range]')) errs.push('리플레이에 스크롤바가 남아 있음');

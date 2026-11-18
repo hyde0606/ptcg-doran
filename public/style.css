@@ -234,19 +234,8 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 .cardinfo .big .cpic > img { border-radius: 0; }
 .cardinfo.only { justify-content: center; clear: both; } /* 닫기 단추(오른쪽에 뜸) 아래로 내려서 카드가 옆으로 밀려나지 않게 */
 .cardinfo.only .big { width: min(320px, 100%); }
-.cardinfo .zbtn svg { width: 17px; height: 17px; }
 .cardinfo .atk .alt { margin-top: -2px; }
 .ty.ecost { font-size: 16px; margin-right: 1px; vertical-align: -3px; }
-/* 크게 보기 */
-.zoomov { position: fixed; inset: 0; z-index: 130; background: rgba(16, 30, 44, .82); backdrop-filter: blur(4px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)); animation: fade .18s; }
-.zoomov .x { position: absolute; top: max(12px, env(safe-area-inset-top)); right: 12px; }
-.zoomov .zseg { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
-.zoomov .zseg button[aria-pressed="true"] { --c: var(--r2); --c2: var(--r1); color: var(--teal2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--r2) 30%, transparent); }
-.zoomov .zimg { flex: 0 1 auto; min-height: 0; display: flex; justify-content: center; max-width: 100%; }
-.zoomov .zimg .cpic { height: min(72vh, calc((100vw - 28px) * 88 / 63)); aspect-ratio: 63 / 88; border-radius: 18px; overflow: hidden; box-shadow: 0 20px 50px rgba(0, 0, 0, .45); animation: zoomin .3s cubic-bezier(.2, .9, .3, 1.2); }
-.zoomov .zimg .cpic > img { height: 100%; object-fit: cover; object-position: 100% 50%; }
-.zoomov .zcap { margin: 0; max-width: 520px; text-align: center; color: #e9f2f8; font-size: .9rem; line-height: 1.5; }
-.zoomov .zcap b { display: block; font-family: var(--fh); font-weight: normal; font-size: 1.1rem; color: #ffe2a8; }
 /* 덱 만들기 목록: 크기, 밑 글자 숨기기 */
 .cardgrid .c .cpic > img { margin: 0; }
 .cardgrid.sz-s { grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 9px; }
@@ -666,11 +655,12 @@ input.wide { width: 100%; box-sizing: border-box; }
 .fab.k-home { --c: #1fa6a0; --c2: #9fe3d6; }
 @media (max-aspect-ratio: 5/4), (max-width: 560px) { .golobby { top: max(3px, env(safe-area-inset-top, 0px)); } .golobby .fab { width: 38px; height: 38px; } .golobby .fl { display: none; } }
 @media (max-height: 520px) { .golobby .fl { display: none; } } /* 키 낮은 가로 화면: 아래 버튼 줄과 붙어 보이지 않게 글자 없이 */
-/* 리플레이 보기: 판·손패 자리와 크기는 대전 때와 똑같음. 설명은 맨 위(상대 손패 자리) 한 줄, 조작은 판 양옆(왼쪽 = 뒤로, 오른쪽 = 앞으로) */
+/* 리플레이 보기: 판·두 사람 손패·카드 자리와 크기는 대전 때와 똑같음 (가리는 것 없음).
+   조작 = 판 왼쪽 가운데 리모컨 2줄×3칸 (왼쪽 줄 뒤로, 오른쪽 줄 앞으로), 설명 = 배틀 포켓몬 오른쪽 빈자리의 카드 */
 .arena.rwmode .dinfos { display: none; }
-.arena.rwmode .ohand { visibility: hidden; }
-.rwl, .rwr { position: absolute; z-index: 26; top: var(--bmid, 47%); transform: translateY(-50%); display: flex; flex-direction: column; gap: var(--bgap, 12px); align-items: center; }
-.rwl { left: var(--edgeL); } .rwr { right: var(--edgeR); }
+.rwpad { position: absolute; z-index: 26; left: var(--edgeL); top: var(--bmid, 47%); transform: translateY(-50%); display: grid; grid-template-columns: repeat(2, auto); gap: var(--bgap, 12px) 10px; justify-items: center; align-items: start; }
+.rwpad .fab { width: min(var(--fz), 48px); height: min(var(--fz), 48px); }
+.rwpad .fl { text-align: center; line-height: 1.22; padding: 1px 8px; border-radius: 9px; }
 .fab.k-rw2 { --c: #2f8fe0; --c2: #9ccaf3; }
 .fab.k-play { --c: #ff7a59; --c2: #ffc6ae; }
 .fab.k-close { --c: #7d93aa; --c2: #c9d6e3; }
@@ -678,27 +668,32 @@ input.wide { width: 100%; box-sizing: border-box; }
 .fab:disabled { opacity: .4; filter: saturate(.4); cursor: default; translate: none; animation: none; }
 .fab:disabled .f1 { display: none; }
 .fabw:has(.fab:disabled) .fl { opacity: .55; }
-.vwcap { position: absolute; z-index: 27; top: max(2px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
-  width: min(var(--matw), calc(100% - 2 * (var(--edgeL) + var(--fz) + 8px))); min-height: max(30px, calc(var(--cw) * var(--peek) + 2px)); max-height: calc(var(--cw) * var(--peek) + 30px);
-  display: flex; align-items: center; gap: 8px; padding: 3px 5px 3px 5px; border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 4px 14px rgba(30, 60, 90, .18);
-  font-size: .86rem; line-height: 1.34; color: var(--text); }
-.vwcap.long { font-size: .78rem; }
-.vwh { flex: none; display: inline-flex; align-items: center; font-family: var(--fh); font-weight: 400; font-size: .86em; color: #fff; background: linear-gradient(90deg, #8aa4bd, #6b86a3); border-radius: 999px; padding: 0 10px; line-height: 1.7; white-space: nowrap; }
+.vwbox { position: absolute; z-index: 26; left: calc(50% + var(--cw) * var(--ak) * .81 + 12px); right: max(12px, env(safe-area-inset-right, 0px)); top: var(--bmid, 47%); transform: translateY(-50%); display: flex; justify-content: center; pointer-events: none; }
+.vwcap { pointer-events: auto; width: 100%; max-width: 360px; max-height: calc(var(--cw) * 4); overflow-y: auto; scrollbar-width: none; box-sizing: border-box; padding: 10px 12px 11px; border-radius: 18px;
+  background: rgba(255, 255, 255, .95); box-shadow: 0 6px 18px rgba(30, 60, 90, .18); font-size: .9rem; line-height: 1.45; color: var(--text); word-break: keep-all; overflow-wrap: anywhere; border-top: 4px solid #8aa4bd; }
+.vwcap.me { border-top-color: #3d8ef0; } .vwcap.op { border-top-color: #f05a4f; }
+.vwtop { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; margin-bottom: 5px; }
+.vwh { display: inline-flex; align-items: center; font-family: var(--fh); font-weight: 400; font-size: .86em; color: #fff; background: linear-gradient(90deg, #8aa4bd, #6b86a3); border-radius: 999px; padding: 0 10px; line-height: 1.7; white-space: nowrap; }
 .vwcap.me .vwh { background: linear-gradient(90deg, #6ab0ff, #3d8ef0); } .vwcap.op .vwh { background: linear-gradient(90deg, #ff8a7f, #f05a4f); }
-.vwk { flex: none; font-family: var(--fh); font-size: .8em; color: var(--muted); white-space: nowrap; }
-.vwt { flex: 1; min-width: 0; max-height: 100%; overflow-y: auto; scrollbar-width: none; word-break: keep-all; overflow-wrap: anywhere; animation: capin .35s ease-out; }
-.vwoh { flex: none; display: inline-flex; align-items: center; gap: 4px; font-family: 'Rubik', var(--fh); font-weight: 700; font-size: .82em; color: #b5463c; background: #fff1ee; border-radius: 999px; padding: 1px 9px 1px 6px; }
-.vwbk { width: 11px; height: 15px; border-radius: 2.5px; background: linear-gradient(#e8574a 0 45%, #fff 45% 55%, #3b4d63 55%); box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.2px #c9d4dc; }
-/* 세로·좁은 화면: 설명 상자는 왼쪽 위 로비 단추 옆부터 오른쪽 끝까지, 이름·수는 위 줄, 설명은 아래 줄 */
+.vwn { font-family: var(--fh); font-size: .86em; color: var(--head); white-space: nowrap; }
+.vwk { font-family: var(--fh); font-size: .8em; color: var(--muted); white-space: nowrap; }
+.vwt { animation: capin .35s ease-out; }
+/* 세로·좁은 화면: 리모컨은 작게, 설명 카드는 배틀 포켓몬 오른쪽 좁은 칸을 다 씀 */
 @media (max-aspect-ratio: 5/4), (max-width: 560px) {
-  /* 한 덩어리 글로 흘려서(이름표·수·설명이 이어짐) 짧으면 한 줄, 길어도 두 줄 안쪽 */
-  .vwcap { display: block; left: calc(var(--edgeL) + var(--fz) + 6px); right: 6px; width: auto; transform: none; padding: 3px 8px; border-radius: 14px; font-size: .72rem; line-height: 1.32;
-    max-height: calc(var(--cw) * var(--peek) + 16px); overflow-y: auto; scrollbar-width: none; word-break: keep-all; overflow-wrap: anywhere; }
-  .vwcap.long { font-size: .68rem; }
-  .vwh { display: inline; padding: 1px 7px; margin-right: 4px; line-height: 1.32; }
-  .vwk { margin-right: 4px; }
-  .vwt { display: inline; overflow: visible; max-height: none; }
-  .vwoh { float: right; margin: 1px 0 0 6px; padding: 0 7px 0 5px; line-height: 1.32; }
+  .rwpad { gap: 6px 6px; }
+  .rwpad .fab { width: 38px; height: 38px; }
+  .rwpad .fl { padding: 1px 5px; border-radius: 7px; }
+  .vwbox { left: calc(50% + var(--cw) * var(--ak) * .81 + 4px); right: max(4px, env(safe-area-inset-right, 0px)); }
+  .vwcap { max-width: 300px; max-height: calc(var(--cw) * 4.4); padding: 7px 8px 8px; border-radius: 14px; font-size: .74rem; line-height: 1.38; border-top-width: 3px; }
+  .vwtop { gap: 2px 5px; margin-bottom: 3px; }
+  .vwh { padding: 0 8px; line-height: 1.55; }
+  @media (max-width: 340px) { .rwpad { gap: 5px 4px; } .rwpad .fab { width: 34px; height: 34px; } .rwpad .fl { font-size: .58rem; padding: 1px 3px; } }
+  @media (max-width: 290px) { .rwpad { gap: 3px 3px; } .rwpad .fab { width: 29px; height: 29px; } .rwpad .fabw { gap: 1px; } .rwpad .fl { font-size: .52rem; padding: 0 2px; } }
+}
+/* 키 낮은 가로 화면(가로로 든 폰): 리모컨 단추를 작게, 이름표는 한 줄로 해서 위아래 사이드 칸과 겹치지 않게 */
+@media (max-height: 520px) and (min-aspect-ratio: 5/4) and (min-width: 561px) {
+  .rwpad { gap: 5px 8px; } .rwpad .fab { width: 32px; height: 32px; } .rwpad .fabw { gap: 2px; }
+  .rwpad .fl { font-size: .62rem; white-space: nowrap; padding: 0 7px; } .rwpad .fl br { display: none; }
 }
 .hlf { position: absolute; pointer-events: none; animation: hlin .3s ease-out both; }
 .hlf svg { width: 100%; height: 100%; overflow: visible; display: block; filter: drop-shadow(0 0 .6px rgba(6, 34, 46, .9)) drop-shadow(0 0 1.4px rgba(6, 34, 46, .45)); }

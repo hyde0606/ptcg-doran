@@ -28,7 +28,6 @@ const ICON = {
   check: svg('<path d="M5 12.5 9.5 17 19 7"/>'),
   user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.5-6 8-6s7 1.5 8 6"/>'),
   play: svg('<path d="M8 5v14l11-7z"/>'),
-  zoom: svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   back: svg('<path d="M15 5l-7 7 7 7"/>'),
   minus: svg('<path d="M5 12h14"/>'),
@@ -84,16 +83,15 @@ const DISP_OPTS = [
   { k: 'dimg', t: '카드 그림', d: '판·손패·목록에 작게 나오는 카드 그림이에요. 합친 카드는 그림 칸만 영문판이고 이름과 설명은 한글판이에요.', o: [['kr', '한글판'], ['mix', '합친 카드'], ['en', '영문판']] },
   { k: 'dtext', t: '카드 글자', d: '카드 이름, 특성, 기술 설명을 어떤 말로 보여 줄지 골라요. 한국어 + 영어는 영어 이름을 작게 같이 보여 줘요.', o: [['ko', '한국어'], ['en', '영어'], ['both', '한국어 + 영어']] },
   { k: 'ddet', t: '카드를 눌렀을 때', d: '설명 없이 카드만 크게 볼 수도 있어요.', o: [['text', '글자 + 작은 카드'], ['card', '카드만 크게']] },
-  { k: 'dzoom', t: '크게 보기 첫 화면', d: "'크게 보기'를 누르면 먼저 나오는 그림이에요. 영문판은 워터마크가 없어요. 열린 뒤에도 바꿀 수 있어요.", o: [['en', '영문판'], ['mix', '합친 카드'], ['kr', '한글판']] },
   { k: 'dinfo', t: '카드 밑 글자', d: '덱과 카드 추가 창에서 이름과 번호를 숨기면 카드만 보여요.', o: [['show', '보이기'], ['hide', '숨기기']] },
   { k: 'dsize', t: '카드 크기', d: '덱과 카드 추가 창의 카드 크기예요.', o: [['s', '작게'], ['m', '보통'], ['l', '크게']] },
 ];
-const DISP_DEF = { dimg: 'mix', dtext: 'ko', ddet: 'text', dzoom: 'mix', dinfo: 'show', dsize: 'm' };
+const DISP_DEF = { dimg: 'mix', dtext: 'ko', ddet: 'text', dinfo: 'show', dsize: 'm' };
 const DISP_PRESETS = [
   ['rec', '추천', '작게도 크게도 합친 카드, 글자는 한국어', {}],
   ['cardonly', '카드만', '설명 없이 카드 그림만', { ddet: 'card', dinfo: 'hide' }],
-  ['en', '영어로만', '카드 그림도 글자도 영문판', { dimg: 'en', dtext: 'en', dzoom: 'en' }],
-  ['kr', '한글판만', '어디서든 한글판 그림', { dimg: 'kr', dzoom: 'kr' }],
+  ['en', '영어로만', '카드 그림도 글자도 영문판', { dimg: 'en', dtext: 'en' }],
+  ['kr', '한글판만', '어디서든 한글판 그림', { dimg: 'kr' }],
 ].map(([k, l, d, o]) => ({ k, l, d, v: { ...DISP_DEF, ...o } }));
 const sameDisp = (a, b) => DISP_OPTS.every(o => a[o.k] === b[o.k]);
 const validDisp = (o, src, base) => { const out = { ...base }; for (const x of DISP_OPTS) if (src && x.o.some(y => y[0] === src[x.k])) out[x.k] = src[x.k]; return out; };
@@ -102,7 +100,7 @@ let D = { ...DISP_DEF };
 function applyDisp() {
   const p = SK.prefs || {}, g = groupDisp();
   if (p.disp === 'mine') D = validDisp(DISP_OPTS, p, g);
-  else if (!p.disp && (p.art === 'en' || p.art === 'kr')) D = { ...g, dimg: p.art, ...(p.art === 'kr' ? { dzoom: 'kr' } : {}) }; // 예전 '카드 그림' 설정
+  else if (!p.disp && (p.art === 'en' || p.art === 'kr')) D = { ...g, dimg: p.art }; // 예전 '카드 그림' 설정
   else D = g;
 }
 function applySkin() {
@@ -197,7 +195,7 @@ function closeSheet(fromPop) {
   if (!fromPop) { popSkip++; history.go(-1 - sub); }
 }
 // ---------- 뒤로 가기 ----------
-// 순서: 크게 보기 → 창 안의 자세히 보기 → 선택 창 → 리플레이 → 페이지. 대전·리플레이·덱 고치기는 두 번 눌러야 나감 (첫 번째엔 안내, 덱을 고쳤으면 저장할지 물음)
+// 순서: 창 안의 자세히 보기 → 선택 창 → 리플레이 → 페이지. 대전·리플레이·덱 고치기는 두 번 눌러야 나감 (첫 번째엔 안내, 덱을 고쳤으면 저장할지 물음)
 let GUARD = null, SUBVIEW = null, popSkip = 0, navCount = 0;
 function guardPage(msg, onLeave) { if (GUARD) clearTimeout(GUARD.t); GUARD = { hash: location.hash, msg, onLeave, t: 0, armed: 0 }; history.pushState({ guard: 1 }, ''); }
 function rearm() { if (GUARD && location.hash === GUARD.hash && !GUARD.leaving) { GUARD.armed = 0; history.pushState({ guard: 1 }, ''); } }
@@ -207,7 +205,6 @@ function leavePage(fallback) { // 화면의 '닫기'로 나갈 때: 지킴 칸�
 }
 window.addEventListener('popstate', () => {
   if (popSkip) { popSkip--; return; }
-  if (ZOOM) { closeZoom(); return; }
   if (SUBVIEW) { SUBVIEW(); return; }
   if (!$('#sheet').hidden) { closeSheet(true); return; }
   if (!GUARD || GUARD.leaving || location.hash !== GUARD.hash) return; // 다른 페이지로 가는 중 (hashchange가 그림)
@@ -332,7 +329,7 @@ async function openA2hs() {
     : IS_IOS ? [st(ICON.share, '화면 아래쪽(아이패드는 위쪽) <b>공유</b> 단추를 눌러요.'), st(ICON.homeAdd, '목록을 내려 <b>홈 화면에 추가</b>를 누르고, 오른쪽 위 <b>추가</b>를 눌러요.'), open3]
     : IS_SAMSUNG ? [st('<b class="a2dots">≡</b>', '화면 아래쪽 <b>≡</b> 메뉴를 눌러요.'), st(ICON.homeAdd, '<b>현재 페이지 추가</b> → <b>홈 화면</b>을 눌러요.'), open3]
     : [st(dots, '화면 오른쪽 위 <b>⋮</b> 메뉴를 눌러요.'), st(ICON.homeAdd, '<b>홈 화면에 추가</b> 또는 <b>앱 설치</b>를 눌러요.'), open3];
-  openSheet(`<button class="x sm" data-close>닫기</button><h3>주소창 없이 크게 보기</h3>
+  openSheet(`<button class="x sm" data-close>닫기</button><h3>주소창 없이 보기</h3>
     <p class="muted small" style="margin-top:0">홈 화면에 추가하면 주소창 없이 앱처럼 열려요. ${IS_IOS ? '아이폰은 맨 위 시계 줄만 남아요.' : '안드로이드는 맨 위 시계 줄까지 숨겨져요.'}</p>
     <ol class="a2steps">${steps.join('')}</ol>
     <p class="small muted" style="margin:0">홈 화면에서 처음 열 때 입장 코드를 한 번 더 넣어야 할 수도 있어요.</p>
@@ -405,7 +402,7 @@ function dispHtml(admin) {
   const on = r => admin ? pre && pre.k === r.k : r.k === 'group' ? !mineOn : mineOn && pre && pre.k === r.k;
   return `${admin ? '<h4>카드 표시</h4>' : `<section class="set disp"><h3>카드 표시 <span class="chip">${esc(nowName)}</span></h3>`}
     <div class="seg dpre">${rows.map(r => `<button class="opt ${r.k === 'group' ? 'wide' : ''} ${on(r) ? 'on' : ''}" aria-pressed="${!!on(r)}" data-dpre="${r.k}" data-scope="${admin ? 'group' : 'me'}"><span>${esc(r.l)}<small class="sub">${esc(r.d)}</small></span></button>`).join('')}</div>
-    ${[['판과 카드 정보', ['dimg', 'dtext', 'ddet', 'dzoom']], ['덱 만들기', ['dinfo', 'dsize']]].map(([gt, ks]) => `<div class="dgh">${esc(gt)}</div><div class="dopts n${ks.length}">${DISP_OPTS.filter(o => ks.includes(o.k)).map(o => `<div class="dopt"><h5 id="do-${admin ? 'g' : 'm'}-${o.k}">${esc(o.t)}</h5>${o.d && !admin ? `<p class="small muted">${esc(o.d)}</p>` : ''}<div class="seg2 n${o.o.length}" role="group" aria-labelledby="do-${admin ? 'g' : 'm'}-${o.k}">${o.o.map(([v, l]) => `<button class="sm ${cur[o.k] === v ? 'on' : ''}" aria-pressed="${cur[o.k] === v}" data-dk="${o.k}" data-v="${v}" data-scope="${admin ? 'group' : 'me'}">${esc(l)}</button>`).join('')}</div></div>`).join('')}</div>`).join('')}
+    ${[['판과 카드 정보', ['dimg', 'dtext', 'ddet']], ['덱 만들기', ['dinfo', 'dsize']]].map(([gt, ks]) => `<div class="dgh">${esc(gt)}</div><div class="dopts n${ks.length}">${DISP_OPTS.filter(o => ks.includes(o.k)).map(o => `<div class="dopt"><h5 id="do-${admin ? 'g' : 'm'}-${o.k}">${esc(o.t)}</h5>${o.d && !admin ? `<p class="small muted">${esc(o.d)}</p>` : ''}<div class="seg2 n${o.o.length}" role="group" aria-labelledby="do-${admin ? 'g' : 'm'}-${o.k}">${o.o.map(([v, l]) => `<button class="sm ${cur[o.k] === v ? 'on' : ''}" aria-pressed="${cur[o.k] === v}" data-dk="${o.k}" data-v="${v}" data-scope="${admin ? 'group' : 'me'}">${esc(l)}</button>`).join('')}</div></div>`).join('')}</div>`).join('')}
     ${admin ? '' : '</section>'}`;
 }
 // 사진 줄이기: 카드 뒷면은 카드 비율로 가운데를 잘라 440px, 매트는 긴 쪽 1600px. 밝기도 재서 매트 선 색을 고름
@@ -656,7 +653,7 @@ function deckEditor(deck) {
   const addN = (id, d) => { let x = list.find(y => y.id === id); if (!x && d > 0) list.push(x = { id, n: 0 }); if (x) { x.n += d; if (x.n <= 0) list = list.filter(y => y !== x); } drawList(); };
   const cardSheet = id => {
     const c = IDX.byId[id], x = list.find(y => y.id === id), have = x?.n || 0, cv = !!x?.c;
-    openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c, { zoom: false })}<div class="row" style="margin-top:10px"><button class="primary" data-a="1">+1장</button><button data-a="-1"${have ? '' : ' disabled'}>−1장</button><span class="chip">지금 ${have}장</span>${have ? `<button class="sm ${cv ? 'on' : ''}" data-cv aria-pressed="${cv}">${ICON.star}${cv ? '대표 카드' : '대표 카드로'}</button>` : ''}</div><p class="small muted" style="margin:6px 0 0">대표 카드는 내 덱 목록에서 덱 상자 위에 겹쳐 보여요 (최대 4장). 고르지 않으면 메가 ex, ex, HP가 높은 포켓몬 순으로 알아서 골라요.</p>`, el => {
+    openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}<div class="row" style="margin-top:10px"><button class="primary" data-a="1">+1장</button><button data-a="-1"${have ? '' : ' disabled'}>−1장</button><span class="chip">지금 ${have}장</span>${have ? `<button class="sm ${cv ? 'on' : ''}" data-cv aria-pressed="${cv}">${ICON.star}${cv ? '대표 카드' : '대표 카드로'}</button>` : ''}</div><p class="small muted" style="margin:6px 0 0">대표 카드는 내 덱 목록에서 덱 상자 위에 겹쳐 보여요 (최대 4장). 고르지 않으면 메가 ex, ex, HP가 높은 포켓몬 순으로 알아서 골라요.</p>`, el => {
       el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { addN(id, +b.dataset.a); closeSheet(); });
       const cb = el.querySelector('[data-cv]'); if (cb) cb.onclick = () => { const y = list.find(z => z.id === id); if (!y) return; if (!y.c && list.filter(z => z.c).length >= 4) { toast('대표 카드는 4장까지예요.'); return; } y.c = y.c ? 0 : 1; if (!y.c) delete y.c; closeSheet(); drawList(); };
     });
@@ -694,14 +691,13 @@ function deckEditor(deck) {
       const info = el.querySelector('.addi');
       const showInfo = (c, open = true) => { // 자세히 보기: 창 안에서 겹쳐 보여 줌 (뒤로 가기·'목록으로'로 돌아감)
         const ps = printsOf(c), cur = repOf(c), n = nIn(c);
-        info.innerHTML = `<div class="addib">${cardInfoHtml(cur, { zoom: false })}
+        info.innerHTML = `<div class="addib">${cardInfoHtml(cur)}
           ${ps.length > 1 ? `<label class="h">그림 고르기 <small class="muted">넣을 그림을 골라요 (효과는 같아요)</small></label><div class="artrow">${ps.map(p => `<button type="button" class="artc ${p.id === cur.id ? 'on' : ''}" data-art="${p.id}" aria-pressed="${p.id === cur.id}" title="${esc(setNo(p))}"><span class="cpic">${picHtml(p, D.dimg)}</span><small>${esc(setNo(p))}</small></button>`).join('')}</div>` : ''}</div>
           <div class="addfab"><button class="sm" data-back aria-label="목록으로">${ICON.back}<span>목록</span></button><i class="addsep"></i><button class="sm ib" data-a="-1" ${n ? '' : 'disabled'} aria-label="1장 빼기">${ICON.minus}</button><b class="addn" title="덱에 들어 있는 장수">${n}<small>장</small></b><button class="primary ib" data-a="1" aria-label="1장 넣기">${ICON.plus}</button></div>`; // 넣기·빼기·목록은 오른쪽 아래 작은 묶음 (가로·세로 같은 자리)
         if (open) { info.hidden = false; info.scrollTop = 0; SUBVIEW = () => { info.hidden = true; SUBVIEW = null; draw(); }; history.pushState({ sub: 1 }, ''); }
         info.querySelector('[data-back]').onclick = () => history.back();
         info.querySelectorAll('[data-art]').forEach(b => b.onclick = () => { artPick[fkey(c)] = b.dataset.art; showInfo(c, false); });
         info.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { if (+b.dataset.a > 0) addN(repOf(c).id, 1); else { const id = minusId(c); if (id) addN(id, -1); } Sound.sfx('place'); showInfo(c, false); });
-        const z = info.querySelector('[data-zoom]'); if (z) z.onclick = () => openZoom(z.dataset.zoom);
       };
       const qi = el.querySelector('#q'); qi.oninput = () => { q = qi.value; try { localStorage.setItem('addQ', q); } catch {} draw(); };
       el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filt = b.dataset.f; try { localStorage.setItem('addTab', filt); } catch {} el.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x === b)); draw(); });
@@ -732,10 +728,10 @@ function deckEditor(deck) {
   guardPage('한 번 더 누르면 덱 목록으로 가요', () => dirty() ? leave : null);
   drawList();
 }
-function cardInfoHtml(c, opt = {}) { // 카드를 눌렀을 때: 글자 + 작은 카드 / 카드만 크게 (표시 설정). opt.zoom === false 면 '크게 보기' 없음 (덱 화면)
+function cardInfoHtml(c, opt = {}) { // 카드를 눌렀을 때: 글자 + 작은 카드 / 카드만 크게 (표시 설정). 그림이 이미 고화질이라 '크게 보기'는 없음
   if (!c) return '<p>카드 정보가 없어요.</p>';
   const en = D.dtext === 'en' && !c.kro, alt = s2 => D.dtext === 'both' && s2 ? `<small class="alt">${esc(s2)}</small>` : '';
-  const pic = picMode(c, D.dimg) ? `<div class="big"><span class="cpic">${picHtml(c, D.dimg, D.ddet === 'card')}</span>${opt.zoom === false ? '' : `<button class="sm zbtn" data-zoom="${esc(c.id)}">${ICON.zoom}크게 보기</button>`}</div>` : '';
+  const pic = picMode(c, D.dimg) ? `<div class="big"><span class="cpic">${picHtml(c, D.dimg, D.ddet === 'card')}</span></div>` : '';
   if (D.ddet === 'card' && pic) return `<div class="cardinfo only">${pic}</div>`;
   const cost = cs => (cs || []).map(t => typeIcon(t, 'ecost', `title="${TYPE_KO[t] || t}"`)).join('');
   const L = en ? { ab: 'Ability', w: 'Weakness', r: 'Resistance', rt: 'Retreat', reg: 'Regulation' } : { ab: '특성', w: '약점', r: '저항력', rt: '후퇴', reg: '레귤레이션' };
@@ -749,26 +745,6 @@ function cardInfoHtml(c, opt = {}) { // 카드를 눌렀을 때: 글자 + 작은
     ${c.st === 'P' ? `<div class="small atk">${L.w} ${(c.wk || []).map(tyName).join(', ') || '—'} · ${L.r} ${(c.rs || []).map(r => tyName(r[0]) + ' ' + r[1]).join(', ') || '—'} · ${L.rt} ${c.rt || 0}</div>` : ''}
     ${c.kn || en ? '' : '<div class="small muted atk">이 카드는 아직 한글 자료와 연결되지 않아 영문으로 보여요.</div>'}</div></div>`;
 }
-// 크게 보기: 영문판 · 합친 카드 · 한글판 (있는 것만). 뒤로 가기로 닫힘
-let ZOOM = null;
-function openZoom(c) {
-  if (!c) return;
-  const sides = [['en', '영문판'], ['mix', '합친 카드'], ['kr', '한글판']].filter(([k]) => picMode(c, k) === k);
-  if (!sides.length) return;
-  const ov = document.createElement('div'); ov.className = 'zoomov'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
-  document.body.appendChild(ov); ZOOM = ov; history.pushState({ zoom: 1 }, ''); Sound.sfx('open');
-  let side = sides.some(x => x[0] === D.dzoom) ? D.dzoom : sides[0][0];
-  const cap = { en: c.ksa ? '한글판과 그림이 같은 영문판 카드예요. 워터마크가 없어요.' : '영문판 카드예요. 한글판과 그림이 다를 수 있어요.', mix: '그림 칸은 영문판, 이름과 설명은 한글판으로 합쳤어요.', kr: '공식 사이트 한글판 그림이에요. 크게 보면 워터마크가 보여요.' };
-  const paint = () => {
-    ov.innerHTML = `<button class="x sm" data-zx>닫기</button>${sides.length > 1 ? `<div class="zseg" role="group" aria-label="그림 고르기">${sides.map(([k, l]) => `<button class="sm" data-side="${k}" aria-pressed="${k === side}">${l}</button>`).join('')}</div>` : ''}
-      <div class="zimg"><span class="cpic">${picHtml(c, side, true)}</span></div><p class="zcap"><b>${esc(side === 'en' ? c.n : cnameKo(c))}</b>${esc(cap[side])}</p>`;
-    ov.querySelectorAll('[data-side]').forEach(b => b.onclick = e => { e.stopPropagation(); side = b.dataset.side; paint(); });
-  };
-  paint();
-  ov.onclick = e => { if (e.target === ov || e.target.closest('[data-zx]') || e.target.classList.contains('zimg')) history.back(); };
-}
-function closeZoom() { if (ZOOM) { ZOOM.remove(); ZOOM = null; } }
-document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-zoom]'); if (b) { e.stopPropagation(); openZoom(cinfo(b.dataset.zoom)); } }, true);
 
 // ---------- 대전 ----------
 let G = null; // { id, view, lines, cards, ws, pend:{}, specs, ui }
@@ -1554,7 +1530,7 @@ function rwTargets(a, b, lines = [], judged = false) { // 두 장면 사이에 �
   const sel = (loc, i) => { const [z, p] = loc.split(':');
     if (z === 'slot') return `.mat [data-sid="${p}"]`; if (z === 'disc') return `.pile.disc[data-p="${p}"]`; if (z === 'lost') return `.lostc[data-p="${p}"]`;
     if (z === 'prz') return `.prizes[data-p="${p}"]`; if (z === 'stad') return '.stadium';
-    if (z === 'hand') return +p === bottomSeat() ? `.handbar [data-k="${i}"]` : '.vwoh'; return null; };
+    if (z === 'hand') return +p === bottomSeat() ? `.handbar [data-k="${i}"]` : '.ohand'; return null; };
   const st = v => { const o = {}; for (const p of [0, 1]) [v.p[p].active, ...v.p[p].bench].forEach((sl, j) => { if (sl && !sl.hidden) o[sl.sid] = { dmg: sl.dmg || 0, cond: JSON.stringify(sl.cond || {}), pos: `${p}:${j ? 'b' : 'a'}`, p }; }); return o; };
   const sa = st(a), sb = st(b);
   for (const sid in sb) { // 데미지·상태 이상이 바뀐 포켓몬 = 기술 대상, 100 넘게 받으면 센 장면
@@ -1567,7 +1543,7 @@ function rwTargets(a, b, lines = [], judged = false) { // 두 장면 사이에 �
   for (const [i, loc] of B) if (A.get(i) !== loc) { const s2 = sel(loc, i); if (s2) add(s2, ko && /^\.(pile\.disc|prizes)/.test(s2) ? 'big' : 'move'); }
   for (const p of [0, 1]) {
     if (a.p[p].deck.n !== b.p[p].deck.n) add(`.pile.deck[data-p="${p}"]`);
-    if (!b.p[p].hand && a.p[p].handN !== b.p[p].handN) add(+p === bottomSeat() ? '.handbar' : '.vwoh');
+    if (!b.p[p].hand && a.p[p].handN !== b.p[p].handN) add(+p === bottomSeat() ? '.handbar' : '.ohand');
     if (a.p[p].prizesN !== b.p[p].prizesN) add(`.prizes[data-p="${p}"]`, 'big');
   }
   if (judged) out.forEach(o => { if (o.kind !== 'big' || o.s.startsWith('.mat')) o.kind = 'judge'; }); // 사람이 판정한 단계: 기절·프라이즈 말고는 모두 말풍선
@@ -1647,7 +1623,6 @@ function drawRw(forward) {
   const ts = turnStartsOf(rw.lines), ti = ts.filter(t => t <= rw.k).length - 1; // 지금 몇 번째 차례 안인지
   const tl = ti >= 0 ? rw.lines.find(l => l.turn && l.k === ts[ti]) : null, tm = tl ? tl.txt.match(/(\d+)번째 차례: (.+) \(/) : null;
   const owner = tm ? names.indexOf(tm[2]) : -1, side = owner < 0 ? 'sys' : owner === (rw.me == null ? 0 : rw.me) ? 'me' : 'op';
-  const head0 = tm ? `${tm[1]}번째 차례 · ${tm[2]}` : '대전 준비';
   const stepLines = rw.k > 0 ? rw.lines.filter(l => l.k === rw.k - 1) : [];
   const who = owner >= 0 ? names[owner] : '';
   const caps = stepLines.filter(l => l.txt && !l.turn).map(l => esc(who ? stripWho(l.txt, who) : l.txt) + (l.own ? ` <span class="muted">(${esc(l.own)})</span>` : ''));
@@ -1655,15 +1630,17 @@ function drawRw(forward) {
   const cap = rw.k === 0 ? '대전 준비부터 한 수씩 볼 수 있어요.' : turnL ? `차례를 시작했어요${drew ? ` (${esc(drew)})` : ''}.` : caps.length ? caps.join(' · ') : '차례를 넘겼어요.';
   const end = rw.k >= rw.n;
   G.view = cur; G.lines = rw.lines.filter(l => l.k < rw.k);
-  // 판·손패 자리는 대전 때와 똑같이. 설명은 맨 위(상대 손패 자리) 한 줄, 조작은 판 양옆: 왼쪽 = 뒤로, 오른쪽 = 앞으로
-  const os = 1 - bottomSeat(), ohN = cur.p[os].hand ? cur.p[os].hand.length : cur.p[os].handN;
-  const rf = (k, ic, l, dis, cls = '') => `<div class="fabw"><button class="fab k-rw2 ${cls}" data-rw="${k}" aria-label="${l}" ${dis ? 'disabled' : ''}>${FAB_FX}<span class="core">${FAB_ICON[ic]}</span></button><span class="fl">${l}</span></div>`;
-  const playB = end ? (rw.mode === 'game' ? rf('close', 'check', '판으로', false, 'k-go on') : rf('play', 'play', '재생', true, 'k-play'))
-    : rf('play', rw.playing ? 'pause' : 'play', rw.playing ? '멈춤' : '재생', false, 'k-play' + (rw.playing ? ' on' : ''));
-  const ctl = `<div class="rwl">${rf('close', 'x', '닫기', false, 'k-close')}${rf('tprev', 'rwfirst', '이전 차례', rw.k <= 0)}${rf('prev', 'rwprev', '한 수 뒤로', rw.k <= 0)}</div>
-    <div class="rwr">${playB}${rf('tnext', 'rwlast', '다음 차례', end)}${rf('next', 'rwnext', '한 수 앞으로', end)}</div>`;
+  // 판·두 사람 손패·모든 카드는 대전 때와 똑같이 보임 (가리는 것 없음).
+  // 조작은 판 왼쪽 가운데 리모컨 두 줄(왼쪽 줄 = 뒤로, 오른쪽 줄 = 앞으로), 설명은 배틀 포켓몬 오른쪽 빈자리의 카드 한 장
+  const rf = (k, ic, l, lb, dis, cls = '') => `<div class="fabw"><button class="fab k-rw2 ${cls}" data-rw="${k}" aria-label="${l}" ${dis ? 'disabled' : ''}>${FAB_FX}<span class="core">${FAB_ICON[ic]}</span></button><span class="fl">${lb}</span></div>`;
+  const playB = end ? (rw.mode === 'game' ? rf('close', 'check', '판으로 돌아가기', '판으로', false, 'k-go on') : rf('play', 'play', '재생', '재생', true, 'k-play'))
+    : rf('play', rw.playing ? 'pause' : 'play', rw.playing ? '멈춤' : '재생', rw.playing ? '멈춤' : '재생', false, 'k-play' + (rw.playing ? ' on' : ''));
+  const turnTxt = tm ? `${tm[1]}번째 차례` : '대전 준비';
+  const ctl = `<div class="rwpad" role="group" aria-label="리플레이 조작">${rf('close', 'x', '리플레이 닫기', '닫기', false, 'k-close')}${playB}
+      ${rf('tprev', 'rwfirst', '이전 차례로', '이전<br>차례', rw.k <= 0)}${rf('tnext', 'rwlast', '다음 차례로', '다음<br>차례', end)}
+      ${rf('prev', 'rwprev', '한 수 뒤로', '한 수<br>뒤로', rw.k <= 0)}${rf('next', 'rwnext', '한 수 앞으로', '한 수<br>앞으로', end)}</div>
+    <div class="vwbox"><div class="vwcap ${side}" aria-live="polite"><div class="vwtop">${who ? `<b class="vwh">${esc(who)}</b>` : ''}<span class="vwn">${esc(turnTxt)}</span><span class="vwk">${rw.k} / ${rw.n}수</span></div><div class="vwt">${cap}</div></div></div>`;
   app.innerHTML = `<div class="arena rwmode"><div class="table">${matHtml(true, ctl)}<div class="hl-layer"></div>
-    <div class="vwcap ${side}${cap.length > 60 ? ' long' : ''}" aria-live="polite"><b class="vwh">${esc(head0)}</b><span class="vwk">${rw.k} / ${rw.n}수</span><span class="vwt">${cap}</span><span class="vwoh" title="${esc(names[os])} 님 손패 ${ohN}장" aria-label="${esc(names[os])} 님 손패 ${ohN}장"><i class="vwbk"></i>${ohN}</span></div>
     </div>${lobbyBtn()}</div>`;
   app.querySelectorAll('[data-rw]').forEach(b => b.onclick = () => {
     const k = b.dataset.rw;
