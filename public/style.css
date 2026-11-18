@@ -66,6 +66,8 @@ header.top { display: flex; align-items: center; gap: 8px; padding: 8px 14px; ba
 #nav a.on { background: linear-gradient(var(--pw), var(--pw)) padding-box, linear-gradient(135deg, var(--r1), var(--r2)) border-box; color: var(--teal2); box-shadow: 0 3px 8px rgba(40, 90, 140, .14); }
 #nav a.on .ic { color: var(--r2); }
 .sndbtn { width: 42px; height: 42px; min-height: 0; padding: 0; border-radius: 50%; }
+header.top > button { flex: none; } /* 오른쪽 둥근 단추는 줄어들거나 찌그러지지 않음 (탭 글자 길이에 따라 크기가 바뀌던 문제, 11/18 링크 님) */
+#nav { min-width: 0; }
 .sndbtn svg { width: 22px; height: 22px; }
 .sndbtn.off { --c: #9aa7b4; --c2: #c5ced6; }
 /* 머리 줄 '앱 설치' 단추 (폰이고 아직 앱으로 안 열었을 때만) */
@@ -1125,17 +1127,17 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
   :root { --hh: 58px; }
   header.top { padding: 6px 8px; gap: 6px; flex-wrap: nowrap; }
   .brand { font-size: 1.05rem; gap: 7px; min-width: 0; }
-  .brand .bt { white-space: nowrap; }
-  #nav { flex-wrap: nowrap; }
-  #nav a { padding: 3px 9px; }
-  #nav a:not(.on) .lb { display: none; }
+  .brand .bt { display: none; } /* 폰에서는 이름 글자 없이 공 그림만 (잘리던 문제, 11/18 링크 님) */
   .sndbtn { width: 40px; height: 40px; }
   .instbtn { width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
   .instbtn .lb { display: none; }
 }
-@media (max-width: 400px) { header.top:has(#inst:not([hidden])) .brand .bt { display: none; } }
-@media (max-width: 420px) { body.in-game .brand .bt { display: none; } }
-@media (max-width: 340px) { .brand .bt { display: none; } }
+/* 폭이 애매한 화면(폰 ~ 작은 태블릿): 머리는 늘 한 줄. 메뉴는 고른 것만 글자, 설치 단추는 그림만 */
+@media (max-width: 640px) { header.top { flex-wrap: nowrap; } #nav { flex-wrap: nowrap; } #nav a { padding: 3px 9px; } #nav a:not(.on) .lb { display: none; } }
+/* 아주 좁은 폰: 메뉴가 안에서 넘치지 않게 고른 메뉴 글자까지 빼고, 설치 단추가 있으면 공 그림도 뺌 (대전 탭이 로비로 감) */
+@media (max-width: 350px) { header.top:has(#inst:not([hidden])) #nav a.on .lb { display: none; } }
+@media (max-width: 300px) { #nav a.on .lb { display: none; } header.top:has(#inst:not([hidden])) .brand { display: none; } }
+@media (min-width: 561px) and (max-width: 760px) { .instbtn { width: 42px; padding: 0; border-radius: 50%; justify-content: center; } .instbtn .lb { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
 /* ---------- 폰 화면: 홈 화면에 추가 안내 ---------- */
