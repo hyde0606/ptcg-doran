@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>닌포케카 · 닌도란 포켓몬 카드 게임</title>
+<script>
+/* 카카오톡 안 브라우저로 열면: 같은 주소를 바깥 브라우저(크롬·사파리 등)로 열고, 카톡 화면은 아무것도 없는 흰 페이지로 둠.
+   아래 내용(글꼴·화면·app.js)은 읽지 않음 */
+if (/KAKAOTALK/i.test(navigator.userAgent)) {
+  location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+  document.write('<plaintext style="display:none">');
+}
+</script>
 <meta name="theme-color" content="#f6efe3">
 <meta name="color-scheme" content="only light">
 <script>try{var t=localStorage.getItem('theme')==='dark'?'dark':'light';document.documentElement.dataset.theme=t;document.querySelector('meta[name=color-scheme]').content='only '+t}catch(e){document.documentElement.dataset.theme='light'}</script>
