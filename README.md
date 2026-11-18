@@ -32,6 +32,8 @@ printf 'GROUP_CODE=모임코드\nSECRET=아무긴문자열\nADMINS=관리자이�
 npx wrangler dev
 node test/engine.test.js      # 엔진 시험
 node test/e2e.cjs             # 두 사람 + 관전자 화면 시험 (Playwright)
+node test/bot.test.js 12      # 연습 봇: 봇끼리·이의·되돌리기·잠깐! 판을 끝까지
+node test/bot-e2e.cjs         # 연습 봇과 실제 서버에서 한 판 (화면 시험)
 ```
 
 Windows에서는 `tools\start-npcg.bat`(바탕화면 아이콘이 이걸 열어요)을 두 번 누르면 서버가 켜지고 PC 브라우저에 http://localhost:8787 이 열려요. 같은 와이파이의 폰은 `http://<PC 내부 IP>:8787`로 들어와요(방화벽에서 8787 포트를 같은 망에만 열어 두세요). 검은 창을 닫으면 꺼져요.
@@ -63,6 +65,12 @@ npx wrangler secret put SECRET
 npx wrangler secret put ADMINS   # 관리자 이름 (쉼표로 여러 명)
 npx wrangler deploy
 ```
+
+## 연습 봇 (AI와 연습)
+- 방 만들기 → 상대 '연습 봇' → 봇 덱(드래펄트 ex, 메가캥카 ex, 내 덱)과 실력(보통/쉬움)을 고르고 '연습 봇과 시작'. 끝나면 '한 판 더'.
+- 봇은 서버(판마다 하나인 Game DO)가 알람으로 깨워 두어요. 봇도 사람과 똑같이 자기 시점(`viewFor`)만 보고, 행동은 사람 행동과 같은 기록에 쌓여 기보·되돌리기가 그대로 돼요. 무료(유료 AI 없음).
+- 봇이 처리한 카드 효과도 판정으로 남아 동의/이의를 누를 수 있어요. 이의를 걸면 봇이 '되돌리기'를 청하고, 그 수는 그 차례에 다시 하지 않아요. 내 되돌리기 요청과 잠깐!에는 봇이 바로 따라요.
+- 코드: `public/lib/bot.js`(봇), `src/worker.js`(방 만들기 `opp: 'bot'`, `botTick`). 봇 덱은 영문 카드 이름으로 찾아서 카드 번호가 달라도 돼요.
 
 ## 아직 없는 것 (다음 단계)
 

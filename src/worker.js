@@ -6,6 +6,12 @@ import { indexCards, checkDeck, expand } from '../public/lib/deck.js';
 import { makeVapid, sendPush } from './webpush.js';
 import { DC_KR, DC_JP, JP_PICT, DC_UA, dcFetch, deckCode } from './deckcode.js';
 import EVO from './evo.json'; // 진화 전 이름 표 (tools/build-evo.py 로 만듦)
+import { Bot, BOT_NAME, BOT_HELLO, BOT_DECKS, botDeckIds } from '../public/lib/bot.js';
+const BOT_UID = 'bot'; // 연습 봇 자리 (회원이 아님)
+// 봇이 한 수 둔 뒤 다음 수까지 쉬는 시간 (ms): 사람이 화면에서 따라볼 수 있게
+const BOT_GAP = { chat: 700, agree: 450, rewindAsk: 500, stopEnd: 600, order: 700, setupPlace: 450, setupDone: 500, mullDraw: 600, confirm: 800, dismiss: 800,
+  bench: 850, evolve: 950, attach: 850, play: 1000, ability: 1000, retreat: 950, attack: 1400, endTurn: 900, look: 700, lookEnd: 500, move: 850, draw: 800, shuffle: 600,
+  switch: 900, handReset: 1000, effectEnd: 600 };
 
 const json = (o, status = 200, headers = {}) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
 const err = (m, status = 400) => json({ error: m }, status);
@@ -205,6 +211,16 @@ export default {
     if (path === '/api/rooms' && req.method === 'GET') return json(await lobby.rooms(uid));
     if (path === '/api/rooms' && req.method === 'POST') {
       const b = await req.json();
+      if (b.opp === 'bot') { // AI와 연습: 방을 만들자마자 봇과 시작 (실시간, 1판)
+        const deck = await lobby.deck(uid, b.deckId); if (!deck) return err('덱을 골라 주세요.');
+        const bk = String(b.botDeck || ''); let botDeck = null;
+        if (BOT_DECKS[bk]) { const r = botDeckIds(bk, await cardIndex(env, req)); if (!r || r.ids.length !== 60) return err('봇 덱 카드를 카드 자료에서 다 찾지 못했어요' + (r && r.miss.length ? ': ' + r.miss.join(', ') : '.')); botDeck = 'p:' + bk; }
+        else { const d2 = await lobby.deck(uid, bk); if (!d2) return err('봇이 쓸 덱을 골라 주세요.'); botDeck = 'u:' + d2.id; }
+        const cfg = { mode: 'live', deadlineH: 24, bestOf: 1, spectate: b.spectate === 'no' ? 'no' : 'yes', invite: '', title: String(b.title || '').trim().slice(0, 30), bot: { level: b.botLevel === 'basic' ? 'basic' : 'helper', deck: bk, mine: deck.id } }; // deck·mine: 끝난 뒤 '한 판 더'에 씀
+        const room = await lobby.createBotRoom(uid, cfg, deck.id, botDeck);
+        try { return json({ room: await startGame(env, req, lobby, room, uid) }); }
+        catch (e) { await lobby.adminDelete(room.id); return err('봇과 시작하지 못했어요: ' + (e.message || e)); }
+      }
       const cfg = {
         mode: b.mode === 'async' ? 'async' : 'live', deadlineH: [12, 24, 48, 72].includes(+b.deadlineH) ? +b.deadlineH : 24,
         bestOf: +b.bestOf === 3 ? 3 : 1, spectate: b.spectate === 'no' ? 'no' : b.spectate === 'open' ? 'open' : 'yes',
@@ -257,13 +273,21 @@ export default {
 
 async function startGame(env, req, lobby, room, actorUid) {
   const idx = await cardIndex(env, req);
-  const decks = await Promise.all(room.players.map((u, k) => lobby.deck(u, room.decks[k])));
-  const users = await Promise.all(room.players.map(u => lobby.user(u)));
+  const deckOf = async (u, k) => { // 봇 덱: 'p:이름'(기본 제공) 또는 'u:덱id'(방 만든 사람의 덱)
+    if (u !== BOT_UID) return lobby.deck(u, room.decks[k]);
+    const spec = String(room.decks[k] || '');
+    if (spec.startsWith('u:')) { const d = await lobby.deck(room.host, spec.slice(2)); if (!d) throw new Error('봇이 쓸 덱이 없어졌어요'); return d; }
+    const r = botDeckIds(spec.slice(2), idx); if (!r || r.ids.length !== 60) throw new Error('봇 덱 카드를 찾지 못했어요');
+    const cnt = {}; for (const id of r.ids) cnt[id] = (cnt[id] || 0) + 1;
+    return { id: spec, name: r.name, list: Object.entries(cnt).map(([id, n]) => ({ id, n })) };
+  };
+  const decks = await Promise.all(room.players.map((u, k) => deckOf(u, k)));
+  const users = await Promise.all(room.players.map(u => u === BOT_UID ? { uid: BOT_UID, name: BOT_NAME } : lobby.user(u)));
   const cards = {};
   for (const d of decks) for (const { id } of d.list) cards[id] = withEvo(idx.byId[id], EVO);
   const gameId = room.id + '-' + (room.games.length + 1);
   const init = { seed: rid(16), rv: 2, cfg: { ...room.cfg, roomId: room.id, game: room.games.length + 1 }, cards, // rv: 규칙 판 (2 = 카드 글 도우미 규칙)
-    players: room.players.map((u, k) => ({ uid: u, name: users[k].name, deck: expand(decks[k].list) })) };
+    players: room.players.map((u, k) => ({ uid: u, name: users[k].name, deck: expand(decks[k].list), ...(u === BOT_UID ? { bot: true } : {}) })) };
   const g = env.GAME.get(env.GAME.idFromName(gameId));
   await lobby.gameStarted(room.id, gameId); // 방에 판을 먼저 붙여야 판 시작 알림·남은 시간이 바로 들어감
   await g.start(gameId, init, actorUid);
@@ -381,7 +405,7 @@ export class Lobby extends DurableObject {
   }
   async stats(uid) {
     await this.fillResults();
-    const names = Object.fromEntries(this.sql.exec('SELECT uid,name FROM users').toArray().map(u => [u.uid, u.name]));
+    const names = { ...Object.fromEntries(this.sql.exec('SELECT uid,name FROM users').toArray().map(u => [u.uid, u.name])), [BOT_UID]: BOT_NAME };
     const titles = Object.fromEntries(this.sql.exec('SELECT id,cfg FROM rooms').toArray().map(r => [r.id, JSON.parse(r.cfg).title || '']));
     const rows = this.sql.exec('SELECT * FROM results WHERE a=? OR b=? ORDER BY ended DESC', uid, uid).toArray();
     const tot = { w: 0, l: 0, d: 0 }, by = {}, recent = [];
@@ -477,9 +501,12 @@ export class Lobby extends DurableObject {
   createRoom(uid, cfg, deckId) {
     return this.saveRoom({ id: 'r' + rid(6), host: uid, cfg, status: 'open', players: [uid], decks: [deckId], games: [], wins: [0, 0], waiting: [] });
   }
+  createBotRoom(uid, cfg, deckId, botDeck) {
+    return this.saveRoom({ id: 'r' + rid(6), host: uid, cfg, status: 'open', players: [uid, BOT_UID], decks: [deckId, botDeck], games: [], wins: [0, 0], waiting: [] });
+  }
   joinRoom(uid, id, deckId) {
     const r = this.room(id); if (!r) return { error: '방을 찾을 수 없어요.' };
-    if (r.status !== 'open') return { error: '이미 시작한 방이에요.' };
+    if (r.status !== 'open' || r.players.length >= 2) return { error: '이미 시작한 방이에요.' };
     if (r.players.includes(uid)) return { error: '내가 만든 방이에요. 다른 사람이 들어와야 시작해요.' };
     const u = this.user(uid);
     if (r.cfg.invite && r.cfg.invite !== u.name) return { error: '초대받은 사람만 들어올 수 있어요.' };
@@ -503,7 +530,7 @@ export class Lobby extends DurableObject {
     if (u.phase === 'over' && old.phase !== 'over') this.sql.exec('INSERT OR REPLACE INTO results VALUES(?,?,?,?,?,?,?,?)', gameId, r.id, r.players[0], r.players[1], u.winner ?? -1, u.turn || 0, u.how || '', Date.now());
     if (u.actor) this.sql.exec('UPDATE users SET seen=? WHERE uid=?', Date.now(), u.actor);
     const quiet = new Set([...(u.online || []), u.actor].filter(Boolean)); // 지금 판을 보고 있는 사람, 방금 둔 사람은 빼고
-    const names = r.players.map(p => this.user(p)?.name || '상대'), tail = r.cfg.title ? ` · ${r.cfg.title}` : '', vs = r.cfg.title || names.join(' vs ');
+    const names = r.players.map(p => p === BOT_UID ? BOT_NAME : this.user(p)?.name || '상대'), tail = r.cfg.title ? ` · ${r.cfg.title}` : '', vs = r.cfg.title || names.join(' vs ');
     const jobs = [], done = new Set();
     const send = (who, title, body) => { if (!who || quiet.has(who) || done.has(who)) return; done.add(who); jobs.push(this.notify(who, { title, body, url: '/#game/' + gameId, tag: r.id })); };
     const ended = u.phase === 'over' && old.phase !== 'over';
@@ -526,7 +553,7 @@ export class Lobby extends DurableObject {
   }
   rooms(uid) {
     const all = this.sql.exec("SELECT * FROM rooms WHERE status!='done' OR updated>? ORDER BY updated DESC LIMIT 200", Date.now() - 14 * 864e5).toArray().map(x => this.rowRoom(x));
-    const names = Object.fromEntries(this.sql.exec('SELECT uid,name FROM users').toArray().map(u => [u.uid, u.name]));
+    const names = { ...Object.fromEntries(this.sql.exec('SELECT uid,name FROM users').toArray().map(u => [u.uid, u.name])), [BOT_UID]: BOT_NAME };
     const fl = new Set(this.sql.exec('SELECT room FROM follows WHERE uid=?', uid).toArray().map(x => x.room));
     for (const r of all) { r.names = r.players.map(p => names[p] || '?'); r.mine = r.players.includes(uid); r.myTurn = r.mine && r.waiting.includes(r.players.indexOf(uid)) && ['playing'].includes(r.status); r.follow = fl.has(r.id); }
     all.sort((a, b) => (b.myTurn - a.myTurn) || ((a.myTurn && b.myTurn) ? (a.deadline || 9e15) - (b.deadline || 9e15) : 0));
@@ -656,7 +683,7 @@ export class Game extends DurableObject {
       if (!g || g.rewindBy == null || g.rewindBy === seat) return { ok: false, err: '되돌리기 요청이 없어요.' };
       a.salt = rid(12);
       this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length, seat, JSON.stringify(a), t);
-      this.cache = null; const G2 = this.load();
+      this.cache = null; this.bot = null; const G2 = this.load();
       this.push(G2, true); await this.report(G2, seat); return { ok: true };
     }
     if (a.type === 'stopUndo') { // 잠깐 멈춤에서 지적받은 사람이 '그 행동 전으로 되돌리기'
@@ -664,7 +691,7 @@ export class Game extends DurableObject {
       if (!st || st.to == null || st.by === seat) return { ok: false, err: '되돌릴 지적이 없어요.' };
       a.salt = rid(12);
       this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length, seat, JSON.stringify(a), t);
-      this.cache = null; const G2 = this.load();
+      this.cache = null; this.bot = null; const G2 = this.load();
       this.push(G2, true); await this.report(G2, seat); return { ok: true };
     }
     if (a.type === 'timeout' || a.type === 'adminEnd') return { ok: false, err: '서버만 할 수 있어요.' };
@@ -683,14 +710,21 @@ export class Game extends DurableObject {
     }
   }
   async report(G, actor = null) {
-    const dl = this.deadline(G);
-    if (dl) await this.ctx.storage.setAlarm(dl); else await this.ctx.storage.deleteAlarm();
+    const dl = this.deadline(G), bs = this.botSeat(G);
+    if (bs >= 0) { // 연습 봇 판: 기한 대신 봇을 깨우는 알람 (봇이 둔 뒤엔 행동마다 조금씩 쉬어 사람이 따라볼 수 있게)
+      if (G.s.phase === 'over') await this.ctx.storage.deleteAlarm();
+      else await this.ctx.storage.setAlarm(Date.now() + (actor === bs ? (BOT_GAP[this.botLast] || 800) : 500));
+      const sum = JSON.stringify([waitingOn(G.s), G.s.phase, G.s.turn, G.s.winner]);
+      if (actor === bs && sum === this.botSum) return; // 봇이 둔 수로 방 목록에 바뀔 게 없으면 로비에 알리지 않음
+      this.botSum = sum;
+    } else if (dl) await this.ctx.storage.setAlarm(dl); else await this.ctx.storage.deleteAlarm();
     const lobby = this.env.LOBBY.get(this.env.LOBBY.idFromName('main'));
     const online = [...new Set(this.ctx.getWebSockets().map(w => w.deserializeAttachment()).filter(a => a && a.uid && a.vis !== 0).map(a => a.uid))]; // 화면을 보고 있는 사람 (관전자 포함)
     await lobby.gameUpdate(G.init.cfg.roomId, G.id, { waiting: waitingOn(G.s), phase: G.s.phase, turn: G.s.turn, current: G.s.current, winner: G.s.winner, how: G.s.winReason || '', deadline: dl, actor: actor == null ? null : G.init.players[actor]?.uid || null, online });
   }
   async alarm() {
     const G = this.load(); if (!G) return;
+    if (this.botSeat(G) >= 0) return void await this.botTick();
     const dl = this.deadline(G); if (!dl) return;
     if (Date.now() < dl - 1000) return void await this.ctx.storage.setAlarm(dl);
     const late = waitingOn(G.s); if (late.length !== 1) return; // 둘 다 늦으면 판정 보류 (사람이 정함)
@@ -699,6 +733,45 @@ export class Game extends DurableObject {
     G.log.push({ who: late[0], a, t: Date.now() }); G.steps.push({ ok: true, ev: r.ev });
     this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length - 1, late[0], JSON.stringify(a), Date.now());
     this.push(G, false, G.log.length - 1); await this.report(G);
+  }
+  // ---- 연습 봇 ----
+  botSeat(G) { return G ? G.init.players.findIndex(p => p.bot) : -1; }
+  botOf(G, seat) {
+    if (this.bot && this.bot.me === seat) return this.bot;
+    const b = new Bot(seat, G.init.cards, G.init.cfg.bot?.level || 'helper', { ban: this.meta('botban') || [] });
+    b.onDispute = g => this.botBan(g, seat);
+    if (!G.log.length) b.outbox.push({ type: 'chat', text: BOT_HELLO });
+    return (this.bot = b);
+  }
+  botBan(g, seat) { // 이의를 받은 봇 판정의 첫 행동은 그 차례에 다시 하지 않음 (되돌린 뒤 같은 수를 되풀이하지 않게)
+    const G = this.load(), L = G && G.log[g.start]; if (!L || L.who !== seat) return;
+    const turn = replay(G.init, G.log, g.start).s.turn, key = turn + '|' + JSON.stringify(L.a);
+    const ban = [...(this.meta('botban') || []), key].slice(-60); this.setMeta('botban', ban);
+    if (this.bot) this.bot.ban.add(key);
+  }
+  async botTick() {
+    if (this.botBusy) return; this.botBusy = true;
+    try {
+      await this.fresh();
+      const G = this.load(); const seat = this.botSeat(G); if (seat < 0 || G.s.phase === 'over') return;
+      const bot = this.botOf(G, seat);
+      for (let i = 0; i < 80; i++) {
+        const v = viewFor(G.s, seat), a = bot.decide(v); if (!a) return;
+        if (a.type === 'rewindOk' || a.type === 'stopUndo') { // 서버가 기록을 다시 돌려 처리 (사람이 누를 때와 같은 길)
+          this.botLast = a.type; const r = await this.act(seat, a); if (!r.ok) { bot.reject(r); continue; } return;
+        }
+        const c = G.s.cards; G.s.cards = null; const snap = structuredClone(G.s); G.s.cards = c; snap.cards = c;
+        const t = Date.now(), r = apply(G.s, seat, a, G.log.length);
+        if (!r.ok) { G.s = snap; bot.reject(r); continue; } // 안 되는 수: 판을 그대로 두고 다른 수를 고름
+        bot.accepted(a, r);
+        G.log.push({ who: seat, a, t }); G.steps.push({ ok: true, ev: r.ev, gid: r.gid });
+        this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length - 1, seat, JSON.stringify(a), t);
+        this.botLast = a.type; this.push(G, false, G.log.length - 1); await this.report(G, seat);
+        return;
+      }
+      console.log('bot: no move found', G.id);
+    } catch (e) { console.log('bot error', e && (e.stack || e)); this.cache = null; this.bot = null; }
+    finally { this.botBusy = false; }
   }
   // 기보: k번째 행동까지의 장면 (진행 중이면 내 시점/관전 시점, 끝났으면 전체 공개)
   async history(uid, k) {

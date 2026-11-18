@@ -2,6 +2,7 @@ import KS from '/lib/ks.js';
 import { indexCards, parseDeckList, checkDeck, exportDeckList, koName, cardNo, sideEn } from '/lib/deck.js';
 import Sound from '/lib/sound.js';
 import { parseSearch, parseTop, parseCost, searchLabel, toLabel, eachFit, REST_KO } from '/lib/fxhelp.js';
+import { BOT_DECKS } from '/lib/bot.js';
 import { stadRules, abLost, ruinsHits, evoOk, evoName, coinSpec, coinSpecLabel, extraDmg, targetDmg, statusOf, lockOf, abilityConds, parseReset, resetCount, parseDraw, basicEnergyType, benchImmune, LOCK_KO } from '/lib/fxrules.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -58,6 +59,7 @@ const ICON = {
   down: svg('<path d="M6 9l6 6 6-6"/>'),
   chat: svg('<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/>'),
   expand: svg('<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>'),
+  bot: svg('<rect x="4.5" y="8" width="15" height="11.5" rx="3.2"/><path d="M12 8V4.6M10.4 4h3.2M9.2 13.2h.01M14.8 13.2h.01M9.6 16.4h4.8M2.5 12.5v3.2M21.5 12.5v3.2"/>'),
   shrink: svg('<path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>'),
   share: svg('<path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M8.5 10.5H6v10h12v-10h-2.5"/>'),
   copy: svg('<rect x="8.5" y="8.5" width="11.5" height="12.5" rx="2.2"/><path d="M15.5 8.5V5.2A2.2 2.2 0 0 0 13.3 3H6.2A2.2 2.2 0 0 0 4 5.2v8.6A2.2 2.2 0 0 0 6.2 16h2.3"/>'),
@@ -763,7 +765,7 @@ function drawLobby([data, decks]) {
     const last = r.games[r.games.length - 1];
     const st = r.status === 'open' ? ['open', 'door', '모집 중'] : r.myTurn ? ['turn', 'bolt', '내 차례'] : r.status === 'playing' ? (r.mine ? ['wait', 'wait', r.phase === 'setup' ? '준비 중' : `${r.turn || 0}번째 차례`] : ['watch', 'eye', r.phase === 'setup' ? '준비 중' : `${r.turn || 0}번째 차례`]) : ['done', 'trophy', r.status === 'between' ? '다음 판 기다림' : '끝남'];
     const nm = [0, 1].map(i => r.names[i] || '');
-    const who = n => n ? `<span class="rp"><i class="av">${esc(n.slice(0, 1))}</i><b>${esc(n)}</b></span>` : '<span class="rp empty"><i class="av">?</i><b>기다리는 중</b></span>';
+    const who = (n, i) => n ? `<span class="rp${r.players[i] === 'bot' ? ' bot' : ''}"><i class="av">${r.players[i] === 'bot' ? ICON.bot : esc(n.slice(0, 1))}</i><b>${esc(n)}</b></span>` : '<span class="rp empty"><i class="av">?</i><b>기다리는 중</b></span>';
     const score = r.wins && (r.status === 'done' || r.status === 'between') ? `<span class="rsc">${r.wins.join(' : ')}</span>` : '<span class="rvs">vs</span>';
     const left = r.deadline && r.status === 'playing' ? `<span class="rleft">${ICON.wait}<span data-dl="${r.deadline}">${fmtLeft(r.deadline - Date.now())}</span></span>` : `<span class="rleft none">${r.cfg.invite ? `초대: ${esc(r.cfg.invite)}` : '—'}</span>`;
     let main = '';
@@ -776,12 +778,12 @@ function drawLobby([data, decks]) {
     const fol = !r.mine && r.status === 'playing' && r.cfg.spectate !== 'no' ? `<button class="rfol ${r.follow ? 'on' : ''}" data-follow="${r.id}" aria-pressed="${!!r.follow}" aria-label="이 판 알림 ${r.follow ? '끄기' : '받기'}">${ICON.bell}${r.follow ? '알림 켬' : '알림 받기'}</button>` : '';
     return `<article class="rcard s-${st[0]}"><div class="rtop">${ringIcon(st[1], 'k-' + st[0], r.myTurn)}<span class="rst">${st[2]}</span>${fol}${adm}</div>
       <h4 class="rt">${esc(r.cfg.title || nm.filter(Boolean).join(' vs '))}</h4>
-      <div class="rvsrow">${who(nm[0])}${score}${who(nm[1])}</div>
+      <div class="rvsrow">${who(nm[0], 0)}${score}${who(nm[1], 1)}</div>
       <div class="rmode">${esc(modeKo(r.cfg))}</div>${left}
       <div class="rbtns2">${main}${rec}</div></article>`;
   };
   const lists = { mine, open, watch, done }, cur = lists[lobbyTab] || [];
-  const emptyMsg = { mine: '진행 중인 대전이 없어요. 방을 만들거나 들어갈 방을 찾아보세요.', open: '들어갈 수 있는 방이 없어요. 직접 방을 만들어 보세요.', watch: '지금 관전할 대전이 없어요.', done: '끝난 판이 아직 없어요.' }[lobbyTab];
+  const emptyMsg = { mine: "진행 중인 대전이 없어요. '방 만들기'에서 사람과 겨루거나 연습 봇과 바로 연습해 보세요.", open: '들어갈 수 있는 방이 없어요. 직접 방을 만들어 보세요.', watch: '지금 관전할 대전이 없어요.', done: '끝난 판이 아직 없어요.' }[lobbyTab];
   // 위쪽은 한 줄: 탭(내 대전·들어갈 방·관전·끝난 판) + 오른쪽 '방 만들기' (머리의 '대전'과 겹치는 제목은 뺌)
   app.innerHTML = `<div class="lobh"><div class="ltabs" role="tablist">${tabs.map(([k, l, n]) => `<button class="ltab ${lobbyTab === k ? 'on' : ''}" role="tab" aria-selected="${lobbyTab === k}" data-tab="${k}">${l}<b>${n}</b>${k === 'mine' && myTurnN ? `<i class="dot" title="내 차례 ${myTurnN}"></i>` : ''}</button>`).join('')}</div><button class="primary newroom" data-tab="new">${ICON.plus}<span>방 만들기</span></button></div>
     ${cur.length ? `<div class="rlist">${cur.map(roomCard).join('')}</div>` : `<div class="empty-note">${ringIcon('wait', 'k-wait')}<p>${emptyMsg}</p></div>`}`;
@@ -809,25 +811,46 @@ function drawLobby([data, decks]) {
   });
   app.querySelector('.newroom').onclick = () => openSheet(newRoomForm(decks.decks), el => {
     const f = el.querySelector('#newroom'); if (!f) return;
-    const syncDl = () => { const a = f.querySelector('input[name=mode]:checked')?.value === 'async'; f.querySelector('.dlrow').hidden = !a; };
-    f.querySelectorAll('input[name=mode]').forEach(x => x.onchange = syncDl); syncDl();
+    const syncDl = () => {
+      const bot = f.querySelector('input[name=opp]:checked')?.value === 'bot', a = f.querySelector('input[name=mode]:checked')?.value === 'async';
+      f.querySelectorAll('.forpeople').forEach(x => { x.hidden = bot; }); f.querySelectorAll('.forbot').forEach(x => { x.hidden = !bot; });
+      f.querySelector('.dlrow').hidden = bot || !a;
+      const b = f.querySelector('.acts1 button'); if (b) b.innerHTML = bot ? `${ICON.play}연습 봇과 시작` : `${ICON.plus}방 만들기`;
+      try { localStorage.setItem('roomOpp', bot ? 'bot' : 'people'); } catch {}
+    };
+    f.querySelectorAll('input[name=mode], input[name=opp]').forEach(x => x.onchange = syncDl); syncDl();
     f.onsubmit = async e => {
       e.preventDefault(); const fd = Object.fromEntries(new FormData(f));
+      if (fd.opp === 'bot') { // 연습 봇: 바로 판으로
+        const btn = f.querySelector('.acts1 button'); if (btn) btn.disabled = true;
+        try { try { localStorage.setItem('botPick', JSON.stringify({ botDeck: fd.botDeck, botLevel: fd.botLevel })); } catch {} const r = await startBot(fd), go = '#game/' + r.room.games[r.room.games.length - 1]; let done = false; const nav = () => { if (done) return; done = true; location.hash = go; }; addEventListener('popstate', () => setTimeout(nav, 0), { once: true }); setTimeout(nav, 500); closeSheet(); } // 창을 닫는 뒤로 가기가 끝난 다음에 판으로
+        catch (er) { toast(er.message); if (btn) btn.disabled = false; }
+        return;
+      }
       try { await api('/api/rooms', fd); closeSheet(); lobbyTab = 'mine'; try { localStorage.setItem('lobbyTab', 'mine'); } catch {} toast('방을 만들었어요. 상대가 들어오면 시작해요.'); setTimeout(renderLobby, 40); if (fd.mode === 'async') setTimeout(pushOffer, 700); } catch (er) { toast(er.message); }
     };
   });
 }
+// 연습 봇과 시작 (방 만들기의 '연습 봇', 끝난 판의 '한 판 더')
+const startBot = fd => api('/api/rooms', { opp: 'bot', deckId: fd.deckId, botDeck: fd.botDeck, botLevel: fd.botLevel, spectate: fd.spectate || 'yes', title: fd.title || '' });
 function newRoomForm(decks) { // 고르는 것은 모두 단추로 (선택 상자 대신). 이름은 그대로라 서버는 같음
   if (!decks.length) return `<button class="x sm" data-close>닫기</button><h3>덱이 먼저 있어야 해요</h3><p>덱 화면에서 덱 리스트를 붙여 넣거나 카드를 골라 만들어 주세요.</p><a class="btn primary" href="#decks">덱 만들러 가기</a>`;
   const seg = (name, opts, on) => `<div class="rseg n${opts.length}" role="radiogroup">${opts.map(([v, l, s]) => `<label class="ropt"><input type="radio" name="${name}" value="${v}" ${v === on ? 'checked' : ''}><span><b>${l}</b>${s ? `<small>${s}</small>` : ''}</span></label>`).join('')}</div>`;
+  let opp = 'people', bp = {}; try { opp = localStorage.getItem('roomOpp') === 'bot' ? 'bot' : 'people'; bp = JSON.parse(localStorage.getItem('botPick') || '{}') || {}; } catch {}
+  const botDecks = [...Object.entries(BOT_DECKS).map(([k, d]) => [k, esc(d.name), d.note]), ...decks.map(d => [d.id, esc(d.name), '내 덱'])];
+  const bdOn = botDecks.some(x => x[0] === bp.botDeck) ? bp.botDeck : botDecks[0][0];
   return `<button class="x sm" data-close>닫기</button><form id="newroom"><h3>방 만들기</h3>
+    <label class="h">상대</label>${seg('opp', [['people', '사람', '방을 열고 기다려요'], ['bot', `${ICON.bot}연습 봇`, '바로 시작해요']], opp)}
     <label class="h">방 이름 <small class="muted">안 쓰면 내 이름으로</small></label><input name="title" maxlength="30" style="width:100%" placeholder="예: 금요일 연습전">
     <label class="h">내 덱</label>${seg('deckId', decks.map(d => [d.id, esc(d.name), d.ok ? '' : '규칙 확인 필요']), decks.find(d => d.ok)?.id || decks[0].id)}
-    <label class="h">진행 방식</label>${seg('mode', [['live', '실시간', '지금 같이'], ['async', '비동기', '편할 때 한 수씩']], 'live')}
+    <div class="forbot"><label class="h">봇이 쓸 덱</label>${seg('botDeck', botDecks, bdOn)}
+    <label class="h">봇 실력</label>${seg('botLevel', [['helper', '보통', '카드 효과도 써요'], ['basic', '쉬움', '기본 규칙만']], bp.botLevel === 'basic' ? 'basic' : 'helper')}
+    <p class="botnote">${ICON.info}봇이 쓴 카드 효과는 판정에 올라와요. 틀렸으면 이의를 걸면 봇이 되돌리자고 해요.</p></div>
+    <div class="forpeople"><label class="h">진행 방식</label>${seg('mode', [['live', '실시간', '지금 같이'], ['async', '비동기', '편할 때 한 수씩']], 'live')}</div>
     <div class="dlrow"><label class="h">결정 기한 <small class="muted">비동기에서 한 번 결정할 때마다</small></label>${seg('deadlineH', [['12', '12시간'], ['24', '24시간'], ['48', '48시간'], ['72', '72시간']], '24')}</div>
-    <label class="h">판수</label>${seg('bestOf', [['1', '1판'], ['3', '3판 2선승', '대회처럼']], '1')}
+    <div class="forpeople"><label class="h">판수</label>${seg('bestOf', [['1', '1판'], ['3', '3판 2선승', '대회처럼']], '1')}</div>
     <label class="h">관전</label>${seg('spectate', [['yes', '허용', '손패·프라이즈·덱 모두 보기'], ['no', '끔']], 'yes')}
-    <label class="h">초대 <small class="muted">이 이름만 들어올 수 있어요. 비우면 누구나</small></label><input name="invite" maxlength="12" style="width:100%">
+    <div class="forpeople"><label class="h">초대 <small class="muted">이 이름만 들어올 수 있어요. 비우면 누구나</small></label><input name="invite" maxlength="12" style="width:100%"></div>
     <div class="acts1"><button class="primary">${ICON.plus}방 만들기</button></div></form>`;
 }
 
@@ -1489,7 +1512,8 @@ function fabHtml() { // 왼쪽: 상대 턴·코인·효과 / 오른쪽: 더 보�
   const rw = (v.n || 0) > 0 ? `<div class="rwbtn">${fabBtn('rewatch', 'rewatch', '리플레이', 'k-rw' + (rwNew ? ' on nudge' : ''), rwNew ? '<i class="badge">새</i>' : '')}</div>` : '';
   const fol = me == null && v.phase !== 'over' && G.room && G.follow != null ? fabBtn('follow', 'bell', G.follow ? '알림 켬' : '알림 받기', 'k-fx' + (G.follow ? ' on' : '')) : ''; // 관전자: 두 사람이 차례를 끝낼 때마다 알림
   const swp = me == null ? fabBtn('swap', 'swap', '시점 바꾸기', 'k-more' + (G.ui.flip ? ' on' : '')) : ''; // 관전자: 위·아래 사람 바꿔 보기 (11/18 링크 님)
-  if (me == null || v.phase === 'over') return { left: rw || fol || swp ? `<div class="lbtns">${rw}${swp}${fol}</div>` : '', log: `<div class="rbtns">${log}</div>` };
+  const again = me != null && v.phase === 'over' && v.cfg && v.cfg.bot && v.cfg.bot.mine ? `<button class="fab wide endturn" data-t="botAgain">${FAB_FX}${FAB_ICON.play}<span>한 판<br>더</span></button>` : ''; // 연습 봇 판: 같은 덱으로 바로 다시
+  if (me == null || v.phase === 'over') return { left: rw || fol || swp ? `<div class="lbtns">${rw}${swp}${fol}</div>` : '', log: `<div class="rbtns">${log}</div>`, end: again };
   const myTurn = v.phase === 'play' && v.current === me;
   const open = v.openGroup[me];
   const stop = fabBtn('stop', 'stop', v.stop ? '멈춤 중' : '잠깐!', 'k-stop' + (v.stop ? ' on' : '')); // 잠깐 멈추고 지적하기 (상대 차례에도)
@@ -2855,6 +2879,7 @@ function bindBoard() {
     if (t === 'setupDone' && !G.view.p[me].active) return toast('먼저 손패의 기본 포켓몬을 눌러 배틀 포켓몬을 놓아 주세요.');
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
     if (t === 'rewatch') return startRewatch();
+    if (t === 'botAgain') { const b = G.view.cfg.bot; el.disabled = true; try { const r = await startBot({ deckId: b.mine, botDeck: b.deck, botLevel: b.level, spectate: G.view.cfg.spectate, title: G.view.cfg.title }); location.hash = '#game/' + r.room.games[r.room.games.length - 1]; } catch (er) { toast(er.message); el.disabled = false; } return; }
     if (t === 'swap') { swapView(); G.ui.marks = null; draw(null); swapToast(); return; }
     if (t === 'follow') { const f = await setFollow(G.room, !G.follow); if (f != null) { G.follow = f; draw([]); } return; }
     if (t === 'shuffleMine') return send({ type: 'shuffle', p: me });
