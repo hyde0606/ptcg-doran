@@ -46,9 +46,10 @@ export function fixJosa(str) {
   return str.replace(/을\(를\)|이\(가\)|은\(는\)|과\(와\)|와\(과\)|\(으\)로/g, (m, off) => { const e = endSound(str.slice(0, off)), [a, b] = KJ[m]; return m === '(으)로' ? (e && e !== 8 ? a : b) : (e ? a : b); });
 }
 const info = (s, iid) => s.cards[s.inst[iid]] || { n: '?', st: '?' };
+const sideKo = c => c.side ? (c.side === 'L' ? ' (좌측)' : ' (우측)') : '';
 const nm = (s, iid) => {
   const c = info(s, iid);
-  if (c.kn) return c.kn;
+  if (c.kn) return c.kn + sideKo(c);
   if (!c.ko) return c.n;
   let k = c.ko;
   if (/^Mega /.test(c.n)) k = '메가' + k;
@@ -107,12 +108,13 @@ function locate(s, iid) {
       for (const part of ['cards', 'en', 'tl']) { const k = slot[part].indexOf(iid); if (k >= 0) return { p, z: 'slot', slot, part, arr: slot[part], k }; }
     }
   }
-  if (s.stadium && s.stadium.iid === iid) return { p: s.stadium.by, z: 'stadium' };
+  if (s.stadium && (s.stadium.iid === iid || s.stadium.iid2 === iid)) return { p: s.stadium.by, z: 'stadium' };
   return null;
 }
+const stadIds = st => st ? [st.iid, st.iid2].filter(x => x != null) : []; // 짝 카드 스타디움은 두 장
 function takeOut(s, iid) {
   const L = locate(s, iid); if (!L) return null;
-  if (L.z === 'stadium') { s.stadium = null; return L; }
+  if (L.z === 'stadium') { const rest = stadIds(s.stadium).filter(x => x !== iid); s.stadium = rest.length ? { iid: rest[0], by: s.stadium.by } : null; return L; } // 짝 카드는 한 장씩 빠짐 (move가 남은 한 장도 함께 옮김)
   L.arr.splice(L.k, 1);
   if (L.z === 'slot' && L.part === 'cards' && L.slot.cards.length === 0) { // 포켓몬이 다 빠지면 붙은 카드는 트래시로
     const P = s.p[L.p];
@@ -311,6 +313,11 @@ export function apply(s, who, a, idx = 0) {
         if (P.used.supporter) warn('이번 차례에 이미 서포트를 썼어요.');
         if (s.turn === 1) warn('선공 첫 차례에는 서포트를 쓸 수 없어요.');
       }
+      let mate = null;
+      if (c.pair) { // 좌측·우측 두 장을 함께 내야 하는 카드
+        mate = P.hand.find(i => i !== a.iid && info(s, i).id === c.pair);
+        if (mate == null) return fail(`${c.kn || c.n}: 좌측·우측 두 장이 모두 손패에 있어야 낼 수 있어요.`);
+      }
       if (has(c, 'Stadium')) {
         if (P.used.stadium) warn('이번 차례에 이미 스타디움을 냈어요.');
         if (s.stadium && info(s, s.stadium.iid).n === c.n) warn('같은 이름의 스타디움이 이미 나와 있어요.');
@@ -319,13 +326,14 @@ export function apply(s, who, a, idx = 0) {
       const w = finishWarns('트레이너스'); if (w) return w;
       closeGroup(s, who);
       P.hand.splice(P.hand.indexOf(a.iid), 1);
+      if (mate != null) P.hand.splice(P.hand.indexOf(mate), 1);
       if (has(c, 'Stadium')) {
-        if (s.stadium) s.p[s.stadium.by].discard.push(s.stadium.iid);
-        s.stadium = { iid: a.iid, by: who }; P.used.stadium = true;
-      } else P.discard.push(a.iid);
+        if (s.stadium) s.p[s.stadium.by].discard.push(...stadIds(s.stadium));
+        s.stadium = mate != null ? { iid: c.side === 'R' ? mate : a.iid, iid2: c.side === 'R' ? a.iid : mate, by: who } : { iid: a.iid, by: who }; P.used.stadium = true; // 짝 카드: iid = 좌측, iid2 = 우측
+      } else P.discard.push(a.iid, ...(mate != null ? [mate] : []));
       if (has(c, 'Supporter')) P.used.supporter = true;
       const g = openGroup(s, who, nm(s, a.iid), idx, a.note); gid = g.gid;
-      say(`${me}: ${has(c, 'Supporter') ? '서포트' : has(c, 'Stadium') ? '스타디움' : '아이템'} ${nm(s, a.iid)}을(를) 썼어요.${a.note ? ' — ' + a.note : ''}`);
+      say(`${me}: ${has(c, 'Supporter') ? '서포트' : has(c, 'Stadium') ? '스타디움' : '아이템'} ${mate != null ? `${c.kn || c.n}(좌측·우측 2장)` : nm(s, a.iid)}을(를) 썼어요.${a.note ? ' — ' + a.note : ''}`);
       break;
     }
     case 'ability': { // {sid, k}
@@ -497,13 +505,14 @@ export function apply(s, who, a, idx = 0) {
     }
     case 'move': { // {iids, to:{z, p, sid, part, pos}}
       const to = a.to || {}; const tp = to.p ?? who;
-      const ids = (a.iids || []);
+      const ids = [...(a.iids || [])];
       if (!ids.length) return fail('옮길 카드를 골라 주세요.');
       for (const i of ids) if (!visibleTo(s, i, who) && !(locate(s, i)?.z === 'hand' && locate(s, i)?.p === who)) return fail('볼 수 없는 카드는 고를 수 없어요.');
       if (to.z === 'bench' && s.p[tp].bench.length + 1 > 5) return fail('벤치가 가득 찼어요.');
       judged('카드 옮기기');
       const desc = [];
       const fromZones = new Set();
+      for (const st of stadIds(s.stadium)) if (ids.includes(st)) for (const o of stadIds(s.stadium)) if (!ids.includes(o)) ids.splice(ids.indexOf(st) + 1, 0, o); // 짝 카드 스타디움은 두 장 함께 옮김
       for (const i of ids) {
         const L = takeOut(s, i); if (!L) continue; fromZones.add(zoneKo(L.z === 'slot' ? (L.part === 'en' ? 'en' : L.part === 'tl' ? 'tl' : 'pk') : L.z));
         const hiddenFrom = L.z === 'deck' || L.z === 'hand' || L.z === 'prizes';
@@ -749,7 +758,7 @@ export function viewFor(s, who) {
   });
   return {
     phase: s.phase, turn: s.turn, current: s.current, first: s.first, coinWinner: s.coinWinner,
-    stadium: s.stadium && { ...card(s.stadium.iid), by: s.stadium.by }, prompts: s.prompts, groups: s.groups,
+    stadium: s.stadium && { ...card(s.stadium.iid), by: s.stadium.by, ...(s.stadium.iid2 != null ? { two: card(s.stadium.iid2) } : {}) }, prompts: s.prompts, groups: s.groups,
     openGroup: s.openGroup, winner: s.winner, winReason: s.winReason, p, waiting: waitingOn(s), cfg: s.cfg, stop: s.stop || null,
   };
 }
