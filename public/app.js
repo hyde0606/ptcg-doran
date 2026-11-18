@@ -189,7 +189,7 @@ function openSheet(html, onMount) {
 function placeX() { // 창 위 오른쪽 바깥 (위에 자리가 없으면 창 안 오른쪽 위)
   const sh = $('#sheet'), x = sh.querySelector(':scope > .xo'), inn = sh.querySelector(':scope > .in'); if (!x || !inn || sh.hidden) return;
   const r = inn.getBoundingClientRect(), out = r.top >= 60;
-  x.classList.toggle('inside', !out); x.style.top = Math.round(out ? r.top - 54 : r.top + 10) + 'px'; x.style.left = Math.round(r.right - (out ? 48 : 56)) + 'px';
+  x.classList.toggle('inside', !out); inn.classList.toggle('xin', !out); x.style.top = Math.round(out ? r.top - 54 : r.top + 10) + 'px'; x.style.left = Math.round(r.right - (out ? 48 : 56)) + 'px';
 }
 window.addEventListener('resize', () => requestAnimationFrame(placeX));
 function closeSheet(fromPop) {
@@ -1273,24 +1273,35 @@ function openCoin() {
   });
 }
 // 잠깐! 멈추고 지적하기: 상대가 최근에 한 행동 중 잘못된 것을 고르고(없어도 됨) 이유를 적으면 판이 멈춤
-async function openStop() {
+async function openStop() { // 기록 화면과 같은 모양으로 두 사람의 행동을 모두 보여 주고, 잘못된 행동 줄을 눌러 고름
   const v = G.view, me = meSeat(); if (me == null || v.phase === 'over') return;
-  const op = 1 - me, opn = v.p[op].name, seen = new Map();
-  const strip = t => t.replace(new RegExp(`^((?:\\S+ )?)${opn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: `), '$1');
-  let turnNo = null;
-  for (const l of G.lines) { // 행동 번호마다 한 줄 (한 행동이 여러 줄이면 이어 붙임)
-    if (l.turn) { const m = l.txt.match(/(\d+)번째 차례/); turnNo = m ? m[1] : turnNo; continue; }
-    if (l.k == null || l.k < 0 || l.chat || l.rw || l.who !== op || /^(⏸|▶|↺)/.test(l.txt)) continue;
-    const it = seen.get(l.k) || { k: l.k, t: turnNo, txt: [] }; it.txt.push(strip(l.txt)); seen.set(l.k, it);
-  }
-  const items = [...seen.values()].slice(-8).reverse();
-  const rows = items.map((it, i) => `<label class="stopi"><input type="radio" name="to" value="${it.k}" ${i === 0 ? 'checked' : ''}><span class="stt">${it.t ? `<small>${esc(it.t)}번째 차례</small>` : ''}${esc(it.txt.join(' · '))}</span></label>`).join('');
-  const f = await ask('잠깐! 멈추고 지적하기', `<p class="small muted">판을 잠깐 멈추고 ${esc(opn)} 님에게 알려요. 상대가 '그 행동 전으로 되돌리기', '직접 고치기', '이대로 계속' 중에서 골라요. 멈춘 동안에는 둘 다 카드를 움직일 수 없어요.</p>
-    <label class="h">어느 행동인가요?</label><div class="stopl">${rows}<label class="stopi"><input type="radio" name="to" value="" ${items.length ? '' : 'checked'}><span class="stt">특정 행동 없이 말로만 알리기</span></label></div>
-    <label class="h">무엇이 잘못됐나요?</label><input name="text" maxlength="200" style="width:100%" placeholder="예: 이번 차례에 에너지를 두 장 붙였어요">`, `${ICON.pause}멈추고 지적하기`, 'bad');
-  if (!f) return;
-  const k = f.to === '' || f.to == null ? null : +f.to, it = items.find(x => x.k === k);
-  send({ type: 'stop', text: f.text, to: k ?? undefined, what: it ? it.txt.join(' · ').slice(0, 140) : undefined });
+  const op = 1 - me, opn = v.p[op].name, txtOf = {};
+  const can = l => l.k != null && l.k >= 0 && !l.chat && !l.rw && !/^(⏸|▶|↺)/.test(l.txt || '');
+  let pick = null; for (const l of G.lines) if (can(l) && l.who === op) pick = l.k; // 처음엔 상대의 마지막 행동
+  const html = logBlocks(G.lines, (l, o, headAttr) => {
+    if (headAttr) return '';
+    if (l.chat) return `<div class="ln chat ${o.cls}">${esc(l.txt)}</div>`;
+    const ok = can(l); if (ok) (txtOf[l.k] ||= []).push(o.txt);
+    return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}" ${ok ? `data-pk="${l.k}" role="button" tabindex="0"` : ''}>${ok ? '<i class="pkr" aria-hidden="true"></i>' : ''}${esc(o.txt)}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}</div>`;
+  });
+  openSheet(`<button class="x sm" data-close>닫기</button><h3>잠깐! 멈추고 지적하기</h3>
+    <p class="small muted stoph">아래 기록에서 잘못된 행동을 눌러 고르고 이유를 적으면 판이 잠깐 멈춰요. 상대가 '그 행동 전으로 되돌리기', '직접 고치기', '이대로 계속' 중에서 골라요. 멈춘 동안에는 둘 다 카드를 움직일 수 없어요.</p>
+    <div class="log stoplog">${html || '<p class="muted">아직 기록이 없어요.</p>'}</div>
+    <div class="stsel"><span class="chip warn">고른 행동</span><span class="stselt"></span><button type="button" class="sm" data-nopick>고르지 않기</button></div>
+    <label class="h">무엇이 잘못됐나요?</label><div class="stgo"><input name="text" maxlength="200" placeholder="예: 이번 차례에 에너지를 두 장 붙였어요"><div class="stbtn"><button class="bad" data-stopgo>${ICON.pause}멈추고 지적하기</button><button data-close>취소</button></div></div>`, el => {
+    el.classList.add('stopsheet');
+    const lg = el.querySelector('.stoplog'), selT = el.querySelector('.stselt'), noB = el.querySelector('[data-nopick]');
+    const what = k => (txtOf[k] || []).join(' · ');
+    const mark = () => {
+      lg.querySelectorAll('[data-pk]').forEach(r => { const on = +r.dataset.pk === pick; r.classList.toggle('pick', on); r.setAttribute('aria-pressed', on); });
+      selT.textContent = pick == null ? '고르지 않음 (말로만 알리기)' : what(pick); noB.hidden = pick == null;
+    };
+    lg.querySelectorAll('[data-pk]').forEach(r => { const f = () => { pick = +r.dataset.pk; mark(); }; r.onclick = f; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f(); } }; });
+    noB.onclick = () => { pick = null; mark(); };
+    mark();
+    const sel = lg.querySelector('.ln.pick'); requestAnimationFrame(() => scrollInside(lg, sel)); // 창 전체는 그대로, 기록 칸 안에서만 굴림
+    el.querySelector('[data-stopgo]').onclick = () => { const text = el.querySelector('[name=text]').value; closeSheet(); send({ type: 'stop', text, to: pick ?? undefined, what: pick != null ? what(pick).slice(0, 140) : undefined }); };
+  });
 }
 function openEffect() { // 효과 쓰기: 글자 대신 어떤 카드의 효과인지 눌러서 고름
   if (meSeat() == null) return;
@@ -1743,6 +1754,10 @@ function rwHighlight(sels) {
   }, reduceMotion() ? 0 : 520);
 }
 // 리플레이 행동 기록 전체: 지금 수는 주황 테두리, 앞으로 올 수는 흐리게. 줄을 누르면 그 장면으로
+function scrollInside(box, el) { // 상자 안에서만 el이 가운데 오게 (scrollIntoView는 창까지 굴려서 제목이 숨음). el이 없으면 맨 아래
+  if (!box) return; if (!el) { box.scrollTop = box.scrollHeight; return; }
+  box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top - (box.clientHeight - el.offsetHeight) / 2;
+}
 function openRwLog() {
   const rw = G.rw; if (!rw) return;
   const gs = Object.fromEntries((G.view.groups || []).map(g => [g.gid, g]));
@@ -1756,7 +1771,7 @@ function openRwLog() {
   });
   openSheet(`<button class="x sm" data-close>닫기</button><h3>행동 기록 <small class="muted">${rw.k} / ${rw.n}수</small></h3><p class="small muted rwlh">줄을 누르면 그 장면으로 가요. 지금 보는 수는 주황 테두리예요.</p><div class="log rwlog">${html || '<p class="muted">아직 기록이 없어요.</p>'}</div>`, el => {
     el.classList.add('rwlogsheet');
-    const cur = el.querySelector('.ln.cur') || [...el.querySelectorAll('.ln:not(.later)')].pop(); if (cur) cur.scrollIntoView({ block: 'center' });
+    const cur = el.querySelector('.ln.cur') || [...el.querySelectorAll('.ln:not(.later)')].pop(); scrollInside(el.querySelector('.rwlog'), cur);
     el.querySelectorAll('[data-k2]').forEach(r => { const go = () => { const k = +r.dataset.k2; closeSheet(); setTimeout(() => { rw.playing = false; rwGo(k); }, 40); }; r.onclick = go; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
   });
 }

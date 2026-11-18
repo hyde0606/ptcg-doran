@@ -1111,3 +1111,21 @@ button.xs, .btn.xs { min-height: 34px; padding: 2px 12px; font-size: .86rem; gap
 }
 .log.rwlog .tblk .ln.cur, .log.rwlog .ln.cur { box-shadow: inset 3px 0 0 var(--lc, var(--accent)), 0 0 0 2.5px var(--accent); background: #fff4e6; }
 .log.rwlog .tblk .ln.later { opacity: .45; }
+/* '잠깐!' 창: 기록 화면과 같은 묶음, 줄을 눌러 고름 */
+.sheet > .in.stopsheet { width: min(760px, 100%); }
+.stopsheet .stoph { margin: 0 0 8px; }
+.stopsheet .stoplog { max-height: min(46vh, 440px); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 3px; font-size: .9rem; padding: 3px; border-radius: 16px; background: #f7fafc; box-shadow: inset 0 0 0 1.5px #e3ecf3; }
+.stoplog .ln[data-pk] { cursor: pointer; display: flex; align-items: flex-start; gap: 7px; }
+.stoplog .ln[data-pk]:hover { filter: brightness(.97); }
+.stoplog .pkr { flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 50%; box-shadow: inset 0 0 0 2px #b8c6d2; background: #fff; }
+.log.stoplog .tblk .ln.pick { box-shadow: inset 3px 0 0 var(--lc), 0 0 0 2.5px #e0394b; background: #fff1f2; }
+.stoplog .ln.pick .pkr { box-shadow: inset 0 0 0 2px #e0394b, inset 0 0 0 5px #fff; background: #e0394b; }
+.stopsheet .stsel { display: flex; align-items: flex-start; gap: 6px 8px; margin: 10px 2px 2px; line-height: 1.45; word-break: keep-all; overflow-wrap: anywhere; }
+.stopsheet .stsel .chip { flex: none; margin-top: 1px; }
+.stopsheet .stselt { flex: 1; min-width: 0; font-family: var(--fh); color: var(--text); }
+.stopsheet .stsel [data-nopick] { flex: none; }
+.sheet > .in.hasxo.xin > h3:first-of-type + p { padding-right: 40px; } /* 닫기 단추가 창 안 오른쪽 위에 있을 때 첫 설명 글이 가려지지 않게 */
+.stopsheet .stgo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.stopsheet .stgo input { flex: 1 1 280px; min-width: 0; }
+.stopsheet .stbtn { flex: 1 0 auto; display: flex; justify-content: center; gap: 8px; }
+@media (max-height: 520px) { .stopsheet .stoph { display: none; } .stopsheet .stoplog { max-height: 34vh; } } /* 키 낮은 가로 화면: 설명 글은 빼고 기록 칸을 줄여 입력·단추까지 한 화면에 */
