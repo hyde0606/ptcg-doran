@@ -511,11 +511,17 @@ export function apply(s, who, a, idx = 0) {
       say(`${me}: 공개 — ${ids.map(i => nm(s, i)).join(', ')}`); show(ids, '보여준 카드');
       break;
     }
-    case 'move': { // {iids, to:{z, p, sid, part, pos}}
+    case 'move': { // {iids, to:{z, p, sid, part, pos: top|bottom|shuffle}, random:{p, n}}
       const to = a.to || {}; const tp = to.p ?? who;
-      const ids = [...(a.iids || [])];
+      let ids = [...(a.iids || [])];
+      const rp = a.random ? (a.random.p ?? who) : null; // 손패에서 무작위로 N장 (보지 않고 고름. 상대 손패도 됨)
+      if (a.random) {
+        if (rp !== 0 && rp !== 1) return fail('누구의 손패인지 몰라요.');
+        const pool = [...s.p[rp].hand]; if (!pool.length) return fail('손패가 없어요.');
+        shuffle(s, pool); ids = pool.slice(0, Math.min(pool.length, Math.max(1, a.random.n | 0)));
+      }
       if (!ids.length) return fail('옮길 카드를 골라 주세요.');
-      for (const i of ids) if (!visibleTo(s, i, who) && !(locate(s, i)?.z === 'hand' && locate(s, i)?.p === who)) return fail('볼 수 없는 카드는 고를 수 없어요.');
+      if (!a.random) for (const i of ids) if (!visibleTo(s, i, who) && !(locate(s, i)?.z === 'hand' && locate(s, i)?.p === who)) return fail('볼 수 없는 카드는 고를 수 없어요.');
       if (to.z === 'bench' && s.p[tp].bench.length + ids.length > 5) return fail('벤치가 가득 찼어요.');
       judged('카드 옮기기');
       const desc = [];
@@ -532,7 +538,7 @@ export function apply(s, who, a, idx = 0) {
       if (a.mix) { ins = [...ins]; shuffle(s, ins); } // 뒷면으로 섞어서 (덱 아래로 되돌릴 때)
       for (const [i, L] of ins) {
         if (['hand', 'discard', 'lost', 'prizes'].includes(to.z)) T[to.z].push(i);
-        else if (to.z === 'deck') { if (to.pos === 'bottom') T.deck.push(i); else T.deck.unshift(i); }
+        else if (to.z === 'deck') { if (to.pos === 'bottom' || to.pos === 'shuffle') T.deck.push(i); else T.deck.unshift(i); }
         else if (to.z === 'slot') { const f = findSlot(s, to.sid); if (!f) { T.discard.push(i); continue; } f.slot[to.part || 'en'].push(i); }
         else if (to.z === 'bench' || to.z === 'active') {
           const sl = newSlot(s, i);
@@ -546,8 +552,12 @@ export function apply(s, who, a, idx = 0) {
         desc.push(hiddenFrom && toHidden && !a.show ? null : nm(s, i));
       }
       const named = desc.filter(Boolean), hidden = desc.length - named.length;
-      const target = to.z === 'slot' ? (findSlot(s, to.sid) ? slotName(s, findSlot(s, to.sid).slot) + '에게' : '포켓몬에게') : `${tp === who ? '' : '상대 '}${zoneKo(to.z)}${to.z === 'deck' ? (to.pos === 'bottom' ? ' 아래' : ' 위') : ''}(으)로`;
-      say(`${me}: ${[...fromZones].join('·')}에서 ${named.length ? named.join(', ') : ''}${named.length && hidden ? ' 외 ' : ''}${hidden ? hidden + '장' : ''}을(를) ${a.show ? '보여주고 ' : ''}${a.mix ? '섞어서 ' : ''}${target}`, hidden ? out.map(([i]) => nm(s, i)).join(', ') : null);
+      if (to.z === 'deck' && to.pos === 'shuffle') shuffle(s, T.deck); // 덱에 넣고 섞기
+      const target = to.z === 'slot' ? (findSlot(s, to.sid) ? slotName(s, findSlot(s, to.sid).slot) + '에게' : '포켓몬에게') : to.z === 'deck' && to.pos === 'shuffle' ? `${tp === who ? '' : '상대 '}덱에 넣고 섞었어요.` : `${tp === who ? '' : '상대 '}${zoneKo(to.z)}${to.z === 'deck' ? (to.pos === 'bottom' ? ' 아래' : ' 위') : ''}(으)로`;
+      const from = `${rp != null && rp !== who ? '상대 ' : ''}${[...fromZones].join('·')}에서${a.random ? ' 무작위로' : ''}`;
+      const pubTxt = `${me}: ${from} ${named.length ? named.join(', ') : ''}${named.length && hidden ? ' 외 ' : ''}${hidden ? hidden + '장' : ''}을(를) ${a.show ? '보여주고 ' : ''}${a.mix ? '섞어서 ' : ''}${target}`;
+      if (hidden && rp != null && rp !== who) ev.push({ pub: pubTxt, own: out.map(([i]) => nm(s, i)).join(', '), ownBy: rp }); // 상대 손패에서 무작위로 덱에: 이름은 손패 주인만 봄
+      else say(pubTxt, hidden ? out.map(([i]) => nm(s, i)).join(', ') : null);
       if (a.show) show(out.map(([i]) => i), `${[...fromZones].join('·')}에서 보여준 카드`);
       if (a.shuffle && !mixFirst) { shuffle(s, P.deck); say(`${me}: 자기 덱을 섞었어요.`); }
       else if (mixFirst) say(`${me}: 남은 덱을 섞고 위에 올렸어요.`);

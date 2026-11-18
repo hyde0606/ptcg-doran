@@ -1239,6 +1239,7 @@ const TYPE_CH = { Grass: '풀', Fire: '불', Water: '물', Lightning: '번', Psy
 function renderGame(id) {
   loadCards().then(() => { if (G && G.view && G.id === id) draw([]); }).catch(() => {});
   G = { id, view: null, lines: [], cards: {}, pend: {}, seq: 1, specs: [], ui: { tab: 'log', dockMode: 'auto', dockSig: '' }, prev: null };
+  try { G.ui.flip = localStorage.getItem('flip:' + id) === '1'; } catch {} // 관전 시점 (판마다 기억)
   app.innerHTML = '<div class="arena-loading"><div class="spin-ball"></div><p>판에 연결하는 중…</p></div>';
   document.body.classList.add('in-game');
   let closed = false, retry = 0;
@@ -1291,7 +1292,7 @@ function send(a) {
 }
 const meSeat = () => G.view.me;
 const oppSeat = () => G.view.me == null ? 1 : 1 - G.view.me;
-const bottomSeat = () => G.view.me == null ? 0 : G.view.me;
+const bottomSeat = () => G.view.me == null ? (G.ui?.flip ? 1 : 0) : G.view.me; // 관전: '시점 바꾸기'로 아래쪽 사람을 바꿈
 
 // ----- 카드 한 장 -----
 function cardFace(x, cls = '', extra = '', over = null) { // over: 판 위 포켓몬의 이름·HP 알약 (있으면 영문 그림 이름표 대신)
@@ -1391,7 +1392,7 @@ function handHtml(p) { // 내 손패: 아래쪽 일자 줄 (위쪽만 보이고,
 function oppHandHtml(p) { // 상대 손패: 맨 위에 뒷면이 살짝 보임
   const P = G.view.p[p], n = P.hand ? P.hand.length : P.handN;
   const cards = P.hand ? P.hand.map((x, i) => cardFace(x, 'oh', `style="--i:${i}"`)).join('') : Array.from({ length: Math.min(n, 30) }, (_, i) => cardBack('oh', `style="--i:${i}"`)).join('');
-  return `<div class="ohand" data-zone="hand" data-p="${p}" title="상대 손패 ${n}장" style="--n:${Math.min(n, 30)}"><div class="ofan">${cards}</div></div>`;
+  return `<div class="ohand${P.hand ? ' up' : ''}" data-zone="hand" data-p="${p}" title="${P.hand ? `${esc(G.view.p[p].name)} 님 손패 ${n}장 (누르면 크게)` : `상대 손패 ${n}장`}" style="--n:${Math.min(n, 30)}"><div class="ofan">${cards}</div></div>`; // 보이는 손패(관전·리플레이)는 카드 윗부분을 똑바로
 }
 function midHtml(readOnly) {
   const v = G.view;
@@ -1413,6 +1414,7 @@ function rbarHtml(readOnly) { // 오른쪽 세로 막대: 위 사람 남은 사�
 }
 // 오른쪽 둥근 버튼: 볼 줄무늬 링 (시안 6-약). 가만히 있어도 옅은 파동, 마우스를 올리면 살짝 갸웃, 누르면 가운데 단추가 빛나요.
 const FAB_ICON = {
+  swap: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 3.5 2.8 7.8l1.5 1.5 1.7-1.7V16h2.1V7.6l1.7 1.7 1.5-1.5Zm10 17-4.2-4.3 1.5-1.5 1.7 1.7V8h2.1v8.4l1.7-1.7 1.5 1.5Z"/></svg>',
   log: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm8 1.5V8h3.5L14 4.5ZM8 11v1.8h8V11H8Zm0 3.5v1.8h8v-1.8H8Zm0-7V9h4V7.5H8Z"/></svg>',
   coin: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.7" fill="none" stroke="currentColor" stroke-width="2.3"/><path fill="currentColor" d="M12 6.9l1.55 3.15 3.45.5-2.5 2.44.59 3.44L12 14.8l-3.09 1.63.59-3.44L7 10.55l3.45-.5z"/></svg>',
   hand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 3.5a1.3 1.3 0 0 1 2.6 0V11h.6V2.6a1.3 1.3 0 0 1 2.6 0V11h.6V4.2a1.3 1.3 0 0 1 2.6 0v9.6c0 4-2.7 7.2-6.6 7.2-2.4 0-4-1.2-5.3-3.1l-3-4.6a1.4 1.4 0 0 1 2.3-1.6L9 14V3.5Z"/></svg>',
@@ -1443,7 +1445,8 @@ function fabHtml() { // 왼쪽: 상대 턴·코인·효과 / 오른쪽: 더 보�
   const rwt = me == null ? null : lastOppTurn(), rwNew = rwt && !rwSeen(rwt); // 리플레이: 수가 하나라도 있으면 늘 보임, 안 본 상대 차례가 있으면 '새'
   const rw = (v.n || 0) > 0 ? `<div class="rwbtn">${fabBtn('rewatch', 'rewatch', '리플레이', 'k-rw' + (rwNew ? ' on nudge' : ''), rwNew ? '<i class="badge">새</i>' : '')}</div>` : '';
   const fol = me == null && v.phase !== 'over' && G.room && G.follow != null ? fabBtn('follow', 'bell', G.follow ? '알림 켬' : '알림 받기', 'k-fx' + (G.follow ? ' on' : '')) : ''; // 관전자: 두 사람이 차례를 끝낼 때마다 알림
-  if (me == null || v.phase === 'over') return { left: rw || fol ? `<div class="lbtns">${rw}${fol}</div>` : '', log: `<div class="rbtns">${log}</div>` };
+  const swp = me == null ? fabBtn('swap', 'swap', '시점 바꾸기', 'k-more' + (G.ui.flip ? ' on' : '')) : ''; // 관전자: 위·아래 사람 바꿔 보기 (11/18 링크 님)
+  if (me == null || v.phase === 'over') return { left: rw || fol || swp ? `<div class="lbtns">${rw}${swp}${fol}</div>` : '', log: `<div class="rbtns">${log}</div>` };
   const myTurn = v.phase === 'play' && v.current === me;
   const open = v.openGroup[me];
   const stop = fabBtn('stop', 'stop', v.stop ? '멈춤 중' : '잠깐!', 'k-stop' + (v.stop ? ' on' : '')); // 잠깐 멈추고 지적하기 (상대 차례에도)
@@ -1911,7 +1914,7 @@ async function pickSlot(title, ps = [meSeat()]) {
 }
 const moveOpts = me => [
   { label: '손패로', value: { z: 'hand', p: me }, cls: 'primary' }, { label: '트래시로', value: { z: 'discard', p: me } },
-  { label: '덱 위로', value: { z: 'deck', p: me, pos: 'top' } }, { label: '덱 아래로', value: { z: 'deck', p: me, pos: 'bottom' } },
+  { label: '덱 위로', value: { z: 'deck', p: me, pos: 'top' } }, { label: '덱 아래로', value: { z: 'deck', p: me, pos: 'bottom' } }, { label: '덱에 넣고 섞기', value: { z: 'deck', p: me, pos: 'shuffle' } },
   { label: '벤치에 내기', value: { z: 'bench', p: me } }, { label: '포켓몬에게 붙이기', value: 'attach' },
   { label: '로스트존으로', value: { z: 'lost', p: me } }, { label: '프라이즈로', value: { z: 'prizes', p: me } }, { label: '공개하기', value: 'reveal' },
 ];
@@ -1953,6 +1956,7 @@ async function onHandCard(iid) {
       opts.push(mate ? { label: '좌측·우측 함께 내기', value: 'play', cls: 'primary' } : { label: `사용하기 (${c.side === 'L' ? '우측' : '좌측'} 없음)`, value: 'play', cls: '' }); }
     else if (c.st === 'T') opts.push({ label: '사용하기', value: 'play', cls: 'primary' });
     opts.push({ label: '다른 곳으로 옮기기' + FX, value: 'move', cls: 'judge' });
+    opts.push({ label: `${ICON.check}여러 장 골라 옮기기`, value: 'multi' }, { label: '무작위로 골라 옮기기', value: 'rand' }); // 손패 전부·몇 장 → 덱 위·아래, 넣고 섞기, 트래시 (11/18 링크 님)
   }
   openSheet(`<button class="x sm" data-close>닫기</button>${cardActHtml(c, actsHtml(opts.map((o, i) => ({ ...o, i })), '', cactW()), { cid: x.c })}`, el => {
     el.classList.add('cactsheet'); bindCardPeek(el);
@@ -1964,8 +1968,23 @@ async function onHandCard(iid) {
       if (k === 'attach') { const sid = await pickSlot('어느 포켓몬에게 붙일까요?', [me, 1 - me]); if (sid) send({ type: 'attach', iid, sid }); return; }
       if (k === 'play') { send({ type: 'play', iid }); return; }
       if (k === 'move') moveMenu([iid], cname(c));
+      if (k === 'multi') openZoneView({ z: 'hand', p: me }, G.view, { sel: [iid] });
+      if (k === 'rand') randomHand(me);
     });
   });
+}
+// 손패에서 무작위로 N장 (보지 않고): 서버가 골라서 옮김. 기록에 '무작위로'가 남음. 상대 손패도 됨 (상대 카드 효과로 버릴 때)
+async function randomHand(p) {
+  const v = G.view, me = meSeat(); if (me == null) return;
+  const n = (v.p[p].hand || []).length || v.p[p].handN || 0; if (!n) return toast('손패가 없어요.');
+  const mine = p === me, who = mine ? '' : '상대 ';
+  const opts = [['discard', `${who}트래시로`], ['shuffle', `${who}덱에 넣고 섞기`], ['bottom', `${who}덱 아래로`], ['top', `${who}덱 위로`]];
+  const f = await ask(`${mine ? '내' : '상대'} 손패에서 무작위로`, `<p class="small muted">${mine ? '' : '상대 손패를 보지 않고 '}무작위로 고른 카드를 옮겨요. 기록에 '무작위로'라고 남아요. 지금 손패 ${n}장.</p>
+    <label class="h">몇 장</label>${stepHtml('n', 1, { min: 1, max: n, unit: '장' })}
+    <label class="h">어디로</label><div class="rseg n4" role="radiogroup">${opts.map(([k, l], i) => `<label class="ropt"><input type="radio" name="to" value="${k}" ${i ? '' : 'checked'}><span><b>${l}</b></span></label>`).join('')}</div>`, '옮기기', 'judge');
+  if (!f) return;
+  const to = f.to === 'discard' ? { z: 'discard', p } : { z: 'deck', p, pos: f.to };
+  if (await send({ type: 'move', random: { p, n: Math.min(n, Math.max(1, +f.n || 1)) }, to })) Sound.sfx(f.to === 'discard' ? 'place' : 'shuffle');
 }
 // 포켓몬에 붙은 카드(도구·에너지·진화 전)를 작은 카드로: 누르면 그 카드 설명 (창 안에서 겹쳐 보기)
 function attachedHtml(sl) {
@@ -2111,7 +2130,7 @@ async function onZone(z, p) {
     if (k[0] === 'shuffle') return send({ type: 'shuffle', p });
   }
   if (z === 'prizes') { const ok = await pick(mine ? '내 프라이즈' : '상대 프라이즈', [{ label: '앞면 확인하기' + FX, value: 1, cls: 'judge' }]); if (ok) askLook(p, 'prizes'); return; }
-  if (z === 'hand' && !mine) { const ok = await pick('상대 손패', [{ label: '상대 손패 보기' + FX, value: 1, cls: 'judge' }]); if (ok) askLook(p, 'hand'); }
+  if (z === 'hand' && !mine) { const ok = await pick('상대 손패', [{ label: '상대 손패 보기' + FX, value: 1, cls: 'judge' }, { label: '보지 않고 무작위로 골라 옮기기' + FX, value: 2, cls: 'judge' }]); if (ok === 1) askLook(p, 'hand'); if (ok === 2) randomHand(p); }
 }
 // 덱·손패·프라이즈 보기: 이미 같은 것을 보고 있으면(큰 창만 닫았던 경우) 바로 큰 창, 아니면 보기 시작 후 큰 창 (2026-11-18 '덱이 안 보여요' 고침)
 function askLook(p, z, n = null, bottom = false) { // 이미 같은 것을 보는 중이면 서버에 다시 묻지 않고 바로 큰 창 (예전엔 창이 안 열려 '덱이 안 보임')
@@ -2205,6 +2224,7 @@ function zvBarActs(opts, fx, n = 0, total = 0) { // 아래 줄 단추: 자주 �
   let pri;
   if (fx && fx.sp.top && (fx.sp.to || fx.sp.rest)) { const r = fxRest(fx.sp, total - n); pri = [{ label: `${ICON.check}${n && fx.sp.to && r ? `<span class="b2"><span>${fxPri(fx.sp)}</span><small>+ ${r}</small></span>` : n && fx.sp.to ? fxPri(fx.sp) : r || fxPri(fx.sp)}`, fx: 1, cls: 'primary', zero: !!fx.sp.rest }]; } // 두 줄: 고른 카드 옮기기 / + 나머지 // 위에서 N장: 고른 카드 옮기고 나머지까지 한 번에 (못 찾았으면 나머지만)
   else if (fx && fx.sp.to) pri = [{ label: `${ICON.check}${fxPri(fx.sp)}`, fx: 1, cls: 'primary' }];
+  else if (ZV && !ZV.look && ZV.z === 'hand' && ZV.p === me) { const k = o => o.value && o.value.z === 'discard' ? 0 : o.value && o.value.z === 'deck' ? { top: 1, bottom: 2, shuffle: 3 }[o.value.pos] : 9; pri = opts.filter(o => k(o) < 9).sort((a, b) => k(a) - k(b)); if (pri[0]) pri[0] = { ...pri[0], cls: 'primary' }; } // 내 손패: 트래시·덱 위·덱 아래·덱에 넣고 섞기 (11/18 링크 님)
   else { const want = o => o.show || (o.value && (o.value.z === 'hand' || o.value.z === 'discard')); pri = opts.filter(want).slice(0, 3); if (pri.length < 3) pri = [...pri, ...opts.filter(o => !pri.includes(o)).slice(0, 3 - pri.length)]; if (pri[0]) pri[0] = { ...pri[0], cls: 'primary' }; }
   const rest = opts.filter(o => !pri.some(p => p.label === o.label));
   return rest.length ? [...pri, { label: '다른 곳으로…', more: rest }] : pri;
@@ -2215,8 +2235,12 @@ function zvFill(el, barOnly = false) {
   let title, btns = '';
   if (ZV.look) { const lk = v.p[me].look; title = `${lk.p === me ? '내' : '상대'} ${ZNAME[lk.z]}${lkSide(lk)} 보는 중`; btns = `<button class="sm" data-zlook="end">닫기</button>${lk.z === 'deck' ? '<button class="sm" data-zlook="shuffle">섞고 닫기</button>' : ''}`; }
   else title = `${ZV.p === viewer ? '내' : esc(v.p[ZV.p].name) + ' 님'} ${ZNAME[ZV.z]}`;
+  const myHand = !ZV.look && ZV.z === 'hand' && ZV.p === me && me != null && v.phase === 'play' && !ZV.v;
+  if (myHand && cards.length) { const all = cards.every(x => ZV.sel.includes(x.i)); btns = `<button class="sm" data-zall>${all ? '모두 풀기' : `${ICON.check}모두 고르기`}</button><button class="sm judge" data-zrand>${ICON.shuffle || ''}무작위로…</button>`; } // 손패 전부 / 무작위
   el.querySelector('.zvt').innerHTML = `${title} <span class="chip">${cards.length}장</span>`;
   const bb = el.querySelector('.zvb'); bb.innerHTML = btns;
+  const za = bb.querySelector('[data-zall]'); if (za) za.onclick = () => { const all = cards.every(x => ZV.sel.includes(x.i)); ZV.sel = all ? [] : cards.map(x => x.i); Sound.sfx('tap'); zvFill(el); };
+  const zr = bb.querySelector('[data-zrand]'); if (zr) zr.onclick = () => { closeSheet(); setTimeout(() => randomHand(me), 40); };
   bb.querySelectorAll('[data-zlook]').forEach(b => b.onclick = () => send(b.dataset.zlook === 'end' ? { type: 'lookEnd' } : { type: 'shuffle', p: me }));
   const fx = zvFx(v), opts = zvOpts(v), selable = opts.length > 0;
   ZV.sel = ZV.sel.filter(i => cards.some(x => x.i === i));
@@ -2528,6 +2552,7 @@ function bindBoard() {
     if (t === 'setupDone' && !G.view.p[me].active) return toast('먼저 손패의 기본 포켓몬을 눌러 배틀 포켓몬을 놓아 주세요.');
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
     if (t === 'rewatch') return startRewatch();
+    if (t === 'swap') { G.ui.flip = !G.ui.flip; try { localStorage.setItem('flip:' + G.id, G.ui.flip ? '1' : ''); } catch {} G.ui.marks = null; draw(null); toast(`${G.view.p[bottomSeat()].name} 님 쪽에서 보는 중`, 1600); return; }
     if (t === 'follow') { const f = await setFollow(G.room, !G.follow); if (f != null) { G.follow = f; draw([]); } return; }
     if (t === 'shuffleMine') return send({ type: 'shuffle', p: me });
     if (t === 'log') return openLog(e?.target?.closest?.('.specb') ? 'spec' : undefined); // 눈 표시(관전자 수)를 누르면 관전자 목록 칸으로

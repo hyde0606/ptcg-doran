@@ -1528,3 +1528,6 @@ button.blue.used { opacity: .82; }
 @media (max-width: 600px) { .zvcat { min-height: 32px; font-size: .85rem; } }
 .zvbar .b2 { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.2; }
 .zvbar .b2 small { font-family: var(--fb); font-size: .8em; opacity: .92; }
+@media (max-width: 600px) { .zvsheet .zvbar .acts:not(.fxa) > button:last-child:nth-child(odd) { grid-column: 1 / -1; } } /* 두 칸 줄에서 마지막 단추가 혼자면 한 줄 다 (빈 칸 없이) */
+.ohand.up { overflow: hidden; border-radius: 0 0 8px 8px; } .ohand.up .pc.oh { transform: none; box-shadow: 0 1px 4px rgba(0,0,0,.3); } /* 관전·리플레이에서 위쪽 사람 손패: 카드 윗부분(이름·그림)을 똑바로, 아래는 잘라서 판을 가리지 않게 (11/18 링크 님) */
+.sndhint { left: max(8px, env(safe-area-inset-left, 0px)); top: calc(max(6px, env(safe-area-inset-top, 0px)) + 76px); transform: none; } @media (max-aspect-ratio: 5/4), (max-width: 560px), (max-height: 520px) { .sndhint { top: calc(max(4px, env(safe-area-inset-top, 0px)) + 46px); } } /* 소리 켜기 안내는 왼쪽 위 로비 단추 아래 (위쪽 손패를 가리지 않게) */
