@@ -60,3 +60,4 @@ html[data-theme=dark] .log .ln.spec .snm { color: #7fdcaa; }
 html[data-theme=dark] :is(.chatpeek, .swb, .sndhint) { background: var(--pw); color: var(--text); }
 html[data-theme=dark] .swb { box-shadow: inset 0 0 0 1.5px var(--line); } html[data-theme=dark] .swb .swk { background: #3d536a; } html[data-theme=dark] .swb.on .swk { background: #2fbf71; }
 html[data-theme=dark] .log .th { background: color-mix(in srgb, var(--tc) 30%, var(--pw)); }
+html[data-theme=dark] .log .speclist { background: rgba(255, 255, 255, .06); } html[data-theme=dark] .log .speclist .spc { background: var(--pw2); box-shadow: inset 0 0 0 1.5px var(--line); }

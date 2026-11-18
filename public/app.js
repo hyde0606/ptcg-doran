@@ -1610,7 +1610,7 @@ function drawSpecs() { // 관전자 수: 기록 단추 왼쪽 아래 작은 눈 
 }
 const specBadge = () => G.specs.length ? `<i class="specb" title="지금 관전 ${G.specs.length}명" aria-label="지금 관전 ${G.specs.length}명">${ICON.eye}${G.specs.length}</i>` : '';
 const specTab = () => `관전 ${G.specs.length}명`;
-const specList = () => `<p class="speclist">${G.specs.length ? `${ICON.eye}<b>지금 보는 사람</b> ${G.specs.map(esc).join(', ')}` : `${ICON.eye}지금 관전하는 사람이 없어요.`}</p>`;
+const specList = () => `<div class="speclist"><b class="slh">${ICON.eye}지금 보는 사람 ${G.specs.length}명</b>${G.specs.length ? `<span class="slc">${G.specs.map(n => `<span class="spc${n === ME?.name ? ' me' : ''}">${ICON.user}${esc(n)}${n === ME?.name ? ' (나)' : ''}</span>`).join('')}</span>` : '<span class="muted">지금 관전하는 사람이 없어요.</span>'}</div>`; // 관전자 목록 (11/18 링크 님)
 // 채팅 읽음: 마지막으로 본 채팅 줄 번호를 판마다 이 기기에 저장. 처음 들어온 판은 예전 채팅을 읽은 것으로
 function chatSeen() {
   if (G.ui.cseen == null) { let x = null; try { x = localStorage.getItem('cs:' + G.id); } catch {} G.ui.cseen = x != null && x !== '' ? +x : Math.max(-1, ...G.lines.filter(l => l.chat).map(l => l.k)); }
@@ -2096,11 +2096,14 @@ async function onZone(z, p) {
   if (z === 'discard' || z === 'lost') return openZoneView({ z, p });
   if (me == null) { if (zvCards({ z, p }, v)) openZoneView({ z, p }); else toast('이 카드들은 볼 수 없어요.'); return; } // 관전·리플레이: 보이는 것이면 큰 창
   if (me == null || v.phase !== 'play') return;
-  const lk = v.p[me].look; if (lk && lk.z === z && lk.p === p) return openZoneView({ look: 1 }); // 보는 중인 곳을 누르면 메뉴 없이 다시 크게
+  const lk = v.p[me].look, lkHere = lk && lk.z === z && lk.p === p; // 보는 중인 곳을 누르면: 덱은 메뉴 맨 위에 '다시 크게 보기', 손패·프라이즈는 바로 크게
+  if (lkHere && z !== 'deck') return openZoneView({ look: 1 });
   if (z === 'deck') {
     const opts = mine ? [{ label: '1장 뽑기', value: ['draw', 1] }, { label: '여러 장 뽑기', value: ['drawN'] }, { label: '덱 전체 보기 (검색)', value: ['look', null] }, { label: '위에서 몇 장 보기', value: ['lookN'] }, { label: '아래에서 몇 장 보기', value: ['lookB'] }, { label: '섞기', value: ['shuffle'] }]
       : [{ label: '상대 덱 위에서 몇 장 보기', value: ['lookN'] }, { label: '상대 덱 아래에서 몇 장 보기', value: ['lookB'] }, { label: '상대 덱 섞기', value: ['shuffle'] }];
+    if (lkHere) opts.unshift({ label: `${ICON.eye}보던 카드 다시 크게 보기`, value: ['resume'], cls: 'primary' });
     const k = await pick(mine ? '내 덱' : '상대 덱', opts); if (!k) return;
+    if (k[0] === 'resume') return openZoneView({ look: 1 });
     if (k[0] === 'draw') return send({ type: 'draw', n: 1 });
     if (k[0] === 'drawN') { const f = await ask('몇 장 뽑을까요?', stepHtml('n', 2, { min: 1, max: 60, unit: '장' }), '뽑기'); if (f) send({ type: 'draw', n: +f.n }); return; }
     if (k[0] === 'look') return askLook(p, 'deck');
@@ -2520,14 +2523,14 @@ function bindBoard() {
   app.querySelectorAll('[data-rwok]').forEach(el => el.onclick = async () => { if (await ask('이 판정 바로 전으로 되돌릴까요?', '<p>그 뒤에 한 행동이 모두 취소되고, 기록에는 줄을 그어 남겨요.</p><p class="small"><span class="chip warn">이미 본 카드가 있어요</span> 덱이나 손패에서 본 카드는 잊을 수 없어요. 덱은 다시 섞여요.</p>', '되돌리기', 'bad')) send({ type: 'rewindOk', to: +el.dataset.rwok }); });
   app.querySelectorAll('[data-uses]').forEach(el => { el.onclick = openUses; el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUses(); } }; });
   app.querySelectorAll('[data-stadium]').forEach(el => el.onclick = () => { const c = cinfo(v.stadium.c); openSheet(`<button class="x sm" data-close>닫기</button>${me != null ? cardActHtml(c, `<div class="acts"><button class="judge" data-sd>트래시로${v.stadium.two ? ' (2장)' : ''}${FX}</button></div>`) : cardInfoHtml(c)}`, e2 => { if (me != null) e2.classList.add('cactsheet'); const b = e2.querySelector('[data-sd]'); if (b) b.onclick = () => { closeSheet(); send({ type: 'move', iids: [v.stadium.i], to: { z: 'discard', p: v.stadium.by } }); }; }); });
-  app.querySelectorAll('[data-t]').forEach(el => el.onclick = async () => {
+  app.querySelectorAll('[data-t]').forEach(el => el.onclick = async e => {
     const t = el.dataset.t;
     if (t === 'setupDone' && !G.view.p[me].active) return toast('먼저 손패의 기본 포켓몬을 눌러 배틀 포켓몬을 놓아 주세요.');
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
     if (t === 'rewatch') return startRewatch();
     if (t === 'follow') { const f = await setFollow(G.room, !G.follow); if (f != null) { G.follow = f; draw([]); } return; }
     if (t === 'shuffleMine') return send({ type: 'shuffle', p: me });
-    if (t === 'log') return openLog();
+    if (t === 'log') return openLog(e?.target?.closest?.('.specb') ? 'spec' : undefined); // 눈 표시(관전자 수)를 누르면 관전자 목록 칸으로
     if (t === 'stop') { if (G.view.stop) { G.ui.dockMode = 'open'; draw([]); return; } return openStop(); }
     if (t === 'coin') return openCoin();
     if (t === 'effect') return openEffect();
