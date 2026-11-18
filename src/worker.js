@@ -14,12 +14,38 @@ async function hmac(secret, msg) {
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
   return btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/[+/=]/g, c => ({ '+': '-', '/': '_', '=': '' }[c]));
 }
-async function makeToken(env, uid) { return uid + '.' + await hmac(env.SECRET || 'dev', uid); }
-async function readToken(env, tok) {
-  if (!tok) return null; const [uid, sig] = String(tok).split('.');
-  return uid && sig && sig === await hmac(env.SECRET || 'dev', uid) ? uid : null;
+// 서명 열쇠: SECRET 이 없으면 로비가 처음 한 번 만들어 저장한 무작위 값 (공개 저장소라 기본값을 쓰면 안 됨)
+let KEY = null;
+const keyOf = async (env, lobby) => env.SECRET || (KEY ||= await lobby.secret());
+async function makeToken(key, uid, tv) { const b = uid + '.' + (tv | 0); return b + '.' + await hmac(key, b); }
+async function readToken(key, tok) {
+  if (!tok) return null; const p = String(tok).split('.');
+  if (p.length !== 3 || !p[0]) return null;
+  return p[2] === await hmac(key, p[0] + '.' + p[1]) ? { uid: p[0], tv: p[1] | 0 } : null;
 }
 const cookieTok = req => (req.headers.get('cookie') || '').match(/(?:^|;\s*)tok=([^;]+)/)?.[1];
+const tokCookie = (tok, url) => `tok=${tok}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${url.protocol === 'https:' ? '; Secure' : ''}`;
+// 로그인한 기기 이름 (관리자 화면의 접속 기록용, IP 는 저장하지 않음)
+function devOf(ua = '') {
+  const os = /iPad/.test(ua) ? '아이패드' : /iPhone|iPod/.test(ua) ? '아이폰' : /Android/.test(ua) ? '안드로이드' : /Windows/.test(ua) ? '윈도우 PC' : /Mac OS X/.test(ua) ? '맥' : /Linux|CrOS/.test(ua) ? '리눅스' : '기타';
+  const br = /KAKAOTALK/i.test(ua) ? '카카오톡' : /SamsungBrowser/.test(ua) ? '삼성 인터넷' : /Whale/.test(ua) ? '웨일' : /Edg(A|iOS)?\//.test(ua) ? '엣지' : /CriOS|Chrome\//.test(ua) ? '크롬' : /FxiOS|Firefox/.test(ua) ? '파이어폭스' : /Safari/.test(ua) ? '사파리' : '';
+  return br ? `${os} · ${br}` : os;
+}
+const PW_ITER = 100000; // 클라우드플레어가 허용하는 가장 큰 값
+const b64 = u8 => btoa(String.fromCharCode(...u8));
+async function pwHash(pw, salt) {
+  salt ||= crypto.getRandomValues(new Uint8Array(16));
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  const h = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: PW_ITER }, k, 256));
+  return `p1$${PW_ITER}$${b64(salt)}$${b64(h)}`;
+}
+async function pwCheck(stored, pw) {
+  const [v, , s] = String(stored || '').split('$'); if (v !== 'p1' || !s) return false;
+  const again = await pwHash(String(pw || ''), Uint8Array.from(atob(s), c => c.charCodeAt(0)));
+  let d = again.length ^ stored.length; for (let i = 0; i < Math.min(again.length, stored.length); i++) d |= again.charCodeAt(i) ^ stored.charCodeAt(i);
+  return d === 0;
+}
+const nameOk = n => String(n || '').trim().replace(/\s+/g, ' ').slice(0, 12);
 
 // ---- 꾸미기: 카드 뒷면·매트·카드 그림 (모임 기본값은 관리자가, 각자 덮어쓰기) ----
 const BACK_KEYS = ['ball', 'ring', 'sea', 'night', 'leaf', 'sunset', 'flame'];
@@ -42,6 +68,10 @@ const DISP_RULES = { dimg: ['kr', 'mix', 'en'], dtext: ['ko', 'en', 'both'], dde
 const PREF_RULES = { back: [...BACK_KEYS, 'group', 'mine'], mat: [...MAT_KEYS, 'group', 'mine'], art: [...ART_KEYS, 'group'], disp: ['group', 'mine'], ...DISP_RULES };
 const GROUP_RULES = { back: [...BACK_KEYS, 'custom'], mat: [...MAT_KEYS, 'custom'], art: ART_KEYS, ...DISP_RULES };
 async function meInfo(env, lobby, me) { return { user: me, admin: await isAdmin(env, lobby, me), ...(await lobby.skin(me.uid)) }; }
+async function adminSet(env, lobby) { // 관리자 uid 목록 (회원 관리 화면 표시용)
+  if (env.ADMINS) { const ns = String(env.ADMINS).split(',').map(x => x.trim()).filter(Boolean); return ns; }
+  const f = await lobby.firstUser(); return f ? [f] : [];
+}
 
 let CARDS = null;
 async function cardIndex(env, req) {
@@ -52,23 +82,22 @@ async function cardIndex(env, req) {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url); const path = url.pathname;
-    if (path === '/cards.json') { // 카드 문장 자료는 로그인한 사람만 (인터넷에 올렸을 때 아무나 내려받지 못하게)
-      const uid = await readToken(env, cookieTok(req) || url.searchParams.get('tok'));
-      return uid ? env.ASSETS.fetch(req) : err('로그인이 필요해요.', 401);
+    if (!path.startsWith('/api/') && !path.startsWith('/ws/') && path !== '/cards.json') return env.ASSETS.fetch(req);
+    const lobby = env.LOBBY.get(env.LOBBY.idFromName('main')), key = await keyOf(env, lobby);
+    // 로그인: 닉네임 + 비밀번호. 가입은 모임 입장 코드가 있어야 (한 번만)
+    if ((path === '/api/login' || path === '/api/signup') && req.method === 'POST') {
+      const b = await req.json().catch(() => ({})), ip = req.headers.get('cf-connecting-ip') || 'local', dev = devOf(req.headers.get('user-agent') || '');
+      const name = nameOk(b.name), pw = String(b.pw || '');
+      const r = path === '/api/login' ? await lobby.signin(name, pw, dev)
+        : await lobby.signup(name, pw, !!env.GROUP_CODE && String(b.code || '') === env.GROUP_CODE, ip, dev);
+      if (r.error) return json(r, r.status || 400);
+      const tok = await makeToken(key, r.user.uid, r.tv);
+      return json({ user: r.user }, 200, { 'set-cookie': tokCookie(tok, url) });
     }
-    if (!path.startsWith('/api/') && !path.startsWith('/ws/')) return env.ASSETS.fetch(req);
-    const lobby = env.LOBBY.get(env.LOBBY.idFromName('main'));
-    if (path === '/api/login' && req.method === 'POST') {
-      const b = await req.json().catch(() => ({}));
-      if (!env.GROUP_CODE || b.code !== env.GROUP_CODE) return err('모임 입장 코드가 맞지 않아요.', 403);
-      const name = String(b.name || '').trim().slice(0, 12); if (!name) return err('이름을 넣어 주세요.');
-      const u = await lobby.login(name);
-      const tok = await makeToken(env, u.uid);
-      return json({ user: u, tok }, 200, { 'set-cookie': `tok=${tok}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${url.protocol === 'https:' ? '; Secure' : ''}` });
-    }
-    const uid = await readToken(env, cookieTok(req) || url.searchParams.get('tok'));
-    if (!uid) return err('로그인이 필요해요.', 401);
-    const me = await lobby.user(uid); if (!me) return err('로그인이 필요해요.', 401);
+    const t = await readToken(key, cookieTok(req) || url.searchParams.get('tok'));
+    const me = t && await lobby.auth(t.uid, t.tv); if (!me) return err('로그인이 필요해요.', 401);
+    const uid = me.uid;
+    if (path === '/cards.json') return env.ASSETS.fetch(req); // 카드 문장 자료는 로그인한 사람만 (인터넷에 올렸을 때 아무나 내려받지 못하게)
 
     let m;
     if (path === '/api/me') return json(await meInfo(env, lobby, me));
@@ -97,6 +126,17 @@ export default {
       return json(await meInfo(env, lobby, me));
     }
     if (path === '/api/logout') return json({ ok: 1 }, 200, { 'set-cookie': 'tok=; Path=/; Max-Age=0' });
+    if (path === '/api/password' && req.method === 'POST') { // 내 비밀번호 바꾸기 (이 기기는 그대로, 다른 기기는 로그아웃)
+      const b = await req.json().catch(() => ({})); const r = await lobby.setPw(uid, String(b.old || ''), String(b.pw || ''));
+      if (r.error) return json(r, r.status || 400);
+      return json({ ok: 1 }, 200, { 'set-cookie': tokCookie(await makeToken(key, uid, r.tv), url) });
+    }
+    if (path === '/api/stats') return json(await lobby.stats(uid)); // 내 전적: 모두, 상대별, 최근 판
+    if (path === '/api/admin/users' || (m = path.match(/^\/api\/admin\/users\/(\w+)\/reset$/))) { // 관리자: 회원 목록·접속 기록, 비밀번호 초기화
+      if (!await isAdmin(env, lobby, me)) return err('관리자만 볼 수 있어요.', 403);
+      if (m && req.method === 'POST') { const r = await lobby.adminReset(m[1]); return r.error ? json(r, 404) : json(r); }
+      return json({ users: await lobby.members(await adminSet(env, lobby), !!env.ADMINS), me: uid });
+    }
     // 푸시 알림: 서버 공개 열쇠, 이 기기 구독 저장·지우기, 시험 알림
     if (path === '/api/push/key') return json({ key: await lobby.pushKey() });
     if (path === '/api/push/sub' && req.method === 'POST') {
@@ -196,7 +236,110 @@ export class Lobby extends DurableObject {
       CREATE TABLE IF NOT EXISTS prefs(uid TEXT PRIMARY KEY, v TEXT);
       CREATE TABLE IF NOT EXISTS imgs(id TEXT PRIMARY KEY, owner TEXT, kind TEXT, type TEXT, data BLOB, meta TEXT, created INTEGER);
       CREATE TABLE IF NOT EXISTS push(endpoint TEXT PRIMARY KEY, uid TEXT, p256dh TEXT, auth TEXT, created INTEGER);
-      CREATE TABLE IF NOT EXISTS follows(uid TEXT, room TEXT, PRIMARY KEY(uid, room));`);
+      CREATE TABLE IF NOT EXISTS follows(uid TEXT, room TEXT, PRIMARY KEY(uid, room));
+      CREATE TABLE IF NOT EXISTS logins(uid TEXT, t INTEGER, dev TEXT);
+      CREATE TABLE IF NOT EXISTS results(gid TEXT PRIMARY KEY, room TEXT, a TEXT, b TEXT, winner INTEGER, turns INTEGER, how TEXT, ended INTEGER);`);
+    const cols = new Set(this.sql.exec('PRAGMA table_info(users)').toArray().map(c => c.name));
+    for (const [c, ty] of [['pw', 'TEXT'], ['tv', 'INTEGER DEFAULT 0'], ['temp', 'INTEGER DEFAULT 0'], ['seen', 'INTEGER'], ['last', 'INTEGER'], ['nlog', 'INTEGER DEFAULT 0']])
+      if (!cols.has(c)) this.sql.exec(`ALTER TABLE users ADD COLUMN ${c} ${ty}`);
+    this.lim = new Map(); // 비밀번호·코드 틀린 횟수 (메모리에만)
+  }
+  // ---- 회원: 비밀번호, 접속 기록 ----
+  secret() {
+    let r = this.one("SELECT v FROM kv WHERE k='secret'"); if (r) return JSON.parse(r.v);
+    const v = b64(crypto.getRandomValues(new Uint8Array(32))); this.sql.exec("INSERT OR REPLACE INTO kv VALUES('secret',?)", JSON.stringify(v)); return v;
+  }
+  locked(key) { const x = this.lim.get(key); return x && x.until > Date.now() ? Math.ceil((x.until - Date.now()) / 60e3) : 0; }
+  failed(key, max = 6) { // 10분 안에 여러 번 틀리면 5분 쉬기
+    const now = Date.now(); let x = this.lim.get(key);
+    if (!x || now - x.t0 > 10 * 60e3) x = { n: 0, t0: now, until: 0 };
+    if (++x.n >= max) Object.assign(x, { n: 0, t0: now, until: now + 5 * 60e3 });
+    this.lim.set(key, x);
+  }
+  logged(uid, dev) {
+    const now = Date.now();
+    this.sql.exec('UPDATE users SET last=?, seen=?, nlog=COALESCE(nlog,0)+1 WHERE uid=?', now, now, uid);
+    this.sql.exec('INSERT INTO logins VALUES(?,?,?)', uid, now, dev);
+    this.sql.exec('DELETE FROM logins WHERE uid=? AND t NOT IN (SELECT t FROM logins WHERE uid=? ORDER BY t DESC LIMIT 20)', uid, uid);
+  }
+  async signin(name, pw, dev) {
+    if (!name || !pw) return { error: '닉네임과 비밀번호를 넣어 주세요.' };
+    const key = 'p:' + name, wait = this.locked(key);
+    if (wait) return { error: `비밀번호를 여러 번 틀렸어요. ${wait}분 뒤에 다시 해 주세요.`, status: 429 };
+    const u = this.one('SELECT uid,name,pw,tv,temp FROM users WHERE name=?', name);
+    if (!u) return { error: "그 닉네임은 아직 없어요. 처음 왔다면 '처음 왔어요'에서 가입해 주세요.", status: 404, need: 'signup' };
+    if (!u.pw) return { error: "이 닉네임은 아직 비밀번호가 없어요. '처음 왔어요'에서 모임 코드와 새 비밀번호를 넣으면 이 닉네임 그대로 쓸 수 있어요.", status: 409, need: 'claim' };
+    if (!await pwCheck(u.pw, pw)) { this.failed(key); return { error: '비밀번호가 맞지 않아요.', status: 403 }; }
+    this.lim.delete(key); this.logged(u.uid, dev);
+    return { user: { uid: u.uid, name: u.name, must: !!u.temp }, tv: u.tv | 0 };
+  }
+  async signup(name, pw, codeOk, ip, dev) {
+    const key = 'c:' + ip, wait = this.locked(key);
+    if (wait) return { error: `입장 코드를 여러 번 틀렸어요. ${wait}분 뒤에 다시 해 주세요.`, status: 429 };
+    if (!codeOk) { this.failed(key); return { error: '모임 입장 코드가 맞지 않아요.', status: 403 }; }
+    if (!name) return { error: '닉네임을 넣어 주세요.' };
+    if (pw.length < 4 || pw.length > 64) return { error: '비밀번호는 4자 이상으로 정해 주세요.' };
+    let u = this.one('SELECT uid,name,pw,tv FROM users WHERE name=?', name);
+    if (u && u.pw) return { error: "이미 쓰고 있는 닉네임이에요. 내 닉네임이면 '로그인'에서 들어가 주세요.", status: 409 };
+    const h = await pwHash(pw);
+    if (u) this.sql.exec('UPDATE users SET pw=?, temp=0 WHERE uid=?', h, u.uid); // 비밀번호가 없던 예전 닉네임: 입장 코드로 이어 쓰기
+    else { u = { uid: 'u' + rid(8), name, tv: 0 }; this.sql.exec('INSERT INTO users(uid,name,created,pw,tv,temp) VALUES(?,?,?,?,0,0)', u.uid, name, Date.now(), h); }
+    this.logged(u.uid, dev);
+    return { user: { uid: u.uid, name, must: false }, tv: u.tv | 0 };
+  }
+  auth(uid, tv) { // 요청마다: 토큰 버전 확인 + 마지막 접속 (1분에 한 번만 저장)
+    const u = this.one('SELECT uid,name,tv,temp,seen FROM users WHERE uid=?', uid);
+    if (!u || (u.tv | 0) !== tv) return null;
+    const now = Date.now(); if (!u.seen || now - u.seen > 60e3) this.sql.exec('UPDATE users SET seen=? WHERE uid=?', now, uid);
+    return { uid: u.uid, name: u.name, must: !!u.temp };
+  }
+  async setPw(uid, old, pw) {
+    const u = this.one('SELECT pw,tv,temp FROM users WHERE uid=?', uid); if (!u) return { error: '로그인이 필요해요.', status: 401 };
+    if (!u.temp && u.pw && !await pwCheck(u.pw, old)) return { error: '지금 비밀번호가 맞지 않아요.', status: 403 };
+    if (pw.length < 4 || pw.length > 64) return { error: '새 비밀번호는 4자 이상으로 정해 주세요.' };
+    const tv = (u.tv | 0) + 1;
+    this.sql.exec('UPDATE users SET pw=?, temp=0, tv=? WHERE uid=?', await pwHash(pw), tv, uid);
+    return { tv };
+  }
+  async adminReset(uid) { // 임시 비밀번호를 만들어 관리자에게 보여 줌. 그 사람의 모든 기기는 로그아웃
+    const u = this.one('SELECT name,tv FROM users WHERE uid=?', uid); if (!u) return { error: '없는 회원이에요.' };
+    const temp = rid(8);
+    this.sql.exec('UPDATE users SET pw=?, temp=1, tv=? WHERE uid=?', await pwHash(temp), (u.tv | 0) + 1, uid);
+    return { temp, name: u.name };
+  }
+  // ---- 전적 ----
+  async fillResults() { // 전적 기능 전에 끝난 판도 한 번만 채움 (각 판에 결과를 물어봄)
+    if (this.one("SELECT v FROM kv WHERE k='resfill'")) return;
+    const have = new Set(this.sql.exec('SELECT gid FROM results').toArray().map(x => x.gid));
+    for (const r of this.sql.exec('SELECT * FROM rooms').toArray().map(x => this.rowRoom(x))) for (const gid of r.games) {
+      if (have.has(gid)) continue;
+      try { const o = await this.env.GAME.get(this.env.GAME.idFromName(gid)).outcome(); if (o) this.sql.exec('INSERT OR REPLACE INTO results VALUES(?,?,?,?,?,?,?,?)', gid, r.id, r.players[0], r.players[1], o.winner ?? -1, o.turn || 0, o.how || '', o.t || Date.now()); } catch {}
+    }
+    this.sql.exec("INSERT OR REPLACE INTO kv VALUES('resfill','1')");
+  }
+  async stats(uid) {
+    await this.fillResults();
+    const names = Object.fromEntries(this.sql.exec('SELECT uid,name FROM users').toArray().map(u => [u.uid, u.name]));
+    const titles = Object.fromEntries(this.sql.exec('SELECT id,cfg FROM rooms').toArray().map(r => [r.id, JSON.parse(r.cfg).title || '']));
+    const rows = this.sql.exec('SELECT * FROM results WHERE a=? OR b=? ORDER BY ended DESC', uid, uid).toArray();
+    const tot = { w: 0, l: 0, d: 0 }, by = {}, recent = [];
+    for (const r of rows) {
+      const seat = r.a === uid ? 0 : 1, opp = seat ? r.a : r.b, res = r.winner < 0 ? 'd' : r.winner === seat ? 'w' : 'l';
+      tot[res]++; const o = by[opp] ||= { uid: opp, name: names[opp] || '(지운 회원)', w: 0, l: 0, d: 0, last: r.ended }; o[res]++;
+      if (recent.length < 30) recent.push({ gid: r.gid, room: r.room, title: titles[r.room] || '', opp: names[opp] || '(지운 회원)', res, turns: r.turns, how: r.how, ended: r.ended });
+    }
+    return { total: tot, opps: Object.values(by).sort((a, b) => (b.w + b.l + b.d) - (a.w + a.l + a.d) || b.last - a.last), recent };
+  }
+  async members(admins, byName) { // 관리자 화면: 가입일, 마지막 접속, 로그인 횟수·기기, 전적
+    await this.fillResults();
+    const users = this.sql.exec('SELECT uid,name,created,seen,last,nlog,pw,temp FROM users ORDER BY created').toArray();
+    const res = this.sql.exec('SELECT a,b,winner FROM results').toArray();
+    return users.map(u => {
+      const s = { w: 0, l: 0, d: 0 };
+      for (const r of res) { const seat = r.a === u.uid ? 0 : r.b === u.uid ? 1 : -1; if (seat < 0) continue; s[r.winner < 0 ? 'd' : r.winner === seat ? 'w' : 'l']++; }
+      const logins = this.sql.exec('SELECT t,dev FROM logins WHERE uid=? ORDER BY t DESC LIMIT 10', u.uid).toArray();
+      return { uid: u.uid, name: u.name, created: u.created, seen: u.seen || null, last: u.last || null, nlog: u.nlog || 0, pw: u.pw ? (u.temp ? 'temp' : 'set') : 'none', admin: admins.includes(byName ? u.name : u.uid), ...s, logins };
+    });
   }
   // ---- 푸시 알림 ----
   async vapid() {
@@ -224,11 +367,6 @@ export class Lobby extends DurableObject {
     return { sent: subs.length, ok: res.filter(st => st >= 200 && st < 300).length };
   }
   one(q, ...a) { return this.sql.exec(q, ...a).toArray()[0] || null; }
-  login(name) {
-    let u = this.one('SELECT uid,name FROM users WHERE name=?', name);
-    if (!u) { u = { uid: 'u' + rid(8), name }; this.sql.exec('INSERT INTO users VALUES(?,?,?)', u.uid, name, Date.now()); }
-    return u;
-  }
   user(uid) { return this.one('SELECT uid,name FROM users WHERE uid=?', uid); }
   firstUser() { return this.one('SELECT uid FROM users ORDER BY created LIMIT 1')?.uid || null; }
   // 꾸미기: 모임 기본값(kv 'group'), 각자 고른 것(prefs), 올린 사진(imgs: owner '*' = 모임 사진)
@@ -288,7 +426,7 @@ export class Lobby extends DurableObject {
   gameStarted(id, gameId) { const r = this.room(id); r.games.push(gameId); r.status = 'playing'; return this.saveRoom(r); }
   closeRoom(uid, id) { const r = this.room(id); if (!r || r.host !== uid || r.status !== 'open') return false; this.sql.exec('DELETE FROM rooms WHERE id=?', id); return true; }
   adminEnd(id) { const r = this.room(id); if (!r) return false; if (r.status === 'open') { this.sql.exec('DELETE FROM rooms WHERE id=?', id); return true; } r.status = 'done'; r.waiting = []; r.deadline = 0; this.saveRoom(r); return true; }
-  adminDelete(id) { this.sql.exec('DELETE FROM rooms WHERE id=?', id); this.sql.exec('DELETE FROM follows WHERE room=?', id); return true; }
+  adminDelete(id) { this.sql.exec('DELETE FROM rooms WHERE id=?', id); this.sql.exec('DELETE FROM follows WHERE room=?', id); this.sql.exec('DELETE FROM results WHERE room=?', id); return true; }
   // 대전 DO 가 판 상태를 알려 줌
   async gameUpdate(roomId, gameId, u) {
     const r = this.room(roomId); if (!r || r.games[r.games.length - 1] !== gameId) return;
@@ -300,6 +438,8 @@ export class Lobby extends DurableObject {
       r.status = r.wins.some(w => w >= need) ? 'done' : 'between';
     }
     this.saveRoom(r);
+    if (u.phase === 'over' && old.phase !== 'over') this.sql.exec('INSERT OR REPLACE INTO results VALUES(?,?,?,?,?,?,?,?)', gameId, r.id, r.players[0], r.players[1], u.winner ?? -1, u.turn || 0, u.how || '', Date.now());
+    if (u.actor) this.sql.exec('UPDATE users SET seen=? WHERE uid=?', Date.now(), u.actor);
     const quiet = new Set([...(u.online || []), u.actor].filter(Boolean)); // 지금 판을 보고 있는 사람, 방금 둔 사람은 빼고
     const names = r.players.map(p => this.user(p)?.name || '상대'), tail = r.cfg.title ? ` · ${r.cfg.title}` : '', vs = r.cfg.title || names.join(' vs ');
     const jobs = [], done = new Set();
@@ -347,6 +487,10 @@ export class Game extends DurableObject {
     G.log.push({ who: 0, a, t }); G.steps.push({ ok: true, ev: r.ev });
     this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length - 1, 0, JSON.stringify(a), t);
     this.push(G, false, G.log.length - 1); await this.report(G); return true;
+  }
+  outcome() { // 끝난 판이면 승자·차례·이유 (전적 채우기용)
+    const G = this.load(); if (!G || G.s.phase !== 'over') return null;
+    return { winner: G.s.winner, turn: G.s.turn, how: G.s.winReason || '', t: G.log.length ? G.log[G.log.length - 1].t : this.meta('created') };
   }
   async wipe() { // 관리자가 지우기: 기록을 모두 지우고 보고 있던 사람은 로비로
     for (const w of this.ctx.getWebSockets()) { try { w.send('{"t":"gone"}'); w.close(1000, 'deleted'); } catch {} }
@@ -472,7 +616,7 @@ export class Game extends DurableObject {
     if (dl) await this.ctx.storage.setAlarm(dl); else await this.ctx.storage.deleteAlarm();
     const lobby = this.env.LOBBY.get(this.env.LOBBY.idFromName('main'));
     const online = [...new Set(this.ctx.getWebSockets().map(w => w.deserializeAttachment()).filter(a => a && a.uid && a.vis !== 0).map(a => a.uid))]; // 화면을 보고 있는 사람 (관전자 포함)
-    await lobby.gameUpdate(G.init.cfg.roomId, G.id, { waiting: waitingOn(G.s), phase: G.s.phase, turn: G.s.turn, current: G.s.current, winner: G.s.winner, deadline: dl, actor: actor == null ? null : G.init.players[actor]?.uid || null, online });
+    await lobby.gameUpdate(G.init.cfg.roomId, G.id, { waiting: waitingOn(G.s), phase: G.s.phase, turn: G.s.turn, current: G.s.current, winner: G.s.winner, how: G.s.winReason || '', deadline: dl, actor: actor == null ? null : G.init.players[actor]?.uid || null, online });
   }
   async alarm() {
     const G = this.load(); if (!G) return;

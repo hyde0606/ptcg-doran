@@ -20,15 +20,18 @@ const OUT = __dirname + '/out/';
     const p = await ctx.newPage();
     p.on('pageerror', e => errs.push(name + ': ' + e.message));
     p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errs.push(name + ' console: ' + m.text()); });
-    await p.goto(BASE + '/#login');
-    await p.fill('#nm', name); await p.fill('#cd', 'doran'); await p.click('#go');
-    await p.waitForSelector('.ltabs');
+    await p.goto(BASE + '/#login'); await p.waitForSelector('#lf');
+    // 로그인 → 없는 닉네임이거나 비밀번호가 없는 예전 닉네임이면 '처음 왔어요' 칸으로 넘어감 → 입장 코드로 가입
+    await p.fill('#nm', name); await p.fill('#pw', 'test1234'); await p.click('#go');
+    const where = await Promise.race([p.waitForSelector('.ltabs', { timeout: 8000 }).then(() => 'in').catch(() => null), p.waitForSelector('#pw2', { timeout: 8000 }).then(() => 'up').catch(() => null)]);
+    if (where === 'up') { await p.fill('#pw', 'test1234'); await p.fill('#pw2', 'test1234'); await p.fill('#cd', 'doran'); await p.click('#go'); await p.waitForSelector('.ltabs'); }
+    else if (where !== 'in') errs.push(name + ': 로그인 실패');
     return p;
   };
   const A = await mk('링크'), B = await mk('친구', 1280, 900);
   for (const p of [A, B]) {
     await p.goto(BASE + '/#decks'); await p.waitForSelector('#nd'); await p.click('#nd');
-    await p.click('#imp'); await p.fill('#paste', DECK); await p.click('#go');
+    await p.click('#imp'); await p.waitForSelector('#paste'); await p.fill('#paste', DECK); await p.click('[data-pgo=rep]'); // 리스트 붙여 넣기는 카드 추가 창 안
     await p.waitForSelector('#cnt.ok');
     await p.click('#add'); await p.waitForSelector('#q');
     await p.fill('#q', 'ㅍㅋㅊ'); await p.waitForTimeout(200);

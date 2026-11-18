@@ -28,6 +28,8 @@ const ICON = {
   warn: svg('<path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4M12 17h.01"/>'),
   check: svg('<path d="M5 12.5 9.5 17 19 7"/>'),
   user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.5-6 8-6s7 1.5 8 6"/>'),
+  key: svg('<rect x="4.5" y="10.5" width="15" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3M12 14.5v3"/>'),
+  users: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.8 3.5-5.5 6.5-5.5s5.7 1.7 6.5 5.5M15.5 4.8a3.5 3.5 0 0 1 0 6.4M17.5 14.8c2 .7 3.4 2.4 4 5.2"/>'),
   play: svg('<path d="M8 5v14l11-7z"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   back: svg('<path d="M15 5l-7 7 7 7"/>'),
@@ -138,7 +140,7 @@ async function api(path, body, method) {
   const r = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
   const j = await r.json().catch(() => ({ error: '서버 응답을 읽지 못했어요.' }));
   if (r.status === 401 && path !== '/api/me') { ME = null; location.hash = '#login'; }
-  if (!r.ok) throw new Error(j.error || '오류가 났어요.');
+  if (!r.ok) { const e = new Error(j.error || '오류가 났어요.'); e.data = j; e.status = r.status; throw e; }
   return j;
 }
 function toast(m, ms = 2600) { const t = $('#toast'); t.textContent = m; t.hidden = false; Sound.sfx('notify'); clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
@@ -215,6 +217,7 @@ window.addEventListener('popstate', () => {
   if (SUBVIEW) { SUBVIEW(); return; }
   if (!$('#sheet').hidden) { closeSheet(true); return; }
   if (!GUARD || GUARD.leaving || location.hash !== GUARD.hash) return; // 다른 페이지로 가는 중 (hashchange가 그림)
+  if (G && G.view && document.querySelector('.arena .dock')) { G.ui.dockMode = 'shut'; draw([]); rearm(); return; } // 판정 창이 펼쳐져 있으면 접기부터
   if (G && G.rw && G.rw.mode === 'game') { endRewatch(); rearm(); return; }
   const fn = GUARD.onLeave && GUARD.onLeave();
   if (fn) { rearm(); fn(); return; }
@@ -261,7 +264,7 @@ function ask(title, html, okLabel = '확인', cls = 'primary') {
 }
 
 // ---------- 화면 이동 ----------
-const NAV = [['#lobby', 'battle', '대전'], ['#decks', 'deck', '덱'], ['#settings', 'gear', '설정']];
+const NAV = [['#lobby', 'battle', '대전'], ['#decks', 'deck', '덱'], ['#record', 'trophy', '전적'], ['#settings', 'gear', '설정']];
 function nav(cur) { $('#nav').innerHTML = ME ? NAV.map(([h, ic, l]) => `<a href="${h}" class="${cur === h ? 'on' : ''}" aria-label="${l}">${ICON[ic]}<span class="lb">${l}</span></a>`).join('') : ''; drawSnd(); drawInst(); }
 function drawSnd() { // 머리의 소리 단추: 누르면 효과음·배경음악 모두 끄고 켬
   const b = $('#snd'); if (!b) return;
@@ -281,14 +284,17 @@ async function route() {
   const [base, arg] = h.split('/');
   armFs(base);
   document.body.classList.toggle('nohdr', base === '#game' || base === '#replay'); // 맨 위 머리줄은 로비·덱 목록·설정에서만 (덱 고치기는 deckEditor에서 숨김)
-  nav(base === '#me' ? '#settings' : base);
+  nav(base === '#me' || base === '#members' ? '#settings' : base);
   Sound.music(base === '#game' ? 'battle' : 'lobby');
   if (base === '#login') return renderLogin();
+  if (ME.must) return renderPwForce(); // 관리자가 비밀번호를 초기화한 뒤 처음: 새 비밀번호부터
   if (base === '#lobby') return renderLobby();
   if (base === '#decks') return renderDecks(arg);
   if (base === '#game') return renderGame(arg);
   if (base === '#replay') return renderReplay(arg, +(h.split('/')[2] || -1));
   if (base === '#me' || base === '#settings') return renderSettings();
+  if (base === '#record') return renderRecord();
+  if (base === '#members') return renderMembers();
   location.hash = '#lobby';
 }
 window.addEventListener('hashchange', route);
@@ -299,9 +305,9 @@ const go = h => { if (location.hash === h) route(); else location.hash = h; };
 const UA = navigator.userAgent;
 const IS_IOS = /iPhone|iPod|iPad/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
 const IS_KAKAO = /KAKAOTALK/i.test(UA), IS_SAMSUNG = /SamsungBrowser/i.test(UA);
-const isPhone = () => matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 820;
+const isPhone = () => (IS_IOS || /Android|iPhone|iPod|Mobile/i.test(UA)) && matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 820; // 폰·태블릿만 (터치 모니터 PC는 아님)
 const isApp = () => navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: minimal-ui)').matches || (matchMedia('(display-mode: fullscreen)').matches && !document.fullscreenElement); // 전체 화면 버튼으로 바꾼 것은 앱이 아님
-const fsOk = () => !!(document.fullscreenEnabled && document.documentElement.requestFullscreen);
+const fsOk = () => !!(document.fullscreenEnabled && document.documentElement.requestFullscreen) && isPhone(); // 전체 화면은 폰에서만 (PC는 이미 넓어서 쓰지 않음)
 const inFs = () => !!document.fullscreenElement;
 const fsAuto = () => pref('fsAuto', 'on') === 'on';
 let installEvt = null, fsArm = false;
@@ -414,17 +420,127 @@ function screenHtml() { // 설정 → 폰 화면
 }
 document.addEventListener('fullscreenchange', () => document.querySelectorAll('[data-fsnow]').forEach(b => b.innerHTML = inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}지금 전체 화면`));
 
-function renderLogin() {
-  app.innerHTML = `<div class="card-box hero">
+let loginTab = 'in', loginName = '';
+function renderLogin(note) { // 로그인: 닉네임 + 비밀번호. 처음 왔어요: + 비밀번호 한 번 더 + 모임 입장 코드 (한 번만)
+  const up = loginTab === 'up';
+  app.innerHTML = `<div class="card-box hero login">
     <div class="logo">${ringIcon('bolt', '', true)}<div><h2>닌포케카</h2><div class="muted small">닌도란 포켓몬 카드 게임 · NPCG</div></div></div>
-    <p class="muted">모임에서 받은 입장 코드와 대전에 쓸 이름을 넣어 주세요.</p>
-    <label class="h">이름</label><input id="nm" maxlength="12" autocomplete="nickname" style="width:100%">
-    <label class="h">입장 코드</label><input id="cd" type="password" style="width:100%">
-    <button class="primary" id="go">들어가기</button></div>`;
-  $('#go').onclick = async () => {
-    try { const r = await api('/api/login', { name: $('#nm').value, code: $('#cd').value }); ME = r.user; await loadMe().catch(() => {}); location.hash = '#lobby'; }
-    catch (e) { toast(e.message); }
+    <div class="lgtabs" role="tablist"><button type="button" class="ltab${up ? '' : ' on'}" data-lt="in" role="tab" aria-selected="${!up}">${ICON.key}로그인</button><button type="button" class="ltab${up ? ' on' : ''}" data-lt="up" role="tab" aria-selected="${up}">${ICON.user}처음 왔어요</button></div>
+    <form id="lf" novalidate>
+      ${note ? `<p class="lnote">${esc(note)}</p>` : `<p class="muted small lhelp">${up ? '모임에서 받은 입장 코드는 가입할 때 한 번만 넣어요. 다음부터는 닉네임과 비밀번호로 들어와요.' : '닉네임과 비밀번호로 들어와요.'}</p>`}
+      <label class="h" for="nm">닉네임</label><input id="nm" name="username" maxlength="12" autocomplete="username" autocapitalize="off" spellcheck="false" value="${esc(loginName)}">
+      <label class="h" for="pw">비밀번호${up ? ' <span class="hint">4자 이상</span>' : ''}</label>
+      <div class="pwrow"><input id="pw" name="password" type="password" maxlength="64" autocomplete="${up ? 'new-password' : 'current-password'}"><button type="button" class="pwsee" data-see aria-label="비밀번호 보기" aria-pressed="false">${ICON.eye}</button></div>
+      ${up ? `<label class="h" for="pw2">비밀번호 한 번 더</label><input id="pw2" type="password" maxlength="64" autocomplete="new-password">
+      <label class="h" for="cd">모임 입장 코드</label><input id="cd" type="password" autocomplete="off">` : ''}
+      <button class="primary" id="go" type="submit">${up ? '가입하고 들어가기' : '들어가기'}</button>
+    </form>
+    <p class="small muted lfoot">${up ? '예전에 쓰던 닉네임이 있으면 그 닉네임과 새 비밀번호, 입장 코드를 넣어 주세요. 대전 기록과 덱이 그대로 이어져요.' : '비밀번호를 잊었으면 관리자에게 초기화를 부탁해 주세요.'}</p></div>`;
+  const nm = $('#nm'), pw = $('#pw');
+  app.querySelectorAll('[data-lt]').forEach(b => b.onclick = () => { if (b.dataset.lt === loginTab) return; loginName = nm.value; loginTab = b.dataset.lt; renderLogin(); Sound.sfx('tap'); });
+  app.querySelector('[data-see]').onclick = e => { const b = e.currentTarget, on = pw.type === 'password'; app.querySelectorAll('#pw, #pw2').forEach(x => x.type = on ? 'text' : 'password'); b.setAttribute('aria-pressed', on); b.classList.toggle('on', on); };
+  (nm.value ? pw : nm).focus({ preventScroll: true });
+  $('#lf').onsubmit = async e => {
+    e.preventDefault(); loginName = nm.value.trim();
+    if (!loginName) return toast('닉네임을 넣어 주세요.');
+    if (!pw.value) return toast('비밀번호를 넣어 주세요.');
+    if (up && pw.value.length < 4) return toast('비밀번호는 4자 이상으로 정해 주세요.');
+    if (up && pw.value !== $('#pw2').value) return toast('비밀번호가 서로 달라요. 한 번 더 넣어 주세요.');
+    if (up && !$('#cd').value) return toast('모임 입장 코드를 넣어 주세요.');
+    const go = $('#go'); go.disabled = true;
+    try {
+      const r = await api(up ? '/api/signup' : '/api/login', up ? { name: loginName, pw: pw.value, code: $('#cd').value } : { name: loginName, pw: pw.value });
+      ME = r.user; await loadMe().catch(() => {}); loginTab = 'in'; location.hash = '#lobby';
+    } catch (er) {
+      go.disabled = false;
+      if (!up && er.data && (er.data.need === 'claim' || er.data.need === 'signup')) { loginTab = 'up'; return renderLogin(er.message); } // 비밀번호가 없는 예전 닉네임 / 없는 닉네임 → 가입 칸으로
+      toast(er.message, 3200);
+    }
   };
+}
+// 비밀번호 바꾸기: 설정에서 (지금 비밀번호 필요) / 관리자가 초기화한 뒤 처음 들어왔을 때 (바로 새 비밀번호)
+const pwFormHtml = force => `${force ? '' : '<label class="h" for="pwo">지금 비밀번호</label><input id="pwo" type="password" maxlength="64" autocomplete="current-password">'}
+  <label class="h" for="pwn">새 비밀번호 <span class="hint">4자 이상</span></label><input id="pwn" type="password" maxlength="64" autocomplete="new-password">
+  <label class="h" for="pwn2">새 비밀번호 한 번 더</label><input id="pwn2" type="password" maxlength="64" autocomplete="new-password">`;
+async function savePw(root) {
+  const o = root.querySelector('#pwo')?.value || '', n = root.querySelector('#pwn').value, n2 = root.querySelector('#pwn2').value;
+  if (n.length < 4) throw new Error('새 비밀번호는 4자 이상으로 정해 주세요.');
+  if (n !== n2) throw new Error('새 비밀번호가 서로 달라요. 한 번 더 넣어 주세요.');
+  await api('/api/password', { old: o, pw: n });
+}
+function renderPwForce() {
+  app.innerHTML = `<div class="card-box hero login"><div class="logo">${ringIcon('key', '', true)}<div><h2>새 비밀번호 정하기</h2><div class="muted small">${esc(ME.name)} 님</div></div></div>
+    <p class="lnote">관리자가 비밀번호를 초기화했어요. 앞으로 쓸 새 비밀번호를 정해 주세요.</p>
+    <form id="pf" novalidate>${pwFormHtml(true)}<button class="primary" type="submit">저장하고 들어가기</button></form>
+    <p class="small muted lfoot"><button type="button" class="linkbtn" id="lo2">다른 닉네임으로 들어가기</button></p></div>`;
+  $('#pwn').focus({ preventScroll: true });
+  $('#pf').onsubmit = async e => { e.preventDefault(); try { await savePw(app); ME.must = false; toast('새 비밀번호로 바꿨어요.'); location.hash = '#lobby'; route(); } catch (er) { toast(er.message, 3200); } };
+  $('#lo2').onclick = async () => { await api('/api/logout', {}).catch(() => {}); ME = null; location.hash = '#login'; };
+}
+function openPwSheet() {
+  openSheet(`<button class="x sm" data-close>닫기</button><h3>${ICON.key}비밀번호 바꾸기</h3><form class="pwf" novalidate>${pwFormHtml(false)}
+    <p class="small muted">바꾸면 이 기기는 그대로이고, 다른 기기에서는 다시 로그인해야 해요.</p>
+    <div class="row askr"><button class="primary" type="submit">바꾸기</button><button type="button" data-close>취소</button></div></form>`, el => {
+    el.querySelector('#pwo').focus({ preventScroll: true });
+    el.querySelector('form').onsubmit = async e => { e.preventDefault(); try { await savePw(el); closeSheet(); toast('비밀번호를 바꿨어요.'); } catch (er) { toast(er.message, 3200); } };
+  });
+}
+// ---------- 전적 (내 승패, 상대별, 최근 판) ----------
+const fmtDay = t => { if (!t) return '—'; const d = new Date(t); return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString('ko-KR', { year: d.getFullYear() === new Date().getFullYear() ? undefined : '2-digit', month: 'numeric', day: 'numeric' }); };
+const fmtFull = t => t ? new Date(t).toLocaleString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+const fmtAgo = t => { if (!t) return '—'; const s = (Date.now() - t) / 1000; return s < 90 ? '방금' : s < 3600 ? `${Math.round(s / 60)}분 전` : s < 86400 ? `${Math.round(s / 3600)}시간 전` : s < 86400 * 30 ? `${Math.round(s / 86400)}일 전` : new Date(t).toLocaleDateString('ko-KR'); };
+const wld = o => `<em class="w">${o.w}승</em><em class="l">${o.l}패</em>${o.d ? `<em class="d">${o.d}무</em>` : ''}`;
+async function renderRecord() {
+  app.innerHTML = '<p class="muted pad">전적을 불러오는 중…</p>';
+  let s; try { s = await api('/api/stats'); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
+  if (location.hash !== '#record') return;
+  const T = s.total, n = T.w + T.l + T.d, rate = T.w + T.l ? Math.round(T.w * 100 / (T.w + T.l)) : null;
+  const tile = (k, ic, l, v) => `<div class="rtile ${k}">${ringIcon(ic, 'k-' + k)}<span class="rl">${l}</span><b class="rv">${v}</b></div>`;
+  const resChip = r => r === 'w' ? '<span class="chip ok">이김</span>' : r === 'l' ? '<span class="chip lose">짐</span>' : '<span class="chip">승부 없음</span>';
+  const opp = s.opps.map(o => { const g = o.w + o.l, pct = g ? Math.round(o.w / g * 100) : 0;
+    return `<div class="orow"><b class="onm">${esc(o.name)}</b><span class="owl">${wld(o)}</span><span class="obar" role="img" aria-label="이긴 비율 ${pct}%"><i style="width:${pct}%"></i></span><span class="opct">${g ? pct + '%' : '—'}</span></div>`; }).join('');
+  const rec = s.recent.map(g => `<div class="grec">${resChip(g.res)}<div class="gmid"><b class="gopp">${esc(g.opp)} 님</b><span class="small muted">${fmtDay(g.ended)}${g.title ? ` · ${esc(g.title)}` : ''}${g.turns ? ` · ${g.turns}번째 차례` : ''}${g.how ? ` · ${esc(g.how)}` : ''}</span></div><a class="btn sm" href="#replay/${esc(g.gid)}" aria-label="${esc(g.opp)} 님과의 판 리플레이">${ICON.rewind}<span>리플레이</span></a></div>`).join('');
+  app.innerHTML = `<div class="card-box recbox"><div class="rech"><h2>내 전적</h2><span class="small muted">${esc(ME.name)} 님</span>${SK.admin ? `<a class="btn sm" href="#members">${ICON.users}회원 관리</a>` : ''}</div>
+    <div class="rtiles">${tile('n', 'battle', '끝난 판', n)}${tile('w', 'trophy', '이김', T.w)}${tile('l', 'x', '짐', T.l)}${tile('r', 'bolt', '승률', rate == null ? '—' : rate + '%')}</div>
+    <section class="set"><h3>상대별 전적</h3>${opp ? `<div class="olist">${opp}</div>` : '<p class="muted small">아직 끝난 판이 없어요. 판이 끝나면 상대별로 쌓여요.</p>'}</section>
+    <section class="set"><h3>최근 대전</h3>${rec ? `<div class="glist">${rec}</div>` : '<p class="muted small">끝난 판이 여기에 쌓여요.</p>'}${T.d ? '<p class="small muted">승부 없음: 관리자가 끝낸 판이에요. 승률에는 넣지 않아요.</p>' : ''}</section></div>`;
+}
+// ---------- 회원 관리 (관리자): 가입일, 마지막 접속, 로그인 기록, 비밀번호 초기화 ----------
+async function renderMembers() {
+  if (!SK.admin) { location.hash = '#settings'; return; }
+  app.innerHTML = '<p class="muted pad">회원 목록을 불러오는 중…</p>';
+  let d; try { d = await api('/api/admin/users'); } catch (e) { app.innerHTML = `<p class="pad">${esc(e.message)}</p>`; return; }
+  if (location.hash !== '#members') return;
+  const us = d.users.slice().sort((a, b) => (b.seen || 0) - (a.seen || 0) || a.created - b.created);
+  const pwChip = p => p === 'temp' ? '<span class="chip warn">임시 비밀번호</span>' : p === 'none' ? '<span class="chip">비밀번호 없음</span>' : '';
+  const row = u => `<div class="mrow" data-u="${esc(u.uid)}" role="button" tabindex="0" aria-label="${esc(u.name)} 자세히">
+    <div class="mtop">${u.seen && Date.now() - u.seen < 5 * 60e3 ? '<i class="mon" title="지금 접속 중"></i>' : ''}<b class="mnm">${esc(u.name)}</b>${u.admin ? '<span class="chip k-admin">관리자</span>' : ''}${u.uid === d.me ? '<span class="chip">나</span>' : ''}${pwChip(u.pw)}</div>
+    <div class="mgrid"><span><em>가입</em>${fmtDay(u.created)}</span><span><em>마지막 접속</em>${fmtAgo(u.seen)}</span><span><em>로그인</em>${u.nlog}번${u.logins[0] ? ` · ${esc(u.logins[0].dev)}` : ''}</span><span><em>전적</em>${u.w}승 ${u.l}패${u.d ? ` ${u.d}무` : ''}</span></div></div>`;
+  app.innerHTML = `<div class="card-box membox"><div class="rech"><h2>회원 관리</h2><span class="chip k-admin">관리자</span><a class="btn sm" href="#settings">${ICON.gear}설정으로</a></div>
+    <p class="muted small" style="margin-top:0">모두 ${us.length}명 · 최근에 들어온 순서예요. 줄을 누르면 로그인 기록과 비밀번호 초기화가 나와요.</p>
+    <div class="mlist">${us.map(row).join('')}</div></div>`;
+  app.querySelectorAll('[data-u]').forEach(el => { const u = us.find(x => x.uid === el.dataset.u); el.onclick = () => openMember(u); el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openMember(u); } }; });
+}
+function openMember(u) {
+  const pwTxt = u.pw === 'set' ? '정해 둠' : u.pw === 'temp' ? '임시 비밀번호 (아직 안 바꿈)' : '없음 (예전 닉네임)';
+  openSheet(`<button class="x sm" data-close>닫기</button><h3>${esc(u.name)}${u.admin ? ' <span class="chip k-admin">관리자</span>' : ''}</h3>
+    <div class="mdet"><div><em>가입한 날</em><span>${fmtFull(u.created)}</span></div><div><em>마지막 접속</em><span>${fmtFull(u.seen)}${u.seen ? ` · ${fmtAgo(u.seen)}` : ''}</span></div>
+      <div><em>마지막 로그인</em><span>${fmtFull(u.last)}</span></div><div><em>로그인 횟수</em><span>${u.nlog}번</span></div>
+      <div><em>전적</em><span>${u.w}승 ${u.l}패${u.d ? ` ${u.d}무` : ''}</span></div><div><em>비밀번호</em><span>${pwTxt}</span></div></div>
+    <h4>최근 로그인</h4>${u.logins.length ? `<div class="mlog">${u.logins.map(l => `<div><span>${fmtFull(l.t)}</span><span class="muted">${esc(l.dev)}</span></div>`).join('')}</div>` : '<p class="small muted">기록이 없어요.</p>'}
+    <div class="row askr" style="margin-top:14px"><button class="bad" data-reset>${ICON.key}비밀번호 초기화</button></div>
+    <p class="small muted">초기화하면 임시 비밀번호가 나와요. 그 사람에게 알려 주면 들어올 때 새 비밀번호를 정하게 돼요. 그 사람이 로그인해 둔 기기는 모두 로그아웃돼요.</p>`, el => {
+    el.querySelector('[data-reset]').onclick = async () => {
+      if (!await ask(`${u.name} 님 비밀번호를 초기화할까요?`, '<p>지금 비밀번호는 더 쓸 수 없고, 임시 비밀번호가 새로 나와요.</p>', '초기화', 'bad')) return;
+      let r; try { r = await api(`/api/admin/users/${u.uid}/reset`, {}); } catch (e) { return toast(e.message); }
+      openSheet(`<button class="x sm" data-close>닫기</button><h3>${ICON.key}임시 비밀번호</h3><p>${esc(r.name)} 님에게 알려 주세요.</p>
+        <div class="tmpw"><code>${esc(r.temp)}</code><button class="sm" data-cp>${ICON.copy}복사</button></div>
+        <p class="small muted">이 비밀번호로 들어오면 바로 새 비밀번호를 정하게 돼요. 이 창을 닫으면 다시 볼 수 없어요(다시 초기화하면 새로 나와요).</p>`, e2 => {
+        e2.querySelector('[data-cp]').onclick = () => navigator.clipboard.writeText(r.temp).then(() => toast('복사했어요.'), () => toast('복사하지 못했어요. 글자를 보고 적어 주세요.'));
+      });
+      if (location.hash === '#members') renderMembers();
+    };
+  });
 }
 // ---------- 설정 (꾸미기는 내 계정에 저장, 소리는 이 기기에만) ----------
 const backPv = sk => sk.img ? `<div class="pc back bk-img" style="--bk-img:${imgUrl(sk.img)}"><div class="cb"></div></div>` : `<div class="pc back bk-${sk.preset}"><div class="cb"></div></div>`;
@@ -461,7 +577,8 @@ function settingsHtml(inSheet) {
       <p class="small muted">처음 들어온 사람과 '모임 기본'을 고른 사람에게 보이는 모양이에요. 각자 다른 것을 고른 사람은 그대로예요.</p>
       ${admin('back', '카드 뒷면')}${admin('mat', '매트')}
       ${dispHtml(true)}</section>` : ''}
-    ${inSheet ? '' : `<section class="set"><h3>내 정보</h3><div class="row"><span class="grow">${esc(ME.name)} 님으로 들어와 있어요.</span><button id="lo">로그아웃</button></div></section>`}`;
+    ${inSheet ? '' : `<section class="set"><h3>내 정보</h3><div class="row meinfo"><span class="grow">${esc(ME.name)} 님으로 들어와 있어요.</span><button class="sm" data-pw>${ICON.key}비밀번호 바꾸기</button><button class="sm" id="lo">로그아웃</button></div>
+      ${SK.admin ? `<div class="row meinfo adm"><a class="btn sm" href="#members">${ICON.users}회원 관리</a><span class="small muted grow">가입일·마지막 접속·로그인 기록 보기, 비밀번호 초기화 <span class="chip k-admin">관리자</span></span></div>` : ''}</section>`}`;
 }
 // 카드 표시: 빠른 설정(모임 기본·추천·카드만·영어로만·한글판만) + 항목별로 고르기. admin = 모임 기본값 고르기
 function dispHtml(admin) {
@@ -562,6 +679,7 @@ function bindSettings(root, onArt, inSheet) {
   root.querySelectorAll('[data-vol]').forEach(r => { r.oninput = () => { Sound.set(r.dataset.vol, r.value / 100); r.style.setProperty('--v', r.value + '%'); }; r.onchange = () => { if (r.dataset.vol === 'sfxVol') Sound.sfx('coin'); }; });
   const tr = root.querySelector('[data-try]');
   if (tr) tr.onclick = () => ['draw', 'place', 'attack', 'coin', 'turnMine'].forEach((n, i) => setTimeout(() => Sound.sfx(n), i * 450));
+  root.querySelectorAll('[data-pw]').forEach(b => b.onclick = openPwSheet);
   const lo = root.querySelector('#lo');
   if (lo) lo.onclick = async () => { await api('/api/logout', {}); ME = null; try { localStorage.removeItem('skin'); } catch {} setSkin({}); location.hash = '#login'; };
 }
@@ -728,7 +846,7 @@ function deckEditor(deck) {
       : view === 'all' ? `<div class="dgrp"><span class="dkst">${[...'PTE'].map(st => `<span>${kindName(st)} <b>${sum(per(st))}</b></span>`).join('')}</span>${vsw}</div>${grid(sorted)}` // 보기 단추는 첫 머리 줄 오른쪽 (줄을 따로 쓰지 않음)
       : [...'PTE'].filter(st => per(st).length).map((st, i) => { const xs = per(st); return `<div class="dgrp"><span>${kindName(st)} <small>${sum(xs)}장</small></span>${i === 0 ? vsw : ''}</div>${grid(xs)}`; }).join('');
     $('#lst').querySelectorAll('.dkc').forEach(el => el.onclick = () => cardSheet(el.dataset.id));
-    const a2 = $('#add2'); if (a2) a2.onclick = openAdd; const im = $('#imp'); if (im) im.onclick = openImp;
+    const a2 = $('#add2'); if (a2) a2.onclick = () => openAdd(); const im = $('#imp'); if (im) im.onclick = openImp;
     $('#lst').querySelectorAll('.vsw [data-v]').forEach(b => b.onclick = () => { view = b.dataset.v; try { localStorage.setItem('dkView', view); } catch {} drawList(); });
   };
   const addN = (id, d) => { let x = list.find(y => y.id === id); if (!x && d > 0) list.push(x = { id, n: 0 }); if (x) { x.n += d; if (x.n <= 0) list = list.filter(y => y !== x); } drawList(); };
@@ -741,20 +859,47 @@ function deckEditor(deck) {
   };
   // 카드 추가 창: 위는 한 줄(검색·장수·닫기), 종류는 옆 줄. 카드를 누르면 1장, ⓘ는 자세히 보기. 같은 카드는 한 칸(그림 여러 개면 '그림 N')
   const artPick = {};
-  const openAdd = () => {
+  const openAdd = (start) => {
     let q = '', filt = 'all';
     try { q = localStorage.getItem('addQ') || ''; filt = localStorage.getItem('addTab') || 'all'; } catch {}
     if (!['all', 'P', 'T', 'E'].includes(filt)) filt = 'all';
+    if (start === 'L') filt = 'L';
     const TABS = [['all', 'deck', '전체'], ['P', 'battle', '포켓몬'], ['T', 'user', '트레이너스'], ['E', 'bolt', '에너지']];
     openSheet(`<div class="adds"><div class="addh"><h3>카드 추가</h3><span class="chip" id="acnt"></span><label class="addq">${ICON.search}<input id="q" placeholder="${innerWidth < 480 ? '카드 이름 검색' : '이름 검색 (피카츄, ㅍㅋㅊ, vzc)'}" autocomplete="off" value="${esc(q)}"></label><button class="sm ib" data-close aria-label="닫기">${ICON.x}</button></div>
-      <nav class="addt" aria-label="카드 종류">${TABS.map(([k, ic, l]) => `<button type="button" class="lgt ${k === filt ? 'on' : ''}" data-f="${k}">${ICON[ic]}<span>${l}</span></button>`).join('')}</nav>
-      <div class="addr"><div id="res" class="dkgrid add sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}"></div></div><div class="addi" hidden></div></div>`, el => {
+      <nav class="addt" aria-label="카드 종류">${TABS.map(([k, ic, l]) => `<button type="button" class="lgt ${k === filt ? 'on' : ''}" data-f="${k}">${ICON[ic]}<span>${l}</span></button>`).join('')}<i class="addsep2" aria-hidden="true"></i><button type="button" class="lgt lgp ${filt === 'L' ? 'on' : ''}" data-f="L">${ICON.paste}<span>리스트 <span class="nb">붙여 넣기</span></span></button></nav>
+      <div class="addr"><div id="res" class="dkgrid add sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}"></div><div class="pastep" hidden></div></div><div class="addi" hidden></div></div>`, el => {
       el.classList.add('wide', 'addsheet');
       const repOf = c => { const ps = printsOf(c), inDeck = ps.find(p => list.some(x => x.id === p.id)); return IDX.byId[artPick[fkey(c)]] || inDeck || ps[0]; };
       const nIn = c => { const ids = new Set(printsOf(c).map(p => p.id)); return list.filter(x => ids.has(x.id) || fkey(IDX.byId[x.id]) === fkey(c)).reduce((a, b) => a + b.n, 0); };
       const minusId = c => { const r = repOf(c); if (list.some(x => x.id === r.id)) return r.id; const k = fkey(c); return list.find(x => fkey(IDX.byId[x.id]) === k)?.id; };
+      const pp = el.querySelector('.pastep'), res = el.querySelector('#res');
+      const pasteDraw = () => { // 리스트 붙여 넣기: 붙여 넣는 대로 찾은 장수·못 찾은 줄을 바로 보여 주고, 덱에 더하거나 통째로 바꿈
+        const has = list.length > 0;
+        if (!pp.firstChild) {
+          pp.innerHTML = `<p class="small muted pnote">PTCGL이나 이 사이트에서 내보낸 덱 리스트(영어·한국어)를 붙여 넣으세요. 한 줄에 ‘장수 이름 세트 번호’예요.<span class="pn2"> <b>더하기</b>는 지금 덱에 보태고, <b>바꾸기</b>는 지금 덱을 이 리스트로 바꿔요.</span></p>
+            <textarea id="paste" spellcheck="false" autocomplete="off" placeholder="4 Pikachu ex SVP 106&#10;4 피카츄 ex SV8 033&#10;…"></textarea>
+            <div class="pres" aria-live="polite"></div><div class="acts bal pacts"></div>`;
+          const ta = pp.querySelector('#paste'); ta.oninput = () => pasteDraw();
+        }
+        const ta = pp.querySelector('#paste'), r = parseDeckList(ta.value, IDX), tot = r.list.reduce((a, b) => a + b.n, 0);
+        pp.querySelector('.pn2').hidden = !has;
+        pp.querySelector('.pres').innerHTML = !ta.value.trim() ? '' : `<span class="chip ${r.bad.length ? 'warn' : 'ok'}">찾은 카드 ${tot}장 · ${r.list.length}종</span>${r.bad.length ? `<div class="pbad"><b>못 찾은 줄 ${r.bad.length}개</b><ul>${r.bad.slice(0, 12).map(x => `<li>${esc(x)}</li>`).join('')}${r.bad.length > 12 ? `<li>… ${r.bad.length - 12}줄 더</li>` : ''}</ul></div>` : ''}`;
+        const acts = pp.querySelector('.pacts'), btns = has ? [['add', 'plus', '더하기', 'primary'], ['rep', 'paste', '바꾸기', '']] : [['rep', 'plus', '덱에 넣기', 'primary']];
+        acts.style.setProperty('--cols', btns.length);
+        acts.innerHTML = btns.map(([k, ic, l, cls]) => `<button type="button" class="${cls}" data-pgo="${k}" ${tot ? '' : 'disabled'}>${ICON[ic]}${l}</button>`).join('');
+        acts.querySelectorAll('[data-pgo]').forEach(b => b.onclick = () => {
+          const rr = parseDeckList(ta.value, IDX), n = rr.list.reduce((a, x) => a + x.n, 0); if (!n) return;
+          if (b.dataset.pgo === 'rep') list = rr.list.map(x => ({ ...x }));
+          else for (const x of rr.list) { const y = list.find(z => z.id === x.id); if (y) y.n += x.n; else list.push({ ...x }); }
+          drawList(); el.querySelector('#acnt').textContent = count() + ' / 60'; Sound.sfx('place');
+          if (rr.bad.length) { ta.value = rr.bad.join('\n'); pasteDraw(); toast(`${n}장 넣었어요. 못 찾은 줄만 남겨 뒀어요.`, 3200); }
+          else { closeSheet(); toast(`${n}장 넣었어요.`); }
+        });
+      };
       const draw = () => {
         el.querySelector('#acnt').textContent = count() + ' / 60';
+        const L = filt === 'L'; res.hidden = L; pp.hidden = !L; el.querySelector('.addq').classList.toggle('dim', L);
+        if (L) { pasteDraw(); return; }
         let items = ALL.filter(c => filt === 'all' || c.st === filt);
         if (q.trim()) { const m = KS.matcher(q); items = items.map(c => [m(KS.norm(cnameKo(c)), KS.norm(c.n), c._sc ||= {}), c]).filter(h => h[0] >= 0).sort((a, b) => a[0] - b[0]).map(h => h[1]); }
         else items = items.filter(c => c.rm >= 'I' || c.st === 'E').reverse().sort((a, b) => (a.kro ? 1 : 0) - (b.kro ? 1 : 0)); // 최신 카드부터, 한국판 전용 카드는 뒤로
@@ -780,14 +925,13 @@ function deckEditor(deck) {
         info.querySelectorAll('[data-art]').forEach(b => b.onclick = () => { artPick[fkey(c)] = b.dataset.art; showInfo(c, false); });
         info.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { if (+b.dataset.a > 0) addN(repOf(c).id, 1); else { const id = minusId(c); if (id) addN(id, -1); } Sound.sfx('place'); showInfo(c, false); });
       };
-      const qi = el.querySelector('#q'); qi.oninput = () => { q = qi.value; try { localStorage.setItem('addQ', q); } catch {} draw(); };
-      el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filt = b.dataset.f; try { localStorage.setItem('addTab', filt); } catch {} el.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x === b)); draw(); });
-      draw(); if (matchMedia('(hover: hover)').matches) { qi.focus(); qi.select(); }
+      const setF = f => { filt = f; if (f !== 'L') try { localStorage.setItem('addTab', filt); } catch {} el.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x.dataset.f === f)); draw(); };
+      const qi = el.querySelector('#q'); qi.oninput = () => { q = qi.value; try { localStorage.setItem('addQ', q); } catch {} if (filt === 'L') { let f = 'all'; try { f = localStorage.getItem('addTab') || 'all'; } catch {} setF(['all', 'P', 'T', 'E'].includes(f) ? f : 'all'); } else draw(); }; // 붙여 넣기 중에 검색하면 카드 목록으로
+      el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { setF(b.dataset.f); if (b.dataset.f === 'L') pp.querySelector('#paste')?.focus(); });
+      draw(); if (filt === 'L') pp.querySelector('#paste')?.focus(); else if (matchMedia('(hover: hover)').matches) { qi.focus(); qi.select(); }
     });
   };
-  const openImp = () => openSheet(`<button class="x sm" data-close>닫기</button><h3>리스트 붙여 넣기</h3><p class="small muted">PTCGL이나 이 사이트에서 내보낸 덱 리스트(영어·한국어)를 붙여 넣으면 지금 리스트를 바꿔요.</p><textarea id="paste" placeholder="4 Pikachu ex SVP 106&#10;..."></textarea><div class="row" style="margin-top:8px"><button id="go" class="primary">불러오기</button></div><div id="bad" class="small"></div>`, el => {
-    el.querySelector('#go').onclick = () => { const r = parseDeckList(el.querySelector('#paste').value, IDX); list = r.list; drawList(); if (r.bad.length) el.querySelector('#bad').innerHTML = '못 찾은 줄: ' + r.bad.map(esc).join(' · '); else { closeSheet(); toast('리스트를 모두 불러왔어요.'); } };
-  });
+  const openImp = () => openAdd('L'); // 리스트 붙여 넣기는 카드 추가 창 안에
   // 리스트 내보내기: PTCGL(영어) / 한국어 글. 복사·파일 저장·공유 (고른 형식은 기억)
   const openExp = () => {
     let fmt = 'ptcgl'; try { if (localStorage.getItem('dkExp') === 'ko') fmt = 'ko'; } catch {}
@@ -842,32 +986,46 @@ function deckEditor(deck) {
     GUARD = null; go('#decks'); return true;
   };
   $('#back').onclick = leave;
-  $('#add').onclick = openAdd;
+  $('#add').onclick = () => openAdd();
   $('#cnt').onclick = () => { const ch = checkDeck(list, IDX); openSheet(`<button class="x sm" data-close>닫기</button><h3>덱 규칙</h3>${ch.ok ? '<p><span class="chip ok">덱 규칙 통과</span> 60장, 같은 이름 4장까지, 기본 포켓몬 1장 이상을 모두 지켰어요.</p>' : `<ul class="probs">${ch.problems.map(p => `<li>${ICON.warn}<span>${esc(p)}</span></li>`).join('')}</ul>`}`); };
-  $('#more').onclick = async () => { const k = await pick('덱 더 보기', [{ label: `${ICON.paste}리스트 붙여 넣기`, value: 'imp' }, ...(list.length ? [{ label: `${ICON.out}리스트 내보내기`, value: 'exp' }] : []), ...(deck.id ? [{ label: '덱 지우기', value: 'del', cls: 'bad' }] : [])]);
-    if (k === 'imp') setTimeout(openImp, 40);
+  $('#more').onclick = async () => { const k = await pick('덱 더 보기', [{ label: `${ICON.out}리스트 내보내기`, value: 'exp' }, ...(deck.id ? [{ label: `${ICON.x}덱 지우기`, value: 'del', cls: 'bad' }] : [])]); // 붙여 넣기는 카드 추가 창 안으로 옮김
+    if (k === 'exp' && !list.length) return toast('덱에 카드가 없어요.');
     if (k === 'exp') setTimeout(openExp, 40);
     if (k === 'del' && await ask('덱을 지울까요?', '<p>지우면 되돌릴 수 없어요.</p>', '지우기', 'bad')) { await api('/api/decks/' + deck.id, null, 'DELETE'); GUARD = null; go('#decks'); } };
   $('#save').onclick = save;
   guardPage('한 번 더 누르면 덱 목록으로 가요', () => dirty() ? leave : null);
   drawList();
 }
-function cardInfoHtml(c, opt = {}) { // 카드를 눌렀을 때: 글자 + 작은 카드 / 카드만 크게 (표시 설정). 그림이 이미 고화질이라 '크게 보기'는 없음
+function cardInfoHtml(c) { // 카드를 눌렀을 때: 글자 + 작은 카드 / 카드만 크게 (표시 설정). 그림이 이미 고화질이라 '크게 보기'는 없음
   if (!c) return '<p>카드 정보가 없어요.</p>';
+  const P = cardInfoParts(c);
+  if (P.only) return `<div class="cardinfo only">${P.pic}</div>`;
+  return `<div class="cardinfo">${P.pic}<div class="txt">${P.head}${P.body}</div></div>`;
+}
+// 단추가 있는 카드 창: 넓으면 [그림 | 이름 · 단추 · 설명], 세로 폰이면 [작은 그림 + 이름] 아래 단추, 그 아래 설명. 단추는 굴리지 않아도 바로 보임
+function cardActHtml(c, acts, o = {}) {
+  if (!c) return acts;
+  const P = cardInfoParts(c), tall = innerWidth <= 640 && innerHeight > innerWidth;
+  const pw = tall ? 0 : Math.round(Math.min(280, Math.max(150, (innerHeight - 70) * .716)));
+  return `<div class="cact${P.only ? ' only' : ''}${tall ? ' tall' : ''}" style="${pw ? `--pw:${pw}px` : ''}">${P.pic ? `<div class="cpicw" ${o.cid ? `data-ci="${esc(o.cid)}" role="button" tabindex="0" aria-label="카드 크게 보기"` : ''}>${P.pic}</div>` : ''}
+    <div class="chead">${P.only ? P.head.split('</h3>')[0] + '</h3>' : P.head}${o.head || ''}</div><div class="cacts">${acts}</div><div class="cbody">${o.top || ''}${P.only ? '' : P.body}</div></div>`;
+}
+const cactW = () => innerWidth <= 640 && innerHeight > innerWidth ? innerWidth - 40 : Math.min(innerWidth - 24, 920) - Math.round(Math.min(280, Math.max(150, (innerHeight - 70) * .716))) - 60; // 단추 칸 너비 (줄 나누기 계산용)
+function cardInfoParts(c) {
   const en = D.dtext === 'en' && !c.kro, alt = s2 => D.dtext === 'both' && s2 ? `<small class="alt">${esc(s2)}</small>` : '';
   const pic = picMode(c, D.dimg) ? `<div class="big"><span class="cpic">${picHtml(c, D.dimg, D.ddet === 'card')}</span></div>` : '';
-  if (D.ddet === 'card' && pic) return `<div class="cardinfo only">${pic}</div>`;
   const cost = cs => (cs || []).map(t => typeIcon(t, 'ecost', `title="${TYPE_KO[t] || t}"`)).join('');
   const L = en ? { ab: 'Ability', w: 'Weakness', r: 'Resistance', rt: 'Retreat', reg: 'Regulation' } : { ab: '특성', w: '약점', r: '저항력', rt: '후퇴', reg: '레귤레이션' };
   const tyName = t => en ? t : TYPE_KO[t] || t;
   const setLine = en || !c.kset ? `${c.set || ''} ${cardNo(c) || ''}` : `${c.kset} ${c.kno || ''}`;
-  return `<div class="cardinfo">${pic}<div class="txt"><h3>${esc(en ? c.n : cnameKo(c))}${alt(c.kro ? '' : c.n !== cnameKo(c) ? c.n : '')}</h3><div class="small muted">${c.kro ? '한국판 카드 · ' : ''}${esc(setLine)} · ${L.reg} ${esc(c.rm || '')}${c.kra && !en ? ` · ${esc(c.kra)}` : ''}</div>
-    <div class="row" style="margin:4px 0">${(c.sub || []).map(x => `<span class="chip">${esc(x)}</span>`).join('')}${c.hp ? `<span class="chip">HP ${c.hp}</span>` : ''}${(c.ty || []).map(t => `<span class="chip">${esc(tyName(t))}</span>`).join('')}</div>
-    ${(c.ab || []).map((a, i) => { const k = en ? a : (c.kab || [])[i] || a; return `<div class="atk"><b>${L.ab} ${esc(k.n)}</b>${alt(en ? '' : a.n !== k.n ? a.n : '')}<div>${esc(k.t)}</div></div>`; }).join('')}
+  const head = `<h3>${esc(en ? c.n : cnameKo(c))}${alt(c.kro ? '' : c.n !== cnameKo(c) ? c.n : '')}</h3><div class="small muted">${c.kro ? '한국판 카드 · ' : ''}${esc(setLine)} · ${L.reg} ${esc(c.rm || '')}${c.kra && !en ? ` · ${esc(c.kra)}` : ''}</div>
+    <div class="row" style="margin:4px 0">${(c.sub || []).map(x => `<span class="chip">${esc(x)}</span>`).join('')}${c.hp ? `<span class="chip">HP ${c.hp}</span>` : ''}${(c.ty || []).map(t => `<span class="chip">${esc(tyName(t))}</span>`).join('')}</div>`;
+  const body = `${(c.ab || []).map((a, i) => { const k = en ? a : (c.kab || [])[i] || a; return `<div class="atk"><b>${L.ab} ${esc(k.n)}</b>${alt(en ? '' : a.n !== k.n ? a.n : '')}<div>${esc(k.t)}</div></div>`; }).join('')}
     ${(c.at || []).map((a, i) => { const k = en ? a : (c.kat || [])[i] || a; return `<div class="atk"><b>${cost(a.c)} ${esc(k.n)} ${esc(a.d || '')}</b>${alt(en ? '' : a.n !== k.n ? a.n : '')}<div>${esc(k.t || '')}</div></div>`; }).join('')}
     ${((en ? c.r : c.kr || c.r) || []).map(t => `<div class="small muted atk">${esc(t)}</div>`).join('')}
     ${c.st === 'P' ? `<div class="small atk">${L.w} ${(c.wk || []).map(tyName).join(', ') || '—'} · ${L.r} ${(c.rs || []).map(r => tyName(r[0]) + ' ' + r[1]).join(', ') || '—'} · ${L.rt} ${c.rt || 0}</div>` : ''}
-    ${c.kn || en ? '' : '<div class="small muted atk">이 카드는 아직 한글 자료와 연결되지 않아 영문으로 보여요.</div>'}</div></div>`;
+    ${c.kn || en ? '' : '<div class="small muted atk">이 카드는 아직 한글 자료와 연결되지 않아 영문으로 보여요.</div>'}`;
+  return { pic, head, body, only: !!(D.ddet === 'card' && pic) };
 }
 
 // ---------- 대전 ----------
@@ -917,9 +1075,14 @@ function renderGame(id) {
   const sendVis = () => { try { G.ws.readyState === 1 && G.ws.send(JSON.stringify({ t: 'vis', v: document.hidden ? 0 : 1 })); } catch {} };
   connect();
   document.addEventListener('visibilitychange', sendVis);
+  const dockOut = e => { // 판정 창 바깥을 누르면 창만 접음 (누른 곳의 동작은 하지 않음). 손패는 그대로 눌림 (준비 때 '손패를 눌러 놓아 주세요' 안내가 떠 있으므로)
+    const d = document.querySelector('.arena .dock'); if (!d || !$('#sheet').hidden || e.target.closest('.dock, .dockfab, #sheet, #toast, .handbar')) return;
+    e.preventDefault(); e.stopPropagation(); G.ui.dockMode = 'shut'; draw([]);
+  };
+  app.addEventListener('click', dockOut, true);
   guardPage('한 번 더 누르면 대전에서 나가요. 대전은 그대로 이어져요');
   const ping = setInterval(() => { try { G.ws.readyState === 1 && G.ws.send('{"t":"ping"}'); } catch {} }, 25000);
-  leaveGame = () => { closed = true; clearInterval(ping); document.removeEventListener('visibilitychange', sendVis); if (G.rw) { clearTimeout(G.rw.timer); G.rw = null; } try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
+  leaveGame = () => { closed = true; clearInterval(ping); document.removeEventListener('visibilitychange', sendVis); app.removeEventListener('click', dockOut, true); if (G.rw) { clearTimeout(G.rw.timer); G.rw = null; } try { G.ws.close(); } catch {} document.body.classList.remove('in-game'); };
 }
 function send(a) {
   return new Promise(res => {
@@ -1042,11 +1205,11 @@ function rbarHtml(readOnly) { // 오른쪽 세로 막대: 위 사람 남은 사�
   const v = G.view, bs = bottomSeat(), os = 1 - bs;
   const cur = v.phase === 'play' ? (v.current === bs ? 'me' : 'opp') : '';
   const U = v.phase === 'play' ? v.p[v.current].used : null; // 세로 화면: 이번 차례에 쓴 것(에너지·서포트·후퇴·기술)을 막대 가운데에 작게
-  const cu = U ? `<span class="cuses" data-uses role="button" tabindex="0" aria-label="이번 차례에 한 것 보기" title="이번 차례에 한 것 (누르면 설명)">${USES.map(([k, ic, l]) => `<i class="${U[k] ? 'done' : ''}" title="${l} ${U[k] ? '(썼어요)' : '(아직)'}">${ICON[ic]}</i>`).join('')}</span>` : '';
+  const cu = U ? `<span class="cuses" title="이번 차례에 한 것 (누르면 설명)">${USES.map(([k, ic, l]) => `<i class="${U[k] ? 'done' : ''}" title="${l} ${U[k] ? '(썼어요)' : '(아직)'}">${ICON[ic]}</i>`).join('')}</span>` : '';
   const mid = v.phase === 'setup' ? '<b>준비</b>' : v.phase === 'over' ? '<b>끝</b>' : `<small>${v.turn}번째</small>${v.deadline ? `<b title="${fmtLeft(v.deadline - Date.now())}">${fmtShort(v.deadline - Date.now())}</b>` : '<b>차례</b>'}${cu}`;
   return `<div class="rbar">
     <div class="pzc opp" title="${esc(v.p[os].name)} 님 남은 사이드"><b>${v.p[os].prizesN}</b></div>
-    <div class="clock ${cur}" title="${v.deadline ? '이번 결정까지 남은 시간' : ''}">${mid}</div>
+    <div class="clock ${cur}" title="${v.deadline ? '이번 결정까지 남은 시간' : ''}"${U ? ' data-uses role="button" tabindex="0" aria-label="이번 차례에 한 것 보기"' : ''}>${mid}</div>
     <div class="pzc me" title="${esc(v.p[bs].name)} 님 남은 사이드"><b>${v.p[bs].prizesN}</b></div>
     ${readOnly ? '' : '<span class="specs" id="specs"></span>'}</div>`;
 }
@@ -1361,44 +1524,42 @@ function openCoin() {
   });
 }
 // 잠깐! 멈추고 지적하기: 상대가 최근에 한 행동 중 잘못된 것을 고르고(없어도 됨) 이유를 적으면 판이 멈춤
-async function openStop() { // 기록 화면과 같은 모양으로 두 사람의 행동을 모두 보여 주고, 잘못된 행동 줄을 눌러 고름. 고른 것은 기록 안에서만 표시
-  const v = G.view, me = meSeat(); if (me == null || v.phase === 'over') return;
-  const op = 1 - me, txtOf = {};
+function stopOk() { const v = G.view; return !!v && meSeat() != null && v.phase === 'play' && !v.stop; }
+function openStop() { if (!stopOk()) return; openLog('stop'); } // 잠깐!: 기록 화면의 '잠깐!' 칸으로 (기록을 두 번 보여 주지 않음)
+function stopParts() { // 잠깐! 칸: 두 사람의 행동을 기록과 같은 모양으로, 잘못된 행동 줄을 눌러 고름. 처음엔 상대의 마지막 행동
+  const me = meSeat(), op = 1 - me, txtOf = {};
   const can = l => l.k != null && l.k >= 0 && !l.chat && !l.rw && !/^(⏸|▶|↺)/.test(l.txt || '');
-  let pick = null; for (const l of G.lines) if (can(l) && l.who === op) pick = l.k; // 처음엔 상대의 마지막 행동
+  let pick = null; for (const l of G.lines) if (can(l) && l.who === op) pick = l.k;
   const html = logBlocks(G.lines, (l, o, headAttr) => {
     if (headAttr) return '';
     if (l.chat) return `<div class="ln chat ${o.cls}">${esc(l.txt)}</div>`;
     const ok = can(l); if (ok) (txtOf[l.k] ||= []).push(o.txt);
     return `<div class="ln ${o.cls} ${l.gid ? 'j' : ''} ${l.rw ? 'rw' : ''}" ${ok ? `data-pk="${l.k}" role="button" tabindex="0"` : ''}>${ok ? '<i class="pkr" aria-hidden="true"></i>' : ''}<span>${esc(o.txt)}${l.own ? ` <span class="own">(나만 보임: ${esc(l.own)})</span>` : ''}</span></div>`;
-  });
-  const none = `<div class="ln nopk" data-pk="none" role="button" tabindex="0"><i class="pkr" aria-hidden="true"></i><span>행동은 고르지 않고 이유만 알리기</span></div>`; // '고르지 않기'도 기록 맨 끝의 한 줄로
-  openSheet(`<button class="x sm" data-close>닫기</button><h3>잠깐! 멈추고 지적하기</h3>
-    <p class="small muted stoph">잘못된 행동을 기록에서 눌러 고르고 이유를 적으면 판이 멈춰요. 상대가 되돌리기·직접 고치기·이대로 계속 중에서 골라요.</p>
-    <div class="stlogw"><div class="log stoplog">${html}${none}</div><button type="button" class="stjump" hidden></button></div>
-    <div class="stgo"><input name="text" maxlength="200" aria-label="무엇이 잘못됐나요?" placeholder="무엇이 잘못됐나요? 예: 에너지를 두 장 붙였어요"><div class="stbtn"><button class="bad" data-stopgo>${ICON.pause}멈추고 지적하기</button><button data-close>취소</button></div></div>`, el => {
-    el.classList.add('stopsheet');
-    const lg = el.querySelector('.stoplog'), jump = el.querySelector('.stjump');
-    const what = k => (txtOf[k] || []).join(' · ');
-    const cur = () => lg.querySelector('.ln.pick');
-    const where = () => { // 고른 줄이 보이는 칸 밖이면 위나 아래 가장자리에 '고른 행동' 단추 (누르면 그 줄로)
-      const r = cur(); if (!r) { jump.hidden = true; return; }
-      const a = r.getBoundingClientRect(), b = lg.getBoundingClientRect(), up = a.bottom < b.top + 6, down = a.top > b.bottom - 6;
-      jump.hidden = !(up || down); if (jump.hidden) return;
-      jump.classList.toggle('up', up); jump.classList.toggle('down', down);
-      jump.innerHTML = `${up ? ICON.up : ICON.down}<span>${pick == null ? '고르지 않음' : '고른 행동'}</span>`;
-    };
-    const mark = () => {
-      lg.querySelectorAll('[data-pk]').forEach(r => { const on = r.dataset.pk === 'none' ? pick == null : +r.dataset.pk === pick; r.classList.toggle('pick', on); r.setAttribute('aria-pressed', on); });
-      where();
-    };
-    lg.querySelectorAll('[data-pk]').forEach(r => { const f = () => { pick = r.dataset.pk === 'none' ? null : +r.dataset.pk; mark(); }; r.onclick = f; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f(); } }; });
-    lg.addEventListener('scroll', where, { passive: true });
-    jump.onclick = () => { lg.scrollTo({ top: lg.scrollTop + cur().getBoundingClientRect().top - lg.getBoundingClientRect().top - (lg.clientHeight - cur().offsetHeight) / 2, behavior: 'smooth' }); };
-    mark();
-    requestAnimationFrame(() => { scrollInside(lg, cur()); where(); }); // 창 전체는 그대로, 기록 칸 안에서만 굴림
-    el.querySelector('[data-stopgo]').onclick = () => { const text = el.querySelector('[name=text]').value; closeSheet(); send({ type: 'stop', text, to: pick ?? undefined, what: pick != null ? what(pick).slice(0, 140) : undefined }); };
-  });
+  }) + `<div class="ln nopk" data-pk="none" role="button" tabindex="0"><i class="pkr" aria-hidden="true"></i><span>행동은 고르지 않고 이유만 알리기</span></div>`; // '고르지 않기'도 기록 맨 끝의 한 줄로
+  return { html, txtOf, pick };
+}
+function bindStop(el, st) {
+  let pick = st.pick;
+  const lg = el.querySelector('.stoplog'), jump = el.querySelector('.stjump');
+  const what = k => (st.txtOf[k] || []).join(' · ');
+  const cur = () => lg.querySelector('.ln.pick');
+  const where = () => { // 고른 줄이 보이는 칸 밖이면 위나 아래 가장자리에 '고른 행동' 단추 (누르면 그 줄로)
+    const r = cur(); if (!r) { jump.hidden = true; return; }
+    const a = r.getBoundingClientRect(), b = lg.getBoundingClientRect(), up = a.bottom < b.top + 6, down = a.top > b.bottom - 6;
+    jump.hidden = !(up || down); if (jump.hidden) return;
+    jump.classList.toggle('up', up); jump.classList.toggle('down', down);
+    jump.innerHTML = `${up ? ICON.up : ICON.down}<span>${pick == null ? '고르지 않음' : '고른 행동'}</span>`;
+  };
+  const mark = () => {
+    lg.querySelectorAll('[data-pk]').forEach(r => { const on = r.dataset.pk === 'none' ? pick == null : +r.dataset.pk === pick; r.classList.toggle('pick', on); r.setAttribute('aria-pressed', on); });
+    where();
+  };
+  lg.querySelectorAll('[data-pk]').forEach(r => { const f = () => { pick = r.dataset.pk === 'none' ? null : +r.dataset.pk; mark(); }; r.onclick = f; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f(); } }; });
+  lg.addEventListener('scroll', where, { passive: true });
+  jump.onclick = () => { lg.scrollTo({ top: lg.scrollTop + cur().getBoundingClientRect().top - lg.getBoundingClientRect().top - (lg.clientHeight - cur().offsetHeight) / 2, behavior: 'smooth' }); };
+  mark();
+  requestAnimationFrame(() => { scrollInside(lg, cur()); where(); }); // 창 전체는 그대로, 기록 칸 안에서만 굴림
+  el.querySelector('[data-stopgo]').onclick = () => { const text = el.querySelector('[name=text]').value; G.ui.tab = 'log'; closeSheet(); send({ type: 'stop', text, to: pick ?? undefined, what: pick != null ? what(pick).slice(0, 140) : undefined }); };
 }
 function openEffect() { // 효과 쓰기: 글자 대신 어떤 카드의 효과인지 눌러서 고름
   if (meSeat() == null) return;
@@ -1413,30 +1574,36 @@ function openEffect() { // 효과 쓰기: 글자 대신 어떤 카드의 효과�
   });
 }
 // 기록·채팅 창: 탭·리플레이·입력칸은 옆 줄에, 기록은 창 높이 전부를 씀
-function openLog() {
-  openSheet('<div class="lgs"></div>', box => { box.classList.add('wide', 'logsheet'); drawSide(box.querySelector('.lgs')); });
+function openLog(tab) { // 기록 화면: 기록·채팅 / 관전자 / 잠깐!(선수, 진행 중일 때) — 잠깐!도 같은 화면의 칸
+  G.ui.tab = tab || (G.ui.tab === 'spec' ? 'spec' : 'log');
+  openSheet('<div class="lgs"></div>', box => { box.classList.add('wide', 'logsheet'); drawSide(box.querySelector('.lgs')); }, () => { if (G.ui.tab === 'stop') G.ui.tab = 'log'; });
 }
 function drawSide(target) {
   const el = target || document.querySelector('#sheet .lgs'); if (!el || !G.view) return;
-  const tab = G.ui.tab === 'spec' ? 'spec' : 'log', me = meSeat(), canType = tab === 'log' ? me != null : me == null;
+  const sOk = stopOk(), tab = G.ui.tab === 'spec' ? 'spec' : G.ui.tab === 'stop' && sOk ? 'stop' : 'log', me = meSeat(), canType = tab === 'log' ? me != null : tab === 'spec' ? me == null : false;
+  if (tab === 'stop' && el.dataset.tab === 'stop') return; // 고르는 중에는 다시 그리지 않음 (고른 줄·적던 글 그대로)
   const logInner = () => tab === 'log' ? logHtml() || '<p class="muted">아직 기록이 없어요.</p>'
     : (G.specChat || []).map(m => `<div class="ln chat"><b>${esc(m.name)}</b> ${esc(m.text)}</div>`).join('') || '<p class="muted">관전자 채팅이 없어요.</p>';
   const lg0 = el.querySelector('.log');
-  if (lg0 && el.dataset.tab === tab) { // 새 줄만 다시 그림 (입력 중인 글자는 그대로)
+  if (lg0 && el.dataset.tab === tab && el.dataset.sok === String(sOk)) { // 새 줄만 다시 그림 (입력 중인 글자는 그대로)
     const atEnd = lg0.scrollHeight - lg0.scrollTop - lg0.clientHeight < 40;
     lg0.innerHTML = logInner(); bindLog(lg0); if (atEnd) lg0.scrollTop = lg0.scrollHeight; return;
   }
-  el.dataset.tab = tab;
-  const nSpec = (G.specChat || []).length;
+  el.dataset.tab = tab; el.dataset.sok = String(sOk);
+  const nSpec = (G.specChat || []).length, st = tab === 'stop' ? stopParts() : null;
   el.innerHTML = `<nav class="lgrail" aria-label="기록 종류">
-      <button type="button" class="lgt x" data-close aria-label="닫기">${ICON.x}<span>닫기</span></button>
+      <button type="button" class="lgx" data-close aria-label="닫기">${ICON.x}</button>
       <button type="button" class="lgt ${tab === 'log' ? 'on' : ''}" data-st="log">${ICON.chat}<span>기록·채팅</span></button>
       <button type="button" class="lgt ${tab === 'spec' ? 'on' : ''}" data-st="spec">${ICON.eye}<span>관전자${nSpec ? ` ${nSpec}` : ''}</span></button>
+      ${sOk ? `<button type="button" class="lgt lgstop ${tab === 'stop' ? 'on' : ''}" data-st="stop">${ICON.pause}<span>잠깐!</span></button>` : ''}
       ${(G.view.n || 0) > 0 ? `<button type="button" class="lgt vwgo" data-vwgo>${ICON.rewind}<span>리플레이</span></button>` : ''}
     </nav>
-    <div class="log">${logInner()}</div>
-    ${canType ? `<form class="lgin"><textarea name="t" rows="2" maxlength="${tab === 'log' ? 300 : 200}" placeholder="${tab === 'log' ? '채팅 (기록에 남아요)' : '응원 한마디'}" enterkeyhint="send">${esc(G.ui.draft || '')}</textarea><button class="blue sm" aria-label="보내기">${ICON.next}<span>보내기</span></button></form>` : ''}`;
+    ${st ? `<div class="stlogw"><p class="small muted stoph">잘못된 행동을 눌러 고르고 이유를 적으면 판이 멈춰요. 상대가 되돌리기·직접 고치기·이대로 계속 중에서 골라요.</p><div class="log stoplog">${st.html}</div><button type="button" class="stjump" hidden></button></div>
+      <div class="lgin stgo"><input name="text" maxlength="200" aria-label="무엇이 잘못됐나요?" placeholder="무엇이 잘못됐나요? 예: 에너지를 두 장 붙였어요" autocomplete="off"><button class="bad" data-stopgo>${ICON.pause}<span>멈추고 지적하기</span></button></div>`
+    : `<div class="log">${logInner()}</div>
+    ${canType ? `<form class="lgin"><textarea name="t" rows="2" maxlength="${tab === 'log' ? 300 : 200}" placeholder="${tab === 'log' ? '채팅 (기록에 남아요)' : '응원 한마디'}" enterkeyhint="send">${esc(G.ui.draft || '')}</textarea><button class="blue" aria-label="보내기">${ICON.next}<span>보내기</span></button></form>` : ''}`}`;
   el.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { G.ui.tab = b.dataset.st; drawSide(el); });
+  if (st) { bindStop(el, st); const vg0 = el.querySelector('[data-vwgo]'); if (vg0) vg0.onclick = () => { G.ui.tab = 'log'; closeSheet(); setTimeout(() => startRewatch(), 0); }; return; }
   const vg = el.querySelector('[data-vwgo]'); if (vg) vg.onclick = () => { closeSheet(); setTimeout(() => startRewatch(), 0); };
   const lg = el.querySelector('.log'); bindLog(lg); lg.scrollTop = lg.scrollHeight;
   const f = el.querySelector('.lgin'); if (!f) return;
@@ -1505,7 +1672,8 @@ async function onHandCard(iid) {
     else if (c.st === 'T') opts.push({ label: '사용하기', value: 'play', cls: 'primary' });
     opts.push({ label: '다른 곳으로 옮기기' + FX, value: 'move', cls: 'judge' });
   }
-  openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}${actsHtml(opts.map((o, i) => ({ ...o, i })))}`, el => {
+  openSheet(`<button class="x sm" data-close>닫기</button>${cardActHtml(c, actsHtml(opts.map((o, i) => ({ ...o, i })), '', cactW()), { cid: x.c })}`, el => {
+    el.classList.add('cactsheet'); bindCardPeek(el);
     el.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => {
       const k = opts[+b.dataset.i].value; closeSheet(); await new Promise(r => setTimeout(r, 30));
       if (k === 'sa' || k === 'sb') return send({ type: 'setupPlace', iid, to: k === 'sa' ? 'active' : 'bench' });
@@ -1540,7 +1708,7 @@ function balanceRows(box) { // 단추 줄 고르게: 줄 수는 가장 적게, �
   if (!box || !box.isConnected) return;
   box.querySelectorAll(':scope > .slrow').forEach(r => { r.replaceWith(...r.childNodes); }); box.classList.remove('bald');
   const kids = [...box.children], W = box.clientWidth, gap = 10; if (kids.length < 2 || !W) return;
-  const ws = kids.map(k => { k.style.flex = '0 0 auto'; const w = k.getBoundingClientRect().width; k.style.flex = ''; return w; });
+  const ws = kids.map(k => { k.style.flex = '0 0 auto'; const w = k.offsetWidth; /* 창이 열리며 커지는 중(scale)이어도 실제 너비 */ k.style.flex = ''; return w; });
   const lineW = (a, b) => ws.slice(a, b).reduce((t, w) => t + w, 0) + gap * (b - a - 1);
   let K = 1, cur = 0; for (const w of ws) { if (cur && cur + gap + w > W) { K++; cur = w; } else cur = cur ? cur + gap + w : w; }
   if (K < 2) return;
@@ -1579,7 +1747,11 @@ async function onSlot(sid) {
   const hpRow = me != null && v.phase === 'play' ? `<div class="hprow"><span class="hpl">${hpMax ? '체력' : '데미지'}</span>${stepHtml('hp', hv0, hpMax ? { min: 0, max: hpMax, by: 10, unit: `<small class="hpm">/${hpMax}</small>` } : { min: 0, max: 990, by: 10 })}<button class="judge" data-hpgo disabled>적용<i class="hpd" hidden></i></button></div>` : ''; // 한 줄: 이름표 · ▼ 값/최대 ▲ · 적용(바뀐 만큼은 작은 배지, 단추 크기 그대로)
   const ix = opts.map((o, i) => ({ ...o, i }));
   const r3 = ix.filter(o => o.row !== 1).map(o => `<button class="${o.cls || ''}" data-i="${o.i}">${o.label}</button>`).join('');
-  openSheet(`<button class="x sm" data-close>닫기</button>${slotInfoHtml(f, !!hpRow)}${actsHtml(ix.filter(o => o.row === 1), 'r1')}${hpRow || r3 ? `<div class="slacts">${hpRow}${r3}</div>` : ''}`, el => {
+  const actsBox = `${actsHtml(ix.filter(o => o.row === 1), 'r1', cactW())}${hpRow || r3 ? `<div class="slacts">${hpRow}${r3}</div>` : ''}`;
+  const hasAtt = f.sl.tl.length || f.sl.en.length || f.sl.cards.length > 1;
+  const body = actsBox ? cardActHtml(c, actsBox, { cid: topOf(f.sl).c, head: hpRow ? '' : `<div class="small slinfo">${hpMax ? `남은 체력 ${left} / ${hpMax}` : `데미지 ${f.sl.dmg}`}</div>`, top: hasAtt ? attachedHtml(f.sl) : '' }) : slotInfoHtml(f, false);
+  openSheet(`<button class="x sm" data-close>닫기</button>${body}`, el => {
+    if (actsBox) el.classList.add('cactsheet');
     bindCardPeek(el); balanceRows(el.querySelector('.slacts'));
     const hgo = el.querySelector('[data-hpgo]');
     if (hgo) { const hd = hgo.querySelector('.hpd'); bindSteps(el, nv => { hgo.disabled = nv === hv0; hd.hidden = nv === hv0; hd.textContent = (nv > hv0 ? '+' : '−') + Math.abs(nv - hv0); });
@@ -1720,16 +1892,91 @@ async function onPile(iid) { // 보고 있는 덱·손패·프라이즈의 카�
   const v = G.view, me = meSeat(), lk = v.p[me].look; if (!lk) return; const P = v.p[lk.p];
   const arr = lk.z === 'deck' ? P.deck.cards : lk.z === 'hand' ? P.hand : P.prizes; const x = arr.find(y => y.i === iid); if (!x) return;
   const opts = (lk.p === me ? moveOpts(me) : [{ label: '상대 트래시로', value: { z: 'discard', p: lk.p } }, { label: '상대 덱 아래로', value: { z: 'deck', p: lk.p, pos: 'bottom' } }, { label: '상대 덱 위로', value: { z: 'deck', p: lk.p, pos: 'top' } }, { label: '상대 손패로', value: { z: 'hand', p: lk.p } }]).map((o, i) => ({ ...o, i }));
-  openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(x.c))}<div class="small muted mvh">어디로 옮길까요?</div>${actsHtml(opts)}`, el => {
+  openSheet(`<button class="x sm" data-close>닫기</button>${cardActHtml(cinfo(x.c), `<div class="small muted mvh">어디로 옮길까요?</div>${actsHtml(opts, '', cactW())}`, { cid: x.c })}`, el => {
+    el.classList.add('cactsheet'); bindCardPeek(el);
     el.querySelectorAll('[data-i]').forEach(b => b.onclick = async () => { const to = opts[+b.dataset.i].value; closeSheet(); await new Promise(r => setTimeout(r, 30)); doMove([iid], to); });
   });
 }
 function bindToolPeek(view = () => G.view) { // 포켓몬 뒤로 보이는 도구 카드를 누르면 그 카드 설명
   app.querySelectorAll('.mat [data-tool]').forEach(b => b.onclick = e => { e.stopPropagation(); const x = { i: b.dataset.tool }, V = view(); for (const p of [0, 1]) for (const sl of [V.p[p].active, ...V.p[p].bench]) { const t = sl && sl.tl && sl.tl.find(y => y.i === x.i); if (t) return openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(cinfo(t.c))}`); } });
 }
+// ---------- 끌어 놓기: 손패 카드를 잡으면 살짝 커지고, 판 위 놓을 수 있는 곳이 빛남. 놓을 곳이 아니거나 손패로 돌려놓으면 취소 ----------
+const DRAG = { at: 0 };
+function dragPlan(c) { // 이 카드를 놓을 곳과 그때 보낼 행동
+  const v = G.view, me = meSeat(), P = v.p[me], basic = c.st === 'P' && (c.sub || []).includes('Basic'), tool = (c.sub || []).includes('Pokémon Tool');
+  const mine = '.area.bottom', T = [];
+  if (v.phase === 'setup') {
+    if (!basic) return T;
+    if (!P.active) T.push({ sel: `${mine} .g-act`, act: iid => ({ type: 'setupPlace', iid, to: 'active' }) });
+    if (P.bench.length < 5) T.push({ sel: `${mine} .g-bench`, act: iid => ({ type: 'setupPlace', iid, to: 'bench' }) });
+    return T;
+  }
+  if (v.phase !== 'play') return T;
+  if (c.st === 'P' && basic) { if (P.bench.length < 5) T.push({ sel: `${mine} .g-bench`, act: iid => ({ type: 'bench', iid }) }); }
+  else if (c.st === 'P') T.push({ sel: `${mine} [data-sid]`, slot: 1, act: (iid, sid) => ({ type: 'evolve', iid, sid }) });
+  else if (c.st === 'E' || tool) T.push({ sel: '.mat [data-sid]', slot: 1, act: (iid, sid) => ({ type: 'attach', iid, sid }) });
+  else if (c.st === 'T') T.push({ sel: '.mat', act: iid => ({ type: 'play', iid }) });
+  return T;
+}
+function bindDrag() {
+  const me = meSeat(); if (me == null || G.rw) return;
+  app.querySelectorAll('.handbar [data-hand]').forEach(el => {
+    el.ondragstart = e => e.preventDefault();
+    el.onpointerdown = e => {
+      if (e.button > 0 || DRAG.live) return;
+      const x = (G.view.p[me].hand || []).find(h => h.i === el.dataset.hand); if (!x) return;
+      const plan = dragPlan(cinfo(x.c)), sx = e.clientX, sy = e.clientY, r0 = el.getBoundingClientRect();
+      el.classList.add('grab'); // 잡으면 살짝 커짐
+      let ghost = null, tgts = [], over = null;
+      const start = () => {
+        ghost = el.cloneNode(true); ghost.className = el.className.replace(/\bgrab\b/, '') + ' dragghost'; ghost.removeAttribute('data-hand');
+        ghost.style.cssText = `width:${el.offsetWidth}px;left:${r0.left}px;top:${r0.top}px`; document.body.appendChild(ghost);
+        el.classList.add('dragsrc'); DRAG.live = true; document.body.classList.add('dragging');
+        tgts = plan.flatMap(p => [...app.querySelectorAll(p.sel)].map(t => ({ t, p })));
+        tgts.forEach(o => o.t.classList.add('droptgt'));
+        if (!tgts.length) toast('이 카드는 끌어서 놓을 곳이 없어요. 카드를 눌러 골라 주세요.', 2400);
+        Sound.sfx('tap');
+      };
+      const hit = (cx, cy) => { // 손가락 아래에서 가장 안쪽(포켓몬 > 벤치 > 판) 놓을 곳
+        let n = document.elementFromPoint(cx, cy);
+        if (!n || n.closest('.handbar')) return null; // 손패로 돌려놓으면 취소
+        for (; n && n !== document.body; n = n.parentElement) { const o = tgts.find(z => z.t === n); if (o) return o; }
+        return null;
+      };
+      const move = ev => {
+        const dx = ev.clientX - sx, dy = ev.clientY - sy;
+        if (!ghost) { if (Math.hypot(dx, dy) < 8) return; start(); }
+        ev.preventDefault();
+        ghost.style.transform = `translate(${dx}px, ${dy}px) scale(1.18) rotate(${Math.max(-8, Math.min(8, dx / 30))}deg)`;
+        const o = hit(ev.clientX, ev.clientY);
+        if (o !== over) { over && over.t.classList.remove('dropon'); over = o; over && over.t.classList.add('dropon'); }
+      };
+      const end = (ev, cancel) => {
+        window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', cc);
+        el.classList.remove('grab');
+        if (!ghost) return; // 움직이지 않았으면 누르기(카드 창)
+        DRAG.at = Date.now(); DRAG.live = false; document.body.classList.remove('dragging');
+        tgts.forEach(o => o.t.classList.remove('droptgt', 'dropon'));
+        const o = !cancel && (hit(ev.clientX, ev.clientY) || over), g = ghost; // 빛나던 곳에 놓임
+        if (o) {
+          const sid = o.p.slot ? o.t.dataset.sid : null; send(o.p.act(x.i, sid)); Sound.sfx('place');
+          g.classList.add('dropin'); setTimeout(() => g.remove(), 180);
+        } else { // 제자리로 돌아감 (아무 일도 하지 않음)
+          g.classList.add('back'); g.style.transform = 'translate(0, 0) scale(1)';
+          setTimeout(() => { g.remove(); el.classList.remove('dragsrc'); }, 230);
+          return;
+        }
+        el.classList.remove('dragsrc');
+      };
+      const up = ev => end(ev, false), cc = ev => end(ev, true);
+      window.addEventListener('pointermove', move, { passive: false }); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', cc);
+    };
+  });
+}
 function bindBoard() {
   const v = G.view, me = meSeat();
-  app.querySelectorAll('[data-hand]').forEach(el => el.onclick = () => onHandCard(el.dataset.hand));
+  app.querySelectorAll('[data-hand]').forEach(el => el.onclick = () => { if (Date.now() - DRAG.at < 350) return; onHandCard(el.dataset.hand); }); // 끌어 놓은 직후의 '누르기'는 무시
+  bindDrag();
   app.querySelectorAll('.mat [data-sid]').forEach(el => { el.onclick = () => onSlot(el.dataset.sid); });
   bindToolPeek();
   app.querySelectorAll('[data-zone]').forEach(el => el.onclick = () => onZone(el.dataset.zone, +el.dataset.p));
@@ -1755,7 +2002,7 @@ function bindBoard() {
   app.querySelectorAll('[data-rwno]').forEach(el => el.onclick = () => send({ type: 'rewindNo', gid: el.dataset.rwno }));
   app.querySelectorAll('[data-rwok]').forEach(el => el.onclick = async () => { if (await ask('이 판정 바로 전으로 되돌릴까요?', '<p>그 뒤에 한 행동이 모두 취소되고, 기록에는 줄을 그어 남겨요.</p><p class="small"><span class="chip warn">이미 본 카드가 있어요</span> 덱이나 손패에서 본 카드는 잊을 수 없어요. 덱은 다시 섞여요.</p>', '되돌리기', 'bad')) send({ type: 'rewindOk', to: +el.dataset.rwok }); });
   app.querySelectorAll('[data-uses]').forEach(el => { el.onclick = openUses; el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUses(); } }; });
-  app.querySelectorAll('[data-stadium]').forEach(el => el.onclick = () => { const c = cinfo(v.stadium.c); openSheet(`<button class="x sm" data-close>닫기</button>${cardInfoHtml(c)}${me != null ? '<div class="acts"><button class="judge" data-sd>트래시로${FX}</button></div>' : ''}`, e2 => { const b = e2.querySelector('[data-sd]'); if (b) b.onclick = () => { closeSheet(); send({ type: 'move', iids: [v.stadium.i], to: { z: 'discard', p: v.stadium.by } }); }; }); });
+  app.querySelectorAll('[data-stadium]').forEach(el => el.onclick = () => { const c = cinfo(v.stadium.c); openSheet(`<button class="x sm" data-close>닫기</button>${me != null ? cardActHtml(c, `<div class="acts"><button class="judge" data-sd>트래시로${FX}</button></div>`) : cardInfoHtml(c)}`, e2 => { if (me != null) e2.classList.add('cactsheet'); const b = e2.querySelector('[data-sd]'); if (b) b.onclick = () => { closeSheet(); send({ type: 'move', iids: [v.stadium.i], to: { z: 'discard', p: v.stadium.by } }); }; }); });
   app.querySelectorAll('[data-t]').forEach(el => el.onclick = async () => {
     const t = el.dataset.t;
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
@@ -1768,7 +2015,7 @@ function bindBoard() {
     if (t === 'effect') return openEffect();
     if (t === 'effectEnd') { send({ type: 'effectEnd' }); toast('효과를 끝냈어요. 상대가 확인할 수 있어요.'); return; }
     if (t === 'more') { const k = await pick('더 보기', [{ label: `${ICON.gear}설정`, value: 'set' },
-        ...(fsOk() ? [{ label: inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}전체 화면`, value: 'fs' }] : isApp() ? [] : [{ label: `${ICON.homeAdd}주소창 없이 보기`, value: 'a2hs' }]),
+        ...(fsOk() ? [{ label: inFs() ? `${ICON.shrink}전체 화면 끝내기` : `${ICON.expand}전체 화면`, value: 'fs' }] : isApp() || !isPhone() ? [] : [{ label: `${ICON.homeAdd}주소창 없이 보기`, value: 'a2hs' }]),
         { label: `${ICON.flag}항복하기`, value: 'concede', cls: 'bad' }]); // 로비로 나가기는 왼쪽 위 단추
       if (k === 'fs') toggleFs(); if (k === 'a2hs') openA2hs();
       if (k === 'set') openSettings(() => draw([])); if (k === 'concede' && await ask('항복할까요?', '<p>이 판은 상대 승리로 끝나요.</p>', '항복', 'bad')) send({ type: 'concede' }); }
@@ -1785,6 +2032,21 @@ function lastOppTurn() {
   for (let i = ts.length - 1; i >= 0; i--) if (ts[i].who === on) return { k0: ts[i].k, k1: i + 1 < ts.length ? ts[i + 1].k + 1 : v.n };
   return null;
 }
+// 게임 중 리플레이 시작점: 내 차례면 직전 상대 차례 처음부터, 상대 차례면 지금 상대 차례 처음부터 (막 시작해 한 게 없으면 그 앞 상대 차례).
+// 관전은 지금 차례 처음부터 (한 게 없으면 앞 차례). 시작할 때 어디부터인지 한 줄로 알려 줌
+function rwStart() {
+  const v = G.view, me = meSeat(), n = v.n ?? 0, names = [v.p[0].name, v.p[1].name];
+  const T = G.lines.filter(l => l.turn && l.k >= 0).map(l => { const m = l.txt.match(/(\d+)번째 차례: (.+) \(/) || []; return { k0: l.k, no: m[1] || '?', who: names.indexOf(m[2]) }; })
+    .filter((t, i, a) => i === 0 || t.k0 !== a[i - 1].k0);
+  T.forEach((t, i) => { t.k1 = i + 1 < T.length ? T[i + 1].k0 : n; });
+  if (!T.length || v.phase === 'setup') return { k: 0, msg: '대전 준비부터 보여 드려요' };
+  const cur = T[T.length - 1], busy = t => t.k1 - t.k0 > 1; // 차례 시작 말고도 한 게 있음
+  let t;
+  if (me == null) t = busy(cur) || T.length < 2 ? cur : T[T.length - 2];
+  else { const opp = T.filter(x => x.who === 1 - me); t = opp.length ? opp[opp.length - 1] : cur; if (t === cur && !busy(t) && opp.length > 1) t = opp[opp.length - 2]; }
+  const who = t.who === me ? '내' : t.who >= 0 ? `${names[t.who]} 님` : '';
+  return { k: t.k0, t, msg: `${who} ${t.no}번째 차례 처음부터 보여 드려요` };
+}
 const rwKey = t => `rw:${G.id}:${t.k0}:${t.k1}`;
 function rwSeen(t) { try { return localStorage.getItem(rwKey(t)) === '1'; } catch { return false; } }
 // ---------- 리플레이 (판 위에서 그대로, 판 크기는 그대로) ----------
@@ -1793,9 +2055,9 @@ const turnStartsOf = lines => [...new Set(lines.filter(l => l.turn && l.k >= 0).
 async function startRewatch(opt = {}) { // 대전 중: 기본은 상대의 마지막 차례 처음부터
   if (G.rw) return;
   const me = meSeat(), n = G.view.n ?? 0, lines = G.lines;
-  const ts = turnStartsOf(lines), t = lastOppTurn();
-  const fresh = !!(t && !rwSeen(t)), done = ts.filter(x => x < n); // 새로 본 적 없는 상대 차례면 그 처음부터 자동 재생
-  const k = opt.k != null ? opt.k : t ? t.k0 : done.length ? done[done.length - 1] : 0;
+  const t = lastOppTurn(), fresh = !!(t && !rwSeen(t)); // 새로 본 적 없는 상대 차례면 처음부터 자동 재생
+  const st = rwStart(), k = opt.k != null ? opt.k : st.k;
+  if (opt.k == null) toast(st.msg, 2400);
   if (t) try { localStorage.setItem(rwKey(t), '1'); } catch {}
   G.rw = { mode: 'game', id: G.id, me, n, k, lines, views: {}, playing: fresh && opt.k == null, timer: null, prev: null, start: k };
   await vwLoad(G.rw, k); if (!G.rw) return;
