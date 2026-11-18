@@ -286,6 +286,7 @@ label.h::before { content: ''; width: 8px; height: 8px; border-radius: 50%; back
 .dk-top { position: sticky; top: var(--hh); z-index: 20; display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; padding: 8px 0 6px; background: linear-gradient(#06233a 80%, transparent); }
 .dk-top #dn { flex: 1 1 120px; min-width: 0; height: 40px; padding: 6px 12px; font-family: var(--fh); font-size: 1rem; border-radius: 14px; }
 .dk-top > button { flex: none; min-height: 40px; height: 40px; }
+.dkfoot { display: flex; justify-content: center; margin: 22px 0 8px; } /* 덱 지우기: 목록 맨 아래 (위쪽 줄 단추와 떨어뜨림) */
 .dk-top svg, .sheet [data-cv] svg { width: 18px; height: 18px; flex: none; }
 button.ib { width: 40px; min-width: 40px; padding: 0; }
 .sheet [data-cv].on svg { fill: currentColor; }
@@ -303,6 +304,8 @@ button.ib { width: 40px; min-width: 40px; padding: 0; }
 .vsw button.on { background: linear-gradient(90deg, var(--r1), var(--r2)); color: #fff; }
 .empty-note p { margin: 0; flex: 1 1 140px; } .empty-note .row { flex: 1 1 100%; }
 .empty-note:has(.row) { flex-wrap: wrap; }
+.empty-note > .ring { width: 44px; height: 44px; } /* 빈 안내의 아이콘 (크기가 없어 점처럼 보였음) */
+.empty-note .enote2 { display: block; margin-top: 4px; font-size: .86rem; } .empty-note .enote2 b { font-family: var(--fh); font-weight: normal; color: var(--head); }
 .probs { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; } .probs li { display: flex; gap: 8px; align-items: flex-start; } .probs .ic { width: 18px; height: 18px; color: #f0a020; flex: none; margin-top: 2px; }
 .dgrp { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--fh); font-size: 1.05rem; color: var(--head); padding: 10px 4px 4px; border-bottom: 2px dotted var(--line); }
 .dgrp small { font-size: .82em; color: var(--muted); margin-left: 4px; }
@@ -336,7 +339,7 @@ body:not(.in-game) main > p.pad { color: #d4ecf7; }
 .dkc .dkminus svg { width: 18px; height: 18px; }
 .sheet > .in.wide { width: min(1000px, 100%); height: 88vh; }
 @media (max-width: 480px) {
-  .dk-top #add { width: 40px; padding: 0; } .dk-top #add .lb, .dk-top #save .ic { display: none; } .dk-top #save { padding: 0 12px; }
+  .dk-top #add, .dk-top #exp { width: 40px; padding: 0; } .dk-top #add .lb, .dk-top #exp .lb, .dk-top #save .ic { display: none; } .dk-top #save { padding: 0 12px; }
   .dk-top #dn { flex-basis: 70px; font-size: .94rem; padding: 6px 10px; } .cntb { padding: 0 8px 0 6px; font-size: .8rem; } .cntb .ic { display: none; }
   .dkgrid, .dkgrid.add { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 8px; }
   .dkgrid.sz-s, .dkgrid.add.sz-s { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px 6px; }

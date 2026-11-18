@@ -880,8 +880,8 @@ function deckEditor(deck) {
   const hexN = n => `<span class="hexn"><b>${n}</b></span>`;
   const tile = (c, n, extra = '', note = '') => `<div class="dkc" data-id="${c.id}">${picMode(c, D.dimg) ? `<span class="cpic">${picHtml(c, D.dimg)}</span>` : `<div class="ph">${esc(cname(c))}</div>`}${n ? hexN(n) : ''}${extra}<div class="cnm">${esc(cname(c))}${altName(c) ? `<small class="alt">${esc(altName(c))}</small>` : D.dtext === 'both' ? '<small class="alt">&nbsp;</small>' : ''}</div><div class="muted cno">${esc(setNo(c))}${note}</div></div>`;
   let view = 'kind'; try { view = localStorage.getItem('dkView') === 'all' ? 'all' : 'kind'; } catch {}
-  // 위쪽은 한 줄: 뒤로 · 덱 이름 · 장수(규칙) · 카드 추가 · 더 보기 · 저장
-  app.innerHTML = `<div class="dk-top"><button class="sm ib" id="back" aria-label="덱 목록으로">${ICON.back}</button><input id="dn" value="${esc(deck.name)}" maxlength="30" aria-label="덱 이름" placeholder="덱 이름"><button type="button" id="cnt" class="cntb" aria-label="덱 규칙 보기"></button><button class="primary sm" id="add">${ICON.plus}<span class="lb">카드 추가</span></button><button class="sm ib" id="more" aria-label="더 보기">${FAB_ICON.more}</button><button class="good sm" id="save">${ICON.check}<span class="lb">저장</span></button></div>
+  // 위쪽은 한 줄: 뒤로 · 덱 이름 · 장수(규칙) · 카드 추가 · 내보내기 · 저장 ('더 보기' 메뉴 없이 단추로). 덱 지우기는 목록 맨 아래
+  app.innerHTML = `<div class="dk-top"><button class="sm ib" id="back" aria-label="덱 목록으로">${ICON.back}</button><input id="dn" value="${esc(deck.name)}" maxlength="30" aria-label="덱 이름" placeholder="덱 이름"><button type="button" id="cnt" class="cntb" aria-label="덱 규칙 보기"></button><button class="primary sm" id="add">${ICON.plus}<span class="lb">카드 추가</span></button><button class="sm" id="exp" aria-label="리스트 내보내기">${ICON.out}<span class="lb">내보내기</span></button><button class="good sm" id="save">${ICON.check}<span class="lb">저장</span></button></div>
     <div id="lst"></div>`;
   const drawList = () => {
     const ch = checkDeck(list, IDX), cb = $('#cnt');
@@ -890,11 +890,12 @@ function deckEditor(deck) {
     const per = st => sorted.filter(x => IDX.byId[x.id].st === st), sum = xs => xs.reduce((a, b) => a + b.n, 0);
     const vsw = `<span class="vsw" role="group" aria-label="보기 방식">${[['kind', '종류별'], ['all', '한꺼번에']].map(([k, l]) => `<button type="button" data-v="${k}" class="${view === k ? 'on' : ''}" aria-pressed="${view === k}">${l}</button>`).join('')}</span>`;
     const grid = xs => `<div class="dkgrid sz-${D.dsize}${D.dinfo === 'hide' ? ' noinfo' : ''}">${xs.map(x => tile(IDX.byId[x.id], x.n, x.c ? `<span class="cvstar" title="덱 목록에 보이는 대표 카드">${ICON.star}</span>` : '')).join('')}</div>`;
-    $('#lst').innerHTML = !list.length ? `<div class="empty-note">${ringIcon('deck', 'k-ok')}<p>아직 카드가 없어요.</p><div class="row"><button class="primary" id="add2">${ICON.plus}카드 추가</button><button id="imp">${ICON.paste}리스트 붙여 넣기</button></div></div>`
+    $('#lst').innerHTML = (!list.length ? `<div class="empty-note">${ringIcon('deck', 'k-ok')}<p>아직 카드가 없어요.<small class="enote2">오른쪽 위 <b>카드 추가</b>에서 카드를 고르거나, 덱 리스트를 붙여 넣어요.</small></p></div>`
       : view === 'all' ? `<div class="dgrp"><span class="dkst">${[...'PTE'].map(st => `<span>${kindName(st)} <b>${sum(per(st))}</b></span>`).join('')}</span>${vsw}</div>${grid(sorted)}` // 보기 단추는 첫 머리 줄 오른쪽 (줄을 따로 쓰지 않음)
-      : [...'PTE'].filter(st => per(st).length).map((st, i) => { const xs = per(st); return `<div class="dgrp"><span>${kindName(st)} <small>${sum(xs)}장</small></span>${i === 0 ? vsw : ''}</div>${grid(xs)}`; }).join('');
+      : [...'PTE'].filter(st => per(st).length).map((st, i) => { const xs = per(st); return `<div class="dgrp"><span>${kindName(st)} <small>${sum(xs)}장</small></span>${i === 0 ? vsw : ''}</div>${grid(xs)}`; }).join(''))
+      + (deck.id ? `<div class="dkfoot"><button type="button" class="sm bad" id="deldeck">${ICON.x}덱 지우기</button></div>` : '');
     $('#lst').querySelectorAll('.dkc').forEach(el => el.onclick = () => cardSheet(el.dataset.id));
-    const a2 = $('#add2'); if (a2) a2.onclick = () => openAdd(); const im = $('#imp'); if (im) im.onclick = openImp;
+    const dd = $('#deldeck'); if (dd) dd.onclick = async () => { if (await ask('덱을 지울까요?', '<p>지우면 되돌릴 수 없어요.</p>', '지우기', 'bad')) { await api('/api/decks/' + deck.id, null, 'DELETE'); GUARD = null; go('#decks'); } };
     $('#lst').querySelectorAll('.vsw [data-v]').forEach(b => b.onclick = () => { view = b.dataset.v; try { localStorage.setItem('dkView', view); } catch {} drawList(); });
   };
   const addN = (id, d) => { let x = list.find(y => y.id === id); if (!x && d > 0) list.push(x = { id, n: 0 }); if (x) { x.n += d; if (x.n <= 0) list = list.filter(y => y !== x); } drawList(); };
@@ -979,7 +980,6 @@ function deckEditor(deck) {
       draw(); if (filt === 'L') pp.querySelector('#paste')?.focus(); else if (matchMedia('(hover: hover)').matches) { qi.focus(); qi.select(); }
     });
   };
-  const openImp = () => openAdd('L'); // 리스트 붙여 넣기는 카드 추가 창 안에
   // 리스트 내보내기: PTCGL(영어) / 한국어 글. 복사·파일 저장·공유 (고른 형식은 기억)
   const openExp = () => {
     let fmt = 'ptcgl'; try { if (localStorage.getItem('dkExp') === 'ko') fmt = 'ko'; } catch {}
@@ -1036,10 +1036,7 @@ function deckEditor(deck) {
   $('#back').onclick = leave;
   $('#add').onclick = () => openAdd();
   $('#cnt').onclick = () => { const ch = checkDeck(list, IDX); openSheet(`<button class="x sm" data-close>닫기</button><h3>덱 규칙</h3>${ch.ok ? '<p><span class="chip ok">덱 규칙 통과</span> 60장, 같은 이름 4장까지, 기본 포켓몬 1장 이상을 모두 지켰어요.</p>' : `<ul class="probs">${ch.problems.map(p => `<li>${ICON.warn}<span>${esc(p)}</span></li>`).join('')}</ul>`}`); };
-  $('#more').onclick = async () => { const k = await pick('덱 더 보기', [{ label: `${ICON.out}리스트 내보내기`, value: 'exp' }, ...(deck.id ? [{ label: `${ICON.x}덱 지우기`, value: 'del', cls: 'bad' }] : [])]); // 붙여 넣기는 카드 추가 창 안으로 옮김
-    if (k === 'exp' && !list.length) return toast('덱에 카드가 없어요.');
-    if (k === 'exp') setTimeout(openExp, 40);
-    if (k === 'del' && await ask('덱을 지울까요?', '<p>지우면 되돌릴 수 없어요.</p>', '지우기', 'bad')) { await api('/api/decks/' + deck.id, null, 'DELETE'); GUARD = null; go('#decks'); } };
+  $('#exp').onclick = () => list.length ? openExp() : toast('덱에 카드가 없어요.');
   $('#save').onclick = save;
   guardPage('한 번 더 누르면 덱 목록으로 가요', () => dirty() ? leave : null);
   drawList();
