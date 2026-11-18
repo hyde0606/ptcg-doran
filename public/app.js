@@ -1280,9 +1280,12 @@ function renderGame(id) {
     G.ws = ws;
     ws.onmessage = e => {
       const m = JSON.parse(e.data);
+      if (m.bot) G.bot = m.bot;
       if (m.t === 'full') { const first = !G.view; G.view = m.view; G.lines = m.lines; G.cards = m.cards; if (m.specs) G.specs = m.specs; if (m.schat) G.specChat = m.schat; if (m.room) G.room = m.room; draw(first ? [] : null); if (first) preloadPics(m.cards);
+        if (first && m.bot && !m.bot.auto && m.view.me != null && m.view.phase !== 'over') { let want = false; try { want = localStorage.getItem('botAuto') === '1'; } catch {} if (want) { G.bot.auto = true; ws.send(JSON.stringify({ t: 'bot', auto: true })); draw([]); } } // 연습 봇: 지난번에 '자동'을 켜 두었으면 새 판도 자동
         if (first && m.room && m.view.me == null && m.view.phase !== 'over') api(`/api/rooms/${m.room}/follow`).then(r => { G.follow = !!r.follow; if (G.view) draw([]); }).catch(() => {}); }
       else if (m.t === 'upd') { const was = G.view?.phase; G.view = m.view; G.lines.push(...m.lines); draw(m.lines); if (was !== 'over' && m.view.phase === 'over') ws.send(JSON.stringify({ t: 'specView', on: true })); } // 판이 끝나면 선수도 관전자 채팅을 봄
+      else if (m.t === 'bot') { const was = G.bot?.wait; G.bot = { auto: m.auto, wait: m.wait }; if (G.view) { draw([]); if (m.wait && !was) botHint(); } }
       else if (m.t === 'specs') { G.specs = m.specs; drawSpecs(); }
       else if (m.t === 'spec') { (G.specChat ||= []).push({ name: m.name, text: m.text, t: m.ts }); drawSide(); if (m.name !== ME?.name) Sound.sfx('chat'); }
       else if (m.t === 'specHist') { G.specChat = m.list || []; drawSide(); }
@@ -1503,6 +1506,15 @@ const FAB_FX = '<i class="fx f1"></i><i class="fx f3"></i><i class="fx f4"></i>'
 // 판·리플레이 왼쪽 위에 늘 있는 '로비' 단추 (한 번에 나감)
 const lobbyBtn = () => `<a class="fabw golobby" href="#lobby" aria-label="로비로 나가기"><span class="fab k-home">${FAB_FX}<span class="core">${FAB_ICON.home}</span></span><span class="fl">로비</span></a>`;
 const fabBtn = (t, ic, l, k, extra = '') => `<div class="fabw"><button class="fab ${k}" data-t="${t}" aria-label="${l}">${FAB_FX}<span class="core">${FAB_ICON[ic]}</span>${extra}</button><span class="fl">${l}</span></div>`;
+// 연습 봇 차례: 리플레이처럼 '다음 수'를 누르면 봇이 한 수, '자동'이면 리플레이 빠르기로 (11/19 링크 님)
+function botCtl() {
+  const b = G.bot || {}, auto = !!b.auto;
+  return `<div class="botctl"><button class="botauto${auto ? ' on' : ''}" data-t="botAuto" aria-pressed="${auto}" aria-label="${auto ? '자동 멈추기' : '봇 자동으로 두기 (리플레이 빠르기)'}">${FAB_ICON[auto ? 'pause' : 'play']}<span>${auto ? '멈춤' : '자동'}</span></button><button class="fab wide endturn botstep${b.wait && !auto ? ' go' : ' idle'}" data-t="botStep" aria-label="봇 다음 수">${FAB_FX}${FAB_ICON.rwnext}<span>다음<br>수</span></button></div>`;
+}
+function botHint() { // 처음 한 번만 알려 줌
+  try { if (localStorage.getItem('botStepHint')) return; localStorage.setItem('botStepHint', '1'); } catch {}
+  toast("봇 차례예요. '다음 수'를 누르면 봇이 한 수씩 두고, '자동'을 누르면 리플레이 빠르기로 둬요.", 4200);
+}
 function fabHtml() { // 왼쪽: 상대 턴·코인·효과 / 오른쪽: 더 보기·남은 사이드 막대·차례 끝내기 / 오른쪽 아래: 기록
   const v = G.view, me = meSeat();
   const pend = me == null ? 0 : v.groups.filter(g => g.who !== me && g.status !== 'ok').length;
@@ -1520,6 +1532,7 @@ function fabHtml() { // 왼쪽: 상대 턴·코인·효과 / 오른쪽: 더 보�
   return { left: `<div class="lbtns">${rw}${fabBtn('coin', 'coin', '코인', 'k-coin')}${open ? fabBtn('effectEnd', 'check', '효과 끝', 'k-fx on') : fabBtn('effect', 'hand', '효과 쓰기', 'k-fx')}${stop}</div>`,
     more: fabBtn('more', 'more', '더 보기', 'k-more'), log: `<div class="rbtns">${log}</div>`,
     end: myTurn ? `<button class="fab wide endturn" data-t="endTurn">${FAB_FX}${FAB_ICON.flag}<span>차례<br>끝내기</span></button>`
+      : v.phase === 'play' && v.cfg && v.cfg.bot ? botCtl()
       : v.phase === 'setup' && v.first != null && !v.p[me].ready ? `<button class="fab wide endturn readyb${v.p[me].active ? ' go' : ' wait'}" data-t="setupDone">${FAB_FX}${FAB_ICON.check}<span>준비<br>완료</span></button>` : '' };
 }
 // 소리 켜기 안내: 아무 곳이나 한 번 누르면(소리가 켜지면) 바로 없앰
@@ -2879,6 +2892,8 @@ function bindBoard() {
     if (t === 'setupDone' && !G.view.p[me].active) return toast('먼저 손패의 기본 포켓몬을 눌러 배틀 포켓몬을 놓아 주세요.');
     if (t === 'setupDone' || t === 'endTurn' || t === 'lookEnd') return send({ type: t });
     if (t === 'rewatch') return startRewatch();
+    if (t === 'botStep') { try { G.ws.send(JSON.stringify({ t: 'bot', step: 1 })); } catch {} return; }
+    if (t === 'botAuto') { const on = !(G.bot && G.bot.auto); G.bot = { ...(G.bot || {}), auto: on }; try { localStorage.setItem('botAuto', on ? '1' : '0'); } catch {} try { G.ws.send(JSON.stringify({ t: 'bot', auto: on })); } catch {} draw([]); toast(on ? '봇이 리플레이 빠르기로 자동으로 둬요.' : "자동을 멈췄어요. '다음 수'를 누르면 한 수씩 둬요."); return; }
     if (t === 'botAgain') { const b = G.view.cfg.bot; el.disabled = true; try { const r = await startBot({ deckId: b.mine, botDeck: b.deck, botLevel: b.level, spectate: G.view.cfg.spectate, title: G.view.cfg.title }); location.hash = '#game/' + r.room.games[r.room.games.length - 1]; } catch (er) { toast(er.message); el.disabled = false; } return; }
     if (t === 'swap') { swapView(); G.ui.marks = null; draw(null); swapToast(); return; }
     if (t === 'follow') { const f = await setFollow(G.room, !G.follow); if (f != null) { G.follow = f; draw([]); } return; }

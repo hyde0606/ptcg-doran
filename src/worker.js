@@ -7,7 +7,10 @@ import { makeVapid, sendPush } from './webpush.js';
 import { DC_KR, DC_JP, JP_PICT, DC_UA, dcFetch, deckCode } from './deckcode.js';
 import EVO from './evo.json'; // 진화 전 이름 표 (tools/build-evo.py 로 만듦)
 import { Bot, BOT_NAME, BOT_HELLO, BOT_DECKS, botDeckIds } from '../public/lib/bot.js';
-const BOT_UID = 'bot'; // 연습 봇 자리 (회원이 아님)
+const BOT_UID = 'bot';
+// 봇 차례의 수는 사람이 '다음 수'를 누를 때만 둠. '자동'이면 리플레이와 같은 빠르기 (첫 수 1.1초, 그다음 1.9초)
+const BOT_AUTO_FIRST = 1100, BOT_AUTO_GAP = 1900;
+const BOT_FREE = new Set(['agree', 'rewindOk', 'rewindAsk', 'rewindNo', 'stopUndo', 'stopEnd', 'chat', 'dispute']); // 누르지 않아도 바로 하는 대답 // 연습 봇 자리 (회원이 아님)
 // 봇이 한 수 둔 뒤 다음 수까지 쉬는 시간 (ms): 사람이 화면에서 따라볼 수 있게
 const BOT_GAP = { chat: 700, agree: 450, rewindAsk: 500, stopEnd: 600, order: 700, setupPlace: 450, setupDone: 500, mullDraw: 600, confirm: 800, dismiss: 800,
   bench: 850, evolve: 950, attach: 850, play: 1000, ability: 1000, retreat: 950, attack: 1400, endTurn: 900, look: 700, lookEnd: 500, move: 850, draw: 800, shuffle: 600,
@@ -646,7 +649,7 @@ export class Game extends DurableObject {
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1]);
     pair[1].serializeAttachment({ uid, seat, name });
-    pair[1].send(JSON.stringify({ t: 'full', view: this.view(G, seat), lines: this.lines(G, seat), cards: G.init.cards, specs: this.spectators(), room: G.init.cfg.roomId, schat: this.seesSpec(G, { seat }) ? this.specHist() : undefined }));
+    pair[1].send(JSON.stringify({ t: 'full', view: this.view(G, seat), lines: this.lines(G, seat), cards: G.init.cards, specs: this.spectators(), room: G.init.cfg.roomId, schat: this.seesSpec(G, { seat }) ? this.specHist() : undefined, bot: this.botState(G) }));
     this.broadcastSpecs();
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
@@ -669,6 +672,13 @@ export class Game extends DurableObject {
       for (const w of this.ctx.getWebSockets()) { const a = w.deserializeAttachment(); if (a && this.seesSpec(G, a)) try { w.send(JSON.stringify({ t: 'spec', name: at.name, text: txt, ts: t })); } catch {} }
       return;
     }
+    if (m.t === 'bot' && at.seat != null && G && this.botSeat(G) >= 0 && G.s.phase !== 'over') { // 연습 봇: '다음 수' / '자동' 켜고 끄기
+      if ('auto' in m) this.setMeta('botauto', !!m.auto);
+      if (m.step) this.botAllow = Math.min(5, (this.botAllow || 0) + 1);
+      this.botSend(G);
+      await this.ctx.storage.setAlarm(Date.now() + (m.step ? 30 : this.meta('botauto') ? 400 : 1000));
+      return;
+    }
     if (m.t !== 'act' || at.seat == null) return;
     const res = await this.act(at.seat, m.a);
     ws.send(JSON.stringify({ t: 'res', id: m.id, ...res }));
@@ -683,7 +693,7 @@ export class Game extends DurableObject {
       if (!g || g.rewindBy == null || g.rewindBy === seat) return { ok: false, err: '되돌리기 요청이 없어요.' };
       a.salt = rid(12);
       this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length, seat, JSON.stringify(a), t);
-      this.cache = null; this.bot = null; const G2 = this.load();
+      this.cache = null; this.bot = null; this.botHeld = null; this.botWait = false; const G2 = this.load();
       this.push(G2, true); await this.report(G2, seat); return { ok: true };
     }
     if (a.type === 'stopUndo') { // 잠깐 멈춤에서 지적받은 사람이 '그 행동 전으로 되돌리기'
@@ -691,7 +701,7 @@ export class Game extends DurableObject {
       if (!st || st.to == null || st.by === seat) return { ok: false, err: '되돌릴 지적이 없어요.' };
       a.salt = rid(12);
       this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length, seat, JSON.stringify(a), t);
-      this.cache = null; this.bot = null; const G2 = this.load();
+      this.cache = null; this.bot = null; this.botHeld = null; this.botWait = false; const G2 = this.load();
       this.push(G2, true); await this.report(G2, seat); return { ok: true };
     }
     if (a.type === 'timeout' || a.type === 'adminEnd') return { ok: false, err: '서버만 할 수 있어요.' };
@@ -706,14 +716,18 @@ export class Game extends DurableObject {
   push(G, full, from) {
     for (const w of this.ctx.getWebSockets()) {
       const at = w.deserializeAttachment(); if (!at) continue;
-      try { w.send(JSON.stringify(full ? { t: 'full', view: this.view(G, at.seat), lines: this.lines(G, at.seat), cards: G.init.cards } : { t: 'upd', view: this.view(G, at.seat), lines: this.lines(G, at.seat, from) })); } catch {}
+      try { w.send(JSON.stringify(full ? { t: 'full', view: this.view(G, at.seat), lines: this.lines(G, at.seat), cards: G.init.cards, bot: this.botState(G) } : { t: 'upd', view: this.view(G, at.seat), lines: this.lines(G, at.seat, from), bot: this.botState(G) })); } catch {}
     }
   }
   async report(G, actor = null) {
     const dl = this.deadline(G), bs = this.botSeat(G);
     if (bs >= 0) { // 연습 봇 판: 기한 대신 봇을 깨우는 알람 (봇이 둔 뒤엔 행동마다 조금씩 쉬어 사람이 따라볼 수 있게)
       if (G.s.phase === 'over') await this.ctx.storage.deleteAlarm();
-      else await this.ctx.storage.setAlarm(Date.now() + (actor === bs ? (BOT_GAP[this.botLast] || 800) : 500));
+      else { // 봇 차례에 '자동'이면 리플레이 빠르기, 아니면 대답·준비는 조금 쉬고 바로 (차례의 수는 botTick이 '다음 수'를 기다림)
+        const auto = this.meta('botauto') && G.s.phase === 'play' && G.s.current === bs;
+        const ag = +this.env.BOT_AUTO_MS || BOT_AUTO_GAP; // BOT_AUTO_MS: 시험할 때만 빠르게
+        await this.ctx.storage.setAlarm(Date.now() + (auto ? (actor === bs ? ag : Math.min(ag, BOT_AUTO_FIRST)) : actor === bs ? (BOT_GAP[this.botLast] || 800) : 500));
+      }
       const sum = JSON.stringify([waitingOn(G.s), G.s.phase, G.s.turn, G.s.winner]);
       if (actor === bs && sum === this.botSum) return; // 봇이 둔 수로 방 목록에 바뀔 게 없으면 로비에 알리지 않음
       this.botSum = sum;
@@ -749,6 +763,12 @@ export class Game extends DurableObject {
     const ban = [...(this.meta('botban') || []), key].slice(-60); this.setMeta('botban', ban);
     if (this.bot) this.bot.ban.add(key);
   }
+  botState(G) { return this.botSeat(G) >= 0 ? { auto: !!this.meta('botauto'), wait: !!this.botWait } : undefined; }
+  botSend(G) { const m = JSON.stringify({ t: 'bot', ...this.botState(G) }); for (const w of this.ctx.getWebSockets()) try { w.send(m); } catch {} }
+  botUrgent(v, seat, bot) { // 기다리는 수보다 먼저 할 대답이 있는지 (Bot.pick 앞부분과 같은 순서)
+    if (bot.outbox.length || (v.stop && v.stop.by !== seat)) return true;
+    return v.groups.some(g => (g.rewindBy != null && g.rewindBy !== seat) || (g.who === seat && g.status === 'disputed' && g.rewindBy == null && !bot.asked.has(g.gid + ':' + g.disputes.length)) || (g.who !== seat && g.status === 'pending' && !bot.agreed.has(g.gid)));
+  }
   async botTick() {
     if (this.botBusy) return; this.botBusy = true;
     try {
@@ -756,21 +776,31 @@ export class Game extends DurableObject {
       const G = this.load(); const seat = this.botSeat(G); if (seat < 0 || G.s.phase === 'over') return;
       const bot = this.botOf(G, seat);
       for (let i = 0; i < 80; i++) {
-        const v = viewFor(G.s, seat), a = bot.decide(v); if (!a) return;
+        const v = viewFor(G.s, seat);
+        // 기다리던 수가 있으면 그것부터 (단, 이의·되돌리기·잠깐!·동의 같은 대답이 먼저)
+        let a = this.botHeld && !this.botUrgent(v, seat, bot) ? this.botHeld : bot.decide(v);
+        if (!a) return;
+        const step = G.s.phase === 'play' && G.s.current === seat && !BOT_FREE.has(a.type);
+        if (step && !this.meta('botauto') && !(this.botAllow > 0)) { // 봇 차례의 수: 사람이 '다음 수'를 누를 때까지 기다림
+          this.botHeld = a; if (!this.botWait) { this.botWait = true; this.botSend(G); }
+          return;
+        }
+        if (a === this.botHeld) this.botHeld = null;
         if (a.type === 'rewindOk' || a.type === 'stopUndo') { // 서버가 기록을 다시 돌려 처리 (사람이 누를 때와 같은 길)
           this.botLast = a.type; const r = await this.act(seat, a); if (!r.ok) { bot.reject(r); continue; } return;
         }
         const c = G.s.cards; G.s.cards = null; const snap = structuredClone(G.s); G.s.cards = c; snap.cards = c;
         const t = Date.now(), r = apply(G.s, seat, a, G.log.length);
         if (!r.ok) { G.s = snap; bot.reject(r); continue; } // 안 되는 수: 판을 그대로 두고 다른 수를 고름
-        bot.accepted(a, r);
+        bot.accepted(a, r); if (step && this.botAllow > 0) this.botAllow--;
+        this.botWait = false; if (G.s.current !== seat || G.s.phase !== 'play') this.botAllow = 0; // 차례가 끝나면 남은 '다음 수'는 버림
         G.log.push({ who: seat, a, t }); G.steps.push({ ok: true, ev: r.ev, gid: r.gid });
         this.sql.exec('INSERT INTO log VALUES(?,?,?,?)', G.log.length - 1, seat, JSON.stringify(a), t);
         this.botLast = a.type; this.push(G, false, G.log.length - 1); await this.report(G, seat);
         return;
       }
       console.log('bot: no move found', G.id);
-    } catch (e) { console.log('bot error', e && (e.stack || e)); this.cache = null; this.bot = null; }
+    } catch (e) { console.log('bot error', e && (e.stack || e)); this.cache = null; this.bot = null; this.botHeld = null; }
     finally { this.botBusy = false; }
   }
   // 기보: k번째 행동까지의 장면 (진행 중이면 내 시점/관전 시점, 끝났으면 전체 공개)

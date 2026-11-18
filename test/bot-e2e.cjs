@@ -71,8 +71,41 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (!r.ok) HB.reject(r); return { a: a.type, ok: r.ok };
   });
   const t0 = Date.now(); let disputed = false, stopped = false, rwAskSeen = false, rewound = false, stopAnswered = false, botActs = 0, shot = false;
+  let stepTested = false;
   while (Date.now() - t0 < 8 * 60e3) {
     v = await V(); if (v.phase === 'over') break;
+    // 봇 차례: '다음 수'를 누를 때만 한 수 → 화면 크기마다 단추가 겹치지 않는지 → '자동'을 켜고 나머지는 자동으로
+    if (!stepTested && v.phase === 'play' && v.current === bs && !v.stop) {
+      stepTested = true;
+      const waitGo = () => p.waitForSelector('.botstep.go', { timeout: 8000 }).then(() => true).catch(() => false);
+      check(await waitGo(), "봇 차례에 '다음 수' 단추가 반짝이며 기다림");
+      await sleep(400); const n0 = (await V()).n; await sleep(2500);
+      check((await V()).n === n0, `누르기 전엔 봇이 두지 않음 (${n0} → ${(await V()).n})`);
+      await clearReveals(); await p.click('[data-t=botStep]');
+      const one = await until(v => v.n > n0, 4000, "'다음 수' 뒤 봇이 한 수");
+      check(!!one, "'다음 수' 누르면 봇이 한 수 둠");
+      await sleep(300); const n1 = (await V()).n; check(n1 >= n0 + 1 && n1 <= n0 + 2, `한 번 누르면 한 수만 (${n0} → ${n1})`);
+      await waitGo(); await clearReveals();
+      for (const [w, h] of [[1280, 860], [844, 390], [740, 340], [390, 844], [360, 740], [260, 560]]) {
+        await p.setViewportSize({ width: w, height: h }); await sleep(450);
+        const m = await p.evaluate(() => { const r = s => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom }; };
+          const hit = (a, b) => a && b && a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+          const c = r('.botctl'), lg = r('.rbtns'), bar = r('.rcol .rbar'), more = r('.rcol > .fabw');
+          const kids = [...document.querySelectorAll('.botctl > *')].map(e => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.right), Math.round(b.bottom)]; });
+          return { c, kids, lg, bar, more, rcol: r('.rcol'), over: hit(c, lg) || hit(c, bar) || hit(c, more), out: !c || c.l < 0 || c.t < 0 || c.r > innerWidth + 0.5 || c.b > innerHeight + 0.5, sw: document.scrollingElement.scrollWidth - innerWidth };
+        });
+        if (process.env.STEP_ONLY) log(w, h, JSON.stringify({ kids: m.kids, lg: m.lg, bar: m.bar, rcol: m.rcol }));
+        check(m.c && !m.over && !m.out && m.sw <= 0, `${w}×${h} 봇 단추 겹침·잘림 없음 ${m.over ? '(겹침)' : ''}${m.out ? '(화면 밖)' : ''}${m.sw > 0 ? '(가로 넘침)' : ''}`);
+        if ((w === 390 && h === 844) || (w === 844 && h === 390) || w === 1280) await p.screenshot({ path: OUT + `step-${w}x${h}.png` });
+      }
+      if (process.env.STEP_ONLY) { await b.close(); log(errs.length ? `\n실패 ${errs.length}개:\n- ${errs.join('\n- ')}` : '\n모두 통과'); process.exit(errs.length ? 1 : 0); }
+      await p.setViewportSize({ width: 1280, height: 860 }); await sleep(300);
+      await p.click('[data-t=botAuto]'); await sleep(300);
+      check(await p.$('[data-t=botAuto].on') != null, "'자동' 켜짐 (단추가 '자동 멈춤'으로)");
+      const n2 = (await V()).n; const auto = await until(v => v.n >= n2 + 2 || v.current !== bs, 6000, '자동으로 봇이 둠');
+      check(!!auto, '자동이면 누르지 않아도 봇이 둠');
+      continue;
+    }
     // 이의: 봇 판정이 처음 올라오면 이의 → 봇이 되돌리자고 하는지 → 동의
     const pend = v.groups.find(g => g.who === bs && g.status === 'pending');
     if (!disputed && pend) {
@@ -104,6 +137,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   check(v.phase === 'over', `판이 끝까지 감 (${v.turn}차례, ${v.winReason || ''})`);
   check(disputed && rwAskSeen && rewound, '이의 → 되돌리기 흐름');
   check(stopped && stopAnswered, '잠깐! 흐름');
+  check(stepTested, "'다음 수'·'자동' 흐름");
   // 끝난 판: '한 판 더'
   await p.waitForSelector('[data-t=botAgain]', { timeout: 10000 }).catch(() => null); await sleep(2800); await clearReveals();
   const again = await p.$('[data-t=botAgain]'); check(!!again, "끝난 판에 '한 판 더' 단추");

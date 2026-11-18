@@ -1595,3 +1595,16 @@ button.blue.used { opacity: .82; }
 .ohand.up .pc.oh { transform: none; margin: 0; flex: none; box-shadow: 0 1px 4px rgba(0,0,0,.3); width: min(calc(var(--cw) * var(--ohs)), calc((var(--oav) - (var(--n) - 1) * 3px) / var(--n))); }
 @media (max-aspect-ratio: 5/4), (max-width: 560px) { .arena:has(.ohand.up) { --peek: .8; --ohs: 1; } .ohand.up .ofan { --oav: calc(100vw - 64px); } }
 .sndhint { left: max(8px, env(safe-area-inset-left, 0px)); top: calc(max(6px, env(safe-area-inset-top, 0px)) + 76px); transform: none; } @media (max-aspect-ratio: 5/4), (max-width: 560px), (max-height: 520px) { .sndhint { top: calc(max(4px, env(safe-area-inset-top, 0px)) + 46px); } } /* 소리 켜기 안내는 왼쪽 위 로비 단추 아래 (위쪽 손패를 가리지 않게) */
+/* 연습 봇 차례: '자동' 둥근 단추 + '다음 수' 넓은 단추 (리플레이 단추와 같은 모양). 기다릴 때만 숨 쉬듯 반짝임 */
+.botctl { display: flex; flex-direction: column; align-items: center; gap: min(var(--bgap, 12px), 8px); }
+.botauto { width: calc(var(--rw) + 4px); height: 30px; min-height: 0; border: 0; border-radius: 999px; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0 4px; cursor: pointer;
+  font-family: var(--fh); font-size: .8rem; color: #fff; white-space: nowrap; background: linear-gradient(180deg, #6db7ee, #2f8fe0); box-shadow: 0 0 0 2.5px #fff, 0 4px 10px rgba(20, 50, 40, .25); }
+.botauto svg { width: 13px; height: 13px; flex: none; }
+.botauto::after { content: ''; position: absolute; inset: -7px -5px -3px; } /* 보이는 것보다 넓게 눌림 */
+.botauto.on { background: linear-gradient(180deg, #ffa585, #ff7a59); }
+@media (hover: hover) { .botauto:hover { filter: brightness(1.07); } }
+.botstep { --c: #2f8fe0; --c2: #38c6a0; }
+.botstep.idle { animation: none; filter: saturate(.75); }
+.botstep.go { animation: breathe 1.4s ease-in-out infinite; box-shadow: 0 0 0 4px rgba(255, 255, 255, .7), 0 0 18px rgba(60, 170, 230, .8); }
+@media (max-width: 560px), (orientation: landscape) and (max-height: 440px) { .botauto { height: 26px; font-size: .7rem; gap: 2px; } .botauto svg { width: 11px; height: 11px; } }
+@media (max-width: 560px) { .botctl .fab.wide { width: calc(var(--rw) + 4px); padding-left: 0; padding-right: 0; } } /* 세로 폰: 오른쪽 끝에 잘리지 않게 */
